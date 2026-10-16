@@ -75,6 +75,13 @@ import subprocess
 import sys
 import time
 
+# the one shared module in this repo: the engine adapter table
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import engines
+except ImportError:                                  # pragma: no cover
+    engines = None
+
 CLK = os.sysconf("SC_CLK_TCK")
 
 # Where per-session cgroups live, if your harness makes them. Colon-separated.
@@ -107,9 +114,10 @@ AGENT_INTERNAL = (
 # so a naive count reported 15 of 15 cgroups as "shared" -- a detector that fires on
 # everything discriminates nothing.
 ENTRYPOINT = re.compile(
+    engines.entrypoint_regex() if engines else
     r"claude-agent-acp|npm exec @agentclientprotocol"
     r"|claude-agent-sdk.*/claude(\s|$)"
-    r"|/usr/bin/claude(\s|$)|/claude\.exe(\s|$)|--remote-control"
+    r"|/usr/bin/claude(\s|$)|/claude\.exe(\s|$)"
     r"|(^|/)codex(\s|$)", re.I)
 
 # Shapes that look like real background work. Advisory only -- it annotates output with
@@ -198,6 +206,55 @@ def discover(internal_re, session_dirs):
     return sorted(cgs)
 
 
+def classify_by_parentage(min_age, internal_re):
+    """Fallback for a box with no per-session cgroups -- e.g. ANY ordinary local setup.
+
+    Walks process parentage from each session entrypoint instead of reading a cgroup.
+
+    THIS IS THE INSTRUMENT'S OWN v1 METHOD, AND v1 WAS WRONG. It under-counts, for a
+    reason that cannot be fixed by walking better: a process backgrounded with `&` is
+    REPARENTED to pid 1 when its shell exits, so it leaves the tree entirely. A dev
+    server started with `npm run dev &` is exactly the case this instrument exists to
+    find, and exactly the case this fallback cannot see.
+
+    It runs anyway, because for a local user the alternative is no answer at all, and a
+    loud under-count beats `exit 2`. The warning is printed on every run and the exit
+    code is distinct, so a reader can never mistake this for the cgroup result.
+    """
+    kids = {}
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            kids.setdefault(ppid_of(int(d)), []).append(int(d))
+    out = {}
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        pid = int(d)
+        if not ENTRYPOINT.search(cmdline(pid)):
+            continue
+        anc = ppid_of(pid)
+        seen = set()
+        is_root = True
+        while anc and anc not in seen:
+            seen.add(anc)
+            if ENTRYPOINT.search(cmdline(anc)):
+                is_root = False
+                break
+            anc = ppid_of(anc)
+        if not is_root:
+            continue
+        tree, stack = [], [pid]
+        while stack:
+            q = stack.pop()
+            tree.append(q)
+            stack.extend(kids.get(q, []))
+        bg = [(q, cmdline(q), age(q)) for q in tree
+              if cmdline(q) and not internal_re.search(cmdline(q))
+              and age(q) > min_age]
+        out[f"<parentage>/pid-{pid}"] = (len(tree), bg)
+    return out
+
+
 def ppid_of(pid):
     try:
         with open(f"/proc/{pid}/stat") as fh:
@@ -248,11 +305,114 @@ def classify(min_age, internal_re, session_dirs):
     return live, orphan
 
 
+def self_test_age(internal_re, session_dirs):
+    """Control for `age()` itself, and for the AGE THRESHOLD -- which the two decoy cases
+    below do not cover.
+
+    Why this is separate. Those cases call classify() with `min_age=1` against a decoy
+    about two seconds old, while the published criterion is `MIN_AGE_S` (default 900).
+    So they exercise discovery and filtering, but the age comparison only in a 1-2 s
+    band. An independent reviewer demonstrated the consequence: with `age()` clamped to
+    return at most 10 s, a planted 900 s decoy went undetected at `MIN_AGE_S=50` while
+    the run still printed SELF-TEST PASSED and exited 0 -- a confident false zero.
+
+    Three assertions, each catching a different `age()` defect class:
+
+      1. POSITIVE. A cached `/proc/uptime` produced NEGATIVE ages for every process
+         started after import, which silently failed every `age > threshold` test. This
+         is the defect that bug actually had.
+      2. MONOTONIC, by the right amount. Sampled twice `SELF_TEST_AGE_GAP_S` apart, the
+         reading must grow by about that much. A cached clock grows by zero; a clamp
+         grows by zero once clamped; a wrong CLK_TCK divisor grows by the wrong factor.
+      3. DISCRIMINATING. The same decoy must be INCLUDED below a low threshold and
+         EXCLUDED above a high one. A comparison that cannot exclude is not a threshold.
+
+    RESIDUAL, stated because it is the same shape as the gap this closes: assertion 2
+    can only catch a distortion that manifests inside the gap it samples. A clamp set
+    far above `SELF_TEST_AGE_GAP_S` would still pass here. Raise the gap, at the cost of
+    run time, if you need a wider band.
+    """
+    gap = float(os.environ.get("SELF_TEST_AGE_GAP_S", "4"))
+    # A UNIQUE token per run. `sleep 300` collided with a leftover decoy from an earlier
+    # run, so the test measured a 45-second-old stranger and reported it as its own
+    # freshly planted decoy -- the self-test's own version of finding itself.
+    token = 300 + (os.getpid() % 97)
+    proc = subprocess.Popen(["sh", "-c", f"setsid --fork sleep {token}"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(2)
+    hits = [q for q in (int(d) for d in os.listdir("/proc") if d.isdigit())
+            if f"sleep {token}" in cmdline(q)]
+    ok = True
+    if not hits:
+        print("SELF-TEST [age() and the age THRESHOLD]: could not plant a decoy -- "
+              "UNTESTED, which is a failure, not a skip")
+        ok = False
+    else:
+        pid = hits[0]
+        a1 = age(pid)
+        time.sleep(gap)
+        a2 = age(pid)
+        positive = a1 > 0 and a2 > 0
+        grew = abs((a2 - a1) - gap) <= max(1.5, gap * 0.5)
+        # INDEPENDENT re-computation on a long-lived process (pid 1 always exists and is
+        # always old). age() is compared against a second implementation that does NOT
+        # share its code, which is the only way to catch a distortion -- a clamp, a wrong
+        # divisor -- that a young decoy is too young to reveal. A reviewer clamped age()
+        # at 10 s and every other assertion here still passed, because the decoy was 6 s
+        # old. This leg catches that immediately and without waiting.
+        try:
+            with open("/proc/1/stat") as fh:
+                st1 = fh.read()
+            with open("/proc/uptime") as fh:
+                up1 = float(fh.read().split()[0])
+            indep = up1 - int(st1[st1.rindex(")") + 2:].split()[19]) / CLK
+            measured = age(1)
+            agrees = indep > 0 and abs(measured - indep) <= max(2.0, indep * 0.02)
+        except Exception:
+            indep, measured, agrees = -1.0, -1.0, False
+        # classify() returns (live, orphan) -- take [0]
+        inc = any(pid == q for _, (_, bg) in
+                  classify(1, internal_re, session_dirs)[0].items() for q, _, _ in bg)
+        exc = not any(pid == q for _, (_, bg) in
+                      classify(100000, internal_re, session_dirs)[0].items()
+                      for q, _, _ in bg)
+        print(f"SELF-TEST [age() and the age THRESHOLD]: age {a1:.1f}s -> {a2:.1f}s "
+              f"over {gap:.0f}s  positive={'YES' if positive else 'NO'}  "
+              f"grew_correctly={'YES' if grew else 'NO'}  "
+              f"included_below_threshold={'YES' if inc else 'NO'}  "
+              f"excluded_above_threshold={'YES' if exc else 'NO'}")
+        print(f"  long-process cross-check: age(1)={measured:.0f}s vs independently "
+              f"computed {indep:.0f}s  agrees={'YES' if agrees else 'NO'}")
+        if not (positive and grew and inc and exc and agrees):
+            print("  -> the age comparison is NOT controlled on this run; a zero below "
+                  "could be an age() defect rather than an absence of work")
+        ok = positive and grew and inc and exc and agrees
+    try:
+        proc.wait(timeout=3)
+    except Exception:
+        proc.kill()
+    for q in hits:
+        try:
+            os.kill(q, 9)
+        except OSError:
+            pass
+    return ok
+
+
 def self_test(internal_re, session_dirs):
     ok = True
-    cases = (("cgroup handle (v1 reparenting defect)", ["setsid", "sleep", "120"]),
-             ("agent-internal FILTER (v2 `sh -c` defect)", ["setsid", "sh", "-c", "sleep 120"]))
-    for label, argv in cases:
+    # Decoy 1 MUST actually reparent to pid 1, or it does not exercise the defect its
+    # label names. Measured on this box: `Popen(["setsid","sleep",N])` leaves the decoy
+    # with its parent still alive (ppid = the spawning process), so it is reachable by a
+    # parentage walk and tests only that a cgroup lookup finds a process in the cgroup.
+    # `sh -c "setsid --fork sleep N"` reaches ppid 1, because both the sh and setsid's
+    # own parent exit. The assertion below checks ppid == 1 and FAILS the self-test if
+    # the shape stops reparenting on some future kernel or shell.
+    cases = (("cgroup handle (v1 reparenting defect)",
+              ["sh", "-c", "setsid --fork sleep 120"], True),
+             ("agent-internal FILTER (v2 `sh -c` defect)",
+              ["setsid", "sh", "-c", "sleep 120"], False))
+    for label, argv, must_reparent in cases:
         p = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(2)
         # the decoy may be `setsid`'s child, so find it by cgroup+cmdline. NEVER by
@@ -263,8 +423,18 @@ def self_test(internal_re, session_dirs):
         live, _ = classify(1, internal_re, session_dirs)
         seen = {q for _, (_, bg) in live.items() for q, _, _ in bg}
         got = bool(hits) and any(q in seen for q in hits)
+        extra = ""
+        if must_reparent:
+            # the decoy must have left the process tree, or this case tests nothing
+            ppids = [ppid_of(q) for q in hits]
+            reparented = bool(ppids) and all(x == 1 for x in ppids)
+            extra = f" ppid={ppids} reparented={'YES' if reparented else 'NO'}"
+            if not reparented:
+                extra += "  <-- DECOY DID NOT REPARENT: this case does not exercise the"
+                extra += " defect it names"
+            got = got and reparented
         print(f"SELF-TEST [{label}]: decoy pids={hits or '?'} "
-              f"detected={'YES' if got else 'NO'}")
+              f"detected={'YES' if got else 'NO'}{extra}")
         ok = ok and got
         p.kill()
         for q in hits:
@@ -275,13 +445,58 @@ def self_test(internal_re, session_dirs):
     return ok
 
 
+def demonstrate_parentage_floor(internal_re):
+    """Show the degraded method MISSING a reparented decoy, live.
+
+    The cgroup self-test does not cover this mode: it validates the cgroup handle, and
+    in degraded mode the cgroup handle is not what is being used. So rather than let a
+    PASS from the wrong control stand in for one, this plants the same `setsid sleep`
+    decoy and shows the parentage walk failing to find it.
+
+    A MISS here is the EXPECTED result and is reported as a demonstration, not a
+    failure -- it is the reason the degraded count is labelled a floor. A HIT would be
+    the surprise, and is reported as one, because it would mean this box reparents
+    differently than assumed and the floor caveat may be too pessimistic here.
+    """
+    # same reparenting shape as self-test decoy 1 -- a decoy whose parent is still
+    # alive would be found by the parentage walk and would demonstrate nothing
+    p = subprocess.Popen(["sh", "-c", "setsid --fork sleep 121"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(2)
+    hits = [q for q in (int(d) for d in os.listdir("/proc") if d.isdigit())
+            if "sleep 121" in cmdline(q) and ppid_of(q) == 1]
+    found = classify_by_parentage(1, internal_re)
+    seen = {q for _, (_, bg) in found.items() for q, _, _ in bg}
+    detected = bool(hits) and any(q in seen for q in hits)
+    print(f"FLOOR DEMONSTRATION: planted a detached `setsid sleep` decoy "
+          f"(pids={hits or '?'}, ppid=1 confirmed); parentage walk "
+          f"detected={'YES' if detected else 'NO'}")
+    if detected:
+        print("  UNEXPECTED: this box did not reparent the decoy out of the tree. The "
+              "floor caveat may be weaker here than stated -- do not generalise it.")
+    else:
+        print("  As expected, and this is the point: the decoy was reparented out of "
+              "the tree, so the degraded count below CANNOT include work of this shape.")
+    try:
+        p.wait(timeout=3)
+    except Exception:
+        p.kill()
+    for q in hits:
+        try:
+            os.kill(q, 9)
+        except OSError:
+            pass
+    return detected
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Which live agent sessions own background work a turn boundary "
                     "would kill? (cgroup-based, self-testing)",
         epilog=f"Env: MIN_AGE_S (900), SELF_TEST (1; set 0 to skip -- then the count is "
                f"uncontrolled), CGROUP_SESSION_DIRS (default {DEFAULT_SESSION_DIRS!r}), "
-               f"EXTRA_INTERNAL_RE (added to the agent-internal pattern). "
+               f"EXTRA_INTERNAL_RE (added to the agent-internal pattern), "
+               f"FORCE_PARENTAGE=1 (exercise the no-cgroup fallback). "
                f"Exit 3 = self-test failed, counts unmeasured. Run --help-blind.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--anonymise", action="store_true",
@@ -311,11 +526,17 @@ def main():
                                               DEFAULT_SESSION_DIRS).split(":") if d]
     internal_re = build_internal_re()
 
-    if not os.path.isdir("/sys/fs/cgroup"):
-        print("REFUSING: /sys/fs/cgroup is not present, so cgroup-based discovery "
-              "cannot run at all. A zero here would mean 'no cgroups', not 'no "
-              "background work'.", file=sys.stderr)
-        return 2
+    # No cgroup v2 is not a refusal any more: for an ordinary local setup there are no
+    # per-session cgroups at all, and refusing would make this instrument useless to
+    # exactly the reader most likely to run it. It degrades loudly instead -- see
+    # classify_by_parentage() and exit code 4.
+    have_cgroups = os.path.isdir("/sys/fs/cgroup")
+    # FORCE_PARENTAGE exists so the degraded path can be EXERCISED on a box that does
+    # have cgroups. Without it the fallback is unreachable here and therefore untested,
+    # and an untested fallback is the one that breaks for the local user it was added
+    # for. scripts/test_instruments.sh uses this to assert exit 4 and the warning text.
+    if os.environ.get("FORCE_PARENTAGE") == "1":
+        have_cgroups = False
 
     # THREE states, never two. Collapsing "skipped" into "passed" is how a control that
     # never ran ends up printing that it fired -- the decorative-gate failure this
@@ -323,16 +544,43 @@ def main():
     if not do_self_test:
         state = "skipped"
         print("SELF-TEST SKIPPED by SELF_TEST=0 -- the counts below are uncontrolled.\n")
-    elif self_test(internal_re, session_dirs):
+    elif self_test(internal_re, session_dirs) and \
+            self_test_age(internal_re, session_dirs):
         state = "passed"
         print()
     else:
         state = "failed"
         print("SELF-TEST FAILED -- the counts below are UNMEASURED.\n")
 
-    live, orphan = classify(min_age, internal_re, session_dirs)
-    print(f"criterion: a process in a LIVE session's own cgroup, not agent-internal, "
-          f"older than {min_age}s\n")
+    live, orphan = (classify(min_age, internal_re, session_dirs) if have_cgroups
+                    else ({}, {}))
+    degraded = False
+    if not live:
+        # No session cgroups found -- either no cgroup v2 at all, or a runtime that does
+        # not put each session in its own cgroup, which is EVERY ordinary local setup.
+        # Degrade loudly rather than return a zero that looks like a finding.
+        degraded = True
+        live = classify_by_parentage(min_age, internal_re)
+        orphan = {}
+        print("=" * 78)
+        why = ("forced via FORCE_PARENTAGE=1" if os.environ.get("FORCE_PARENTAGE") == "1"
+               else ("no cgroup v2 on this box" if not os.path.isdir("/sys/fs/cgroup")
+                     else "cgroups exist but no per-session cgroup was found"))
+        print(f"DEGRADED MODE: {why}.")
+        print("Falling back to PROCESS PARENTAGE, which is this instrument's own v1")
+        print("method, and v1 UNDER-COUNTED: a process backgrounded with `&` is")
+        print("reparented to pid 1 and leaves the tree being walked. A dev server")
+        print("started with `npm run dev &` is precisely what this instrument looks for")
+        print("and precisely what this mode cannot see.")
+        print("So: a zero below is a FLOOR, not a count. Exit code will be 4, not 0.")
+        print("=" * 78)
+        print()
+        if do_self_test:
+            demonstrate_parentage_floor(internal_re)
+            print()
+    print(f"criterion: a process in a LIVE session's own "
+          f"{'cgroup' if not degraded else 'PROCESS TREE (degraded)'}, "
+          f"not agent-internal, older than {min_age}s\n")
 
     owning = {cg: v for cg, v in live.items() if v[1]}
     for cg, (n, bg) in owning.items():
@@ -354,15 +602,29 @@ def main():
              if shared else ""))
     print(f"LIVE sessions owning background work older than {min_age}s: {len(owning)}")
     print(f"ORPHAN cgroups (dead session, process left behind): {len(orphan)}")
+    if degraded:
+        print("MODE: degraded (process parentage). The count above is a FLOOR.")
+        print("The cgroup SELF-TEST above validated the cgroup handle, which is NOT the "
+              "method used in this mode -- see the FLOOR DEMONSTRATION. Do not read a "
+              "zero here as 'no background work'; read it as 'none that parentage can "
+              "see'." if do_self_test else
+              "No control covered this mode at all (SELF_TEST=0).")
+        return 4
     print({
         "passed": "SELF-TEST PASSED -- a zero above is 'none found', by an instrument "
-                  "just shown to fire on both known defect classes.",
+                  "just shown to fire on both known defect classes AND to measure age "
+                  "monotonically and threshold it in both directions.",
         "failed": "SELF-TEST FAILED -- do NOT believe the counts above.",
         "skipped": "SELF-TEST NOT RUN -- the counts above are uncontrolled. A zero here "
                    "is indistinguishable from the two wrong answers v1 and v2 gave.",
     }[state])
-    # a failed control must not exit 0; a SKIPPED one is the caller's choice, so it does
-    return {"passed": 0, "failed": 3, "skipped": 0}[state]
+    # a failed control must not exit 0; a SKIPPED one is the caller's choice, so it does.
+    # 4 == degraded: it measured something, but by the method its own history shows to
+    # under-count, so it must not share an exit code with the cgroup result.
+    rc = {"passed": 0, "failed": 3, "skipped": 0}[state]
+    if rc == 0 and degraded:
+        return 4
+    return rc
 
 
 if __name__ == "__main__":

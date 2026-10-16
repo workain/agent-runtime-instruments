@@ -43,18 +43,31 @@ import sys
 
 CLK = os.sysconf("SC_CLK_TCK")
 
-# Entrypoint shapes, most specific first. Each is (regex, label).
-# Override wholesale with EXTRA_PATTERNS='<regex>=<label>;<regex>=<label>'.
-DEFAULT_PATTERNS = [
-    (r"claude-agent-acp", "ACP host (agent-client-protocol entrypoint)"),
-    (r"claude-agent-sdk.*/claude(\s|$)", "Claude Code CLI (SDK-spawned)"),
-    (r"(^|/)claude(\.exe)?(\s|$)|--remote-control", "Claude Code CLI"),
-    (r"(^|/)codex(\s|$)", "Codex CLI"),
-]
+# the one shared module in this repo: the engine adapter table (instruments/engines.py)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import engines
+except ImportError:                                  # pragma: no cover
+    engines = None
+
+
+def default_patterns():
+    """One (regex, label) per engine adapter, most specific first.
+
+    Taken from instruments/engines.py so that adding an engine is one edit there rather
+    than a regex change here. Falls back to the two engines this repo has measured if
+    that module is missing, rather than matching nothing.
+    """
+    if engines:
+        return [(e["entrypoint"],
+                 f"{e['name']}" + ("" if e["verified"] else " [UNTESTED adapter]"))
+                for e in engines.ENGINES]
+    return [(r"claude-agent-acp", "claude-code-acp"),
+            (r"(^|/)claude(\.exe)?(\s|$)", "claude-code")]
 
 
 def build_patterns():
-    pats = list(DEFAULT_PATTERNS)
+    pats = list(default_patterns())
     extra = os.environ.get("EXTRA_PATTERNS", "").strip()
     if extra:
         for chunk in extra.split(";"):
@@ -128,6 +141,11 @@ def main():
         return 0
 
     patterns = build_patterns()
+    if engines:
+        # printed every run: an UNTESTED adapter matching nothing looks exactly like an
+        # engine that was not running, so the reader has to be told which is which
+        print(engines.provenance_banner())
+        print()
     procs = collect()
 
     kids = collections.defaultdict(list)

@@ -2,10 +2,10 @@ CLI: 2.1.197 (Claude Code)
 tool: mcp__echo__ping
 config: bundled echo_mcp_server.py (protocol floor, does no work)
 (the documented pre-turn wait for pending MCP servers requires CLI v2.1.221+; on an older CLI the connect cost lands on the first tool call)
-rep1: init=2.15s  mcp_tool_use=6.79s  mcp_tool_result=6.83s
+rep1: init=1.44s  mcp_tool_use=5.21s  mcp_tool_result=5.22s
        init mcp_servers: [{"name": "<other-server-1>", "status": "pending"}, {"name": "<other-server-2>", "status": "pending"}, {"name": "echo", "status": "connected"}]
-rep2: init=3.17s  mcp_tool_use=7.62s  mcp_tool_result=7.68s
-       init mcp_servers: [{"name": "<other-server-1>", "status": "pending"}, {"name": "<other-server-2>", "status": "pending"}, {"name": "echo", "status": "connected"}, {"name": "<other-server-4>", "status": "pending"}]
+rep2: init=1.29s  mcp_tool_use=6.96s  mcp_tool_result=6.97s
+       init mcp_servers: [{"name": "<other-server-1>", "status": "pending"}, {"name": "<other-server-2>", "status": "pending"}, {"name": "echo", "status": "connected"}]
 
-time-to-usable-MCP-tool: n=2/2  min=6.83s  max=7.68s  spread=0.85s
+time-to-usable-MCP-tool: n=2/2  min=5.22s  max=6.97s  spread=1.75s
 Report the spread, not just a midpoint: n is small and the box's load is a variable this instrument does not control.

@@ -1,5 +1,29 @@
 # The method
 
+## The defects that produced these rules
+
+Each was found **by re-running an instrument**, not by reviewing it, and each had already produced
+a confident, publishable-looking number:
+
+| Instrument | What it reported | What was true |
+|---|---|---|
+| `census_background_work.py` v1 | "0 of 16 sessions own background work" | Its filter discarded `npm exec vite`, `sh -c npm run dev` — **the realistic shapes** — before the age test. Only an unwrapped `vite --host` could ever have matched. |
+| `census_background_work.py` v2 | "2 of 15" | Both hits were dead sessions' orphans, and one whole class of session lived in a cgroup subtree it never looked at. Wrong in **numerator and denominator**. |
+| `bench_mcp_connect.py` | `mcp_tool_result=3.87s` | The server under test reported `"status": "failed"` **in the same output**. The model had called `ToolSearch` with `query: "select:mcp__echo__ping"`, so the target tool's name appeared inside *another tool's arguments*, and a substring match timed a failed tool **search**. |
+| `census_background_work.py` v3 | "15 live session cgroups" | Discovery used the broad "is this agent-internal?" pattern, which matches a bare `/bin/bash`, so every cgroup holding a shell counted — on a CI host, the **build runners** were reported as live agent sessions. |
+
+Three more came out of review rather than re-running, and they are the same shape:
+
+- A **`.pyc` committed into the repo** embedded an absolute build path, and the scrubber certified
+  the tree CLEAN — `grep -I` skips binary files and `git log -G` does not search binary diffs. All
+  twelve decoys were text, so the file-type gate was never exercised.
+- The scrubber's "absolute home path" pattern **required a trailing slash**, and its decoy always
+  supplied one. A bare `/home/<user>` was invisible for as long as the suite was green.
+- The census self-test called its classifier with `min_age=1` against a two-second decoy while the
+  published criterion was 900 s, so **`age()` was only ever exercised in a 1-2 s band**. Clamping
+  `age()` at 10 s produced a confident false zero that still printed SELF-TEST PASSED. The fix was
+  a leg that compares `age()` against an **independent re-computation** on a long-lived process.
+
 Four rules. Each exists because an instrument in this repository produced a confident wrong
 number first. None is specific to agents — they apply to any measurement you intend to publish.
 

@@ -1,0 +1,52 @@
+# check_figures.sh observed RED, before any figure was corrected.
+# Requested by the independent reviewer: a gate whose first-ever run is green
+# tells you nothing. This is the run against the stale prose.
+# Samples were regenerated (box state moved); prose still carries the old numbers.
+# date: 2026-10-16T11:38:41Z   HEAD: dee0a15
+
+FAIL: figure NOT in its artefact
+      figure:   session trees: 19
+      artefact: samples/measure_session_footprint.out
+FAIL: figure NOT in its artefact
+      figure:   summed RSS: 7505 MB
+      artefact: samples/measure_session_footprint.out
+FAIL: figure NOT in its artefact
+      figure:   summed PSS: 6302 MB
+      artefact: samples/measure_session_footprint.out
+FAIL: figure NOT in its artefact
+      figure:   PSS/RSS = 0.84
+      artefact: samples/measure_session_footprint.out
+FAIL: figure NOT in its artefact
+      figure:   p50=331 MB
+      artefact: samples/measure_session_footprint.out
+FAIL: figure NOT in its artefact
+      figure:   p50=254 MB
+      artefact: samples/measure_session_footprint.out
+FAIL: figure NOT in its artefact
+      figure:   sessions with any activity in 7d: 35
+      artefact: samples/measure_active_concurrency.out
+FAIL: figure NOT in its artefact
+      figure:   mean=0.14
+      artefact: samples/measure_active_concurrency.out
+FAIL: figure NOT in its artefact
+      figure:   busy_minutes=931/10080
+      artefact: samples/measure_active_concurrency.out
+FAIL: figure NOT in its artefact
+      figure:   ready p50=4.35s
+      artefact: samples/bench_cold_start.out
+FAIL: figure NOT in its artefact
+      figure:   ready p50=0.98s
+      artefact: samples/bench_cold_start.out
+FAIL: figure NOT in its artefact
+      figure:   ready p50=3.31s
+      artefact: samples/bench_cold_start.out
+FAIL: figure NOT in its artefact
+      figure:   min=6.83s  max=7.68s  spread=0.85s
+      artefact: samples/bench_mcp_connect.echo.out
+FAIL: figure NOT in its artefact
+      figure:   LIVE session cgroups: 12
+      artefact: samples/census_background_work.out
+
+FIGURE CHECK FAILED.
+
+exit=1

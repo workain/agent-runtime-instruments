@@ -18,14 +18,30 @@ ARMS, and why each exists:
                   the TTL. Comparing two FRESH invocations instead would measure the
                   TTL, not residency.
   3 SUFFIX PERTURBATION -- KEPT AND PUBLISHED AS A FAILED CONTROL. See below.
-  4 PREFIX PERTURBATION -- switch model. This is the control that actually works.
-  5 DEAD-WRITER TEST -- the arm that actually tests the headline claim, with its own
-                  control. Process A writes a cache under a unique marker and EXITS.
+  4 PREFIX PERTURBATION -- switch model. INTENDED as the control that works; in practice
+                  it does not reliably fire, and its premise is unverified. See below.
+  5 DEAD-WRITER TEST -- the arm that tests the pooling question, with its own control.
+                  Process A writes a cache under a unique marker and EXITS.
                   Process B then resumes with the SAME marker; process C resumes with a
                   DIFFERENT one. If B reads substantially more cache than C, B read what
                   the now-dead A wrote. Arms 1-2 cannot show this on their own: on a
                   busy box their prefixes may already be warm from earlier runs, in
                   which case both "hit" without either having read the other's write.
+
+                  TWO THINGS ARM 5 IS NOT, both from an independent review:
+                  (a) It is FRESH -> FRESH. A has exited, so this compares two fresh
+                      processes agreeing with each other. It therefore does NOT address
+                      the objection that a RESIDENT process might render its prefix
+                      differently from a fresh one -- that objection needs a resident
+                      arm. What fresh->fresh does answer is exactly the pooling
+                      question, where every worker is fresh.
+                  (b) `B_read == C_read + A_creation` is ONE empirical fact, not three
+                      independent ones. The design forces `C_read == A_read` (both read
+                      precisely the pre-marker prefix), so the identity reduces to
+                      `B_read == A_read + A_creation`, i.e. "B read the whole of A's
+                      prompt". The single degree of freedom is whether B read ALL of it
+                      or only some. Good, but do not present it as three numbers
+                      coinciding.
 
 WHY ARM 3 IS STILL HERE. It was meant to prove the instrument CAN show a cache miss --
 without such a control, "both arms hit" cannot be distinguished from "this field is
@@ -53,9 +69,20 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
     could have missed". That is exactly what happened on the first use of this
     instrument: both of one run's arms were pre-warmed by an earlier run, so the run
     could not have detected the counter-mechanism it was cited as refuting. The
-    citation was withdrawn. ARM 4 IS THE GUARD: if arm 4 does not show a drop, the
-    instrument did not discriminate anything on this run and the run proves nothing,
-    whatever arms 1 and 2 did. The script says so in its own reading.
+    citation was withdrawn.
+
+    ARM 4 GUARDS ARMS 1-2 ONLY. If it does not show a drop, arms 1 and 2 proved nothing
+    that run -- but ARM 5 IS UNAFFECTED, because arm 5 carries its own control
+    (process C). An earlier version of this docstring said a failed arm 4 meant "the run
+    proves nothing", full stop, which read literally voided this instrument's own
+    headline result. An independent reviewer caught the contradiction.
+
+    ARM 4'S PREMISE IS ALSO UNVERIFIED. It assumes caches are keyed per model, so that a
+    model switch forces a prefix miss. The documentation it was cited to does not say
+    that (docs/citations.md), and observed behaviour is mixed: across the five runs seen
+    so far its hit-fraction criterion HELD in two and FAILED in three. On a shared box
+    other processes keep the alternate model's cache warm, so the perturbation is not
+    reliable. Treat arm 4 as a control we do not trust, not as the one that works.
 
     Two further limits, stated because one run would otherwise read as proof:
       - n=1 per arm. Arms 1 and 2 are NOT prefix-identical -- the resident arm runs both

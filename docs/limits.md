@@ -23,7 +23,11 @@ Stated so the gaps are visible rather than implied absent.
   switching model, assuming caches are keyed per model. The cited documentation does not state
   that (see `docs/citations.md` #2), and the arm held in only one of the three runs where the
   current criterion was applied — on a shared box other processes keep the alternate model's
-  cache warm. It is published as a control we no longer trust.
+  cache warm. It is published as a control we no longer trust. Both outcomes are in `samples/`:
+  `PRIMARY (hit-fraction) -> control HOLDS` in `bench_cache_residency.out`, and
+  `PRIMARY (hit-fraction) -> control FAILED` in `bench_cache_residency.run3-redacted.out`.
+  An independent reviewer's own run also HELD, which is why the tally is "two of five observed"
+  rather than "uniformly failed".
 
 ## About the instruments themselves
 
@@ -72,7 +76,12 @@ Stated so the gaps are visible rather than implied absent.
 - A rail is discovered only while it holds a live agent entrypoint. This is correct, but it means
   a rail whose sessions have all exited is simply absent rather than reported empty.
 - One instant, not a distribution. A dev server started a minute ago is below `MIN_AGE_S`.
-- Requires cgroup v2 at `/sys/fs/cgroup`; refuses (exit 2) rather than reporting zero if absent.
+- **Without per-session cgroups it degrades rather than refusing**, which is the case on any
+  ordinary local machine. In that mode it walks process parentage — this instrument's own v1
+  method, which under-counted — exits **4** rather than 0, and prints a `FLOOR DEMONSTRATION`:
+  it plants a decoy that genuinely reparents to pid 1 and shows the parentage walk failing to find
+  it. So the degraded zero is labelled a floor by live evidence, not by a caveat.
+  `samples/census_background_work.degraded.out`.
 - Three versions gave three answers (0 of 16, 2 of 15, 0 of 15). The third is the first with a
   control that can fail. That is the reason to believe it — not that it agrees with the first.
 

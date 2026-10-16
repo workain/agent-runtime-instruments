@@ -1,0 +1,24 @@
+SELF-TEST [cgroup handle (v1 reparenting defect)]: decoy pids=[2523904] detected=YES ppid=[1] reparented=YES
+SELF-TEST [agent-internal FILTER (v2 `sh -c` defect)]: decoy pids=[2523971, 2523972] detected=YES
+
+==============================================================================
+DEGRADED MODE: forced via FORCE_PARENTAGE=1.
+Falling back to PROCESS PARENTAGE, which is this instrument's own v1
+method, and v1 UNDER-COUNTED: a process backgrounded with `&` is
+reparented to pid 1 and leaves the tree being walked. A dev server
+started with `npm run dev &` is precisely what this instrument looks for
+and precisely what this mode cannot see.
+So: a zero below is a FLOOR, not a count. Exit code will be 4, not 0.
+==============================================================================
+
+FLOOR DEMONSTRATION: planted a detached `setsid sleep` decoy (pids=[2524032], ppid=1 confirmed); parentage walk detected=NO
+  As expected, and this is the point: the decoy was reparented out of the tree, so the degraded count below CANNOT include work of this shape.
+
+criterion: a process in a LIVE session's own PROCESS TREE (degraded), not agent-internal, older than 900s
+
+
+LIVE session cgroups: 17
+LIVE sessions owning background work older than 900s: 0
+ORPHAN cgroups (dead session, process left behind): 0
+MODE: degraded (process parentage). The count above is a FLOOR.
+The cgroup SELF-TEST above validated the cgroup handle, which is NOT the method used in this mode -- see the FLOOR DEMONSTRATION. Do not read a zero here as 'no background work'; read it as 'none that parentage can see'.

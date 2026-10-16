@@ -60,28 +60,41 @@ B_read(26264) == C_read(14848) + A_creation(11416)
 ```
 
 **Token-exact.** B read precisely the bytes A wrote, on top of the shared prefix. Reproduced on
-an independent run: `B_read(26265) == C_read(14848) + A_creation(11417)`. The relation held in
-every one of the three runs in which arm 5 ran; all four runs are in `samples/`.
+an independent run — `B_read(26265) == C_read(14848) + A_creation(11417)` — and again by an
+independent reviewer on a differently-loaded box. All four of our runs are in `samples/`.
+
+**Three qualifications, all from review, two of which narrow the claim.**
+
+*It is one fact, not three.* The design forces `C_read == A_read`: A and C both read exactly the
+pre-marker prefix. So the identity reduces to `B_read == A_read + A_creation` — "B read the whole
+of A's prompt". The one empirical degree of freedom is whether B read *all* of it or only some.
+Good result; not three numbers independently coinciding, and calling it "token-exact, not
+directional" oversold it.
+
+*It is fresh→fresh, so it does not settle the objection that prompted it.* A has exited, so this
+compares two **fresh** processes agreeing with each other. The counter-mechanism was that a
+*resident* process might render its prefix identically while a fresh `--resume` renders it
+differently — testing that needs a resident arm. What fresh→fresh answers is precisely the
+**pooling** question, where every worker is fresh. That is the decision we care about, but it is a
+narrower claim than "the objection is answered".
 
 So a cache entry outlives the process that wrote it, and a different process reads it exactly.
 Residency buys nothing here.
 
-**The honest limits, which are not small.** n=1 per arm, two runs. And the *other* control in the
-same instrument failed on both runs: arm 4 switches model, on the assumption that caches are
-keyed per model and a switch therefore forces a miss. It forced a partial miss once
-(`read 16996 / creation 14005` against `26220 / 2875`) and then cleanly *hit* twice. On a busy
-shared box other processes keep the alternate model's cache warm, so a model switch is not a
-reliable perturbation — and, checking the documentation again, **the cited page never states
-that caches are model-scoped at all.** We had been citing an assumption.
+*The instrument's other control is unreliable.* Arm 4 switches model, assuming caches are keyed
+per model so that a switch forces a miss. It held in **two of five** observed runs. And
+re-reading the documentation showed **the cited page never states caches are model-scoped at
+all** — arm 4's entire premise. We had been citing an assumption.
 
-Arm 5's result stands because it carries its own control. Arm 4's does not. We publish both.
+n=1 per arm per run. Arm 5's result stands because it carries its own control, C; arm 4's does
+not. We publish both, and the run that exited 3.
 
 ---
 
 ## 2. Use PSS, not RSS — or your capacity number is wrong by construction
 
-Measured here: `session trees: 19`, with `summed RSS: 7505 MB` against `summed PSS: 6302 MB`.
-Per session, RSS `p50=331 MB` and PSS `p50=254 MB`.
+Measured here: `session trees: 17`, with `summed RSS: 7513 MB` against `summed PSS: 5356 MB`.
+Per session, RSS `p50=392 MB` and PSS `p50=292 MB`.
 
 The gap is not noise and not rounding. The CLI is a single compiled binary of about 323 MB, so
 its file-backed pages are *shared* between every concurrent session. Summed RSS counts those
@@ -108,8 +121,8 @@ makes a session look free.
 
 ## 3. "Ready" is not "can use its tools"
 
-Boot to the readiness event, measured: `ready p50=4.35s` with the full harness, `ready p50=0.98s`
-with `--bare`, and `ready p50=3.31s` for a full trivial turn through to `result`.
+Boot to the readiness event, measured: `ready p50=1.88s` with the full harness, `ready p50=0.65s`
+with `--bare`, and `ready p50=2.49s` for a full trivial turn through to `result`.
 
 Both figures are floors, and for a reason that is easy to miss: `system/init` is the **first**
 event in the stream, and it lists every MCP server with `"status": "pending"`. The clock stops
@@ -117,20 +130,33 @@ before any tool is callable. If your workers need tools — and ours do — the 
 the number you care about.
 
 Time to a *usable* MCP tool, against a server bundled in this repo that does no work at all, so
-this is the protocol floor rather than any real server's cost: `min=6.83s  max=7.68s  spread=0.85s`
+this is the protocol floor rather than any real server's cost: `min=5.22s  max=6.97s  spread=1.75s`
 (n=2). Several seconds past readiness, for a tool that returns a constant.
+
+**And this is where we nearly mis-attributed our own number.** It is tempting to read that gap as
+the cost of connecting MCP. It is not. An experiment that isolates connect properly — call the
+same tool twice in one session, so the second call cannot pay connect, and subtract — puts MCP
+connect at **25-58 ms**. (That experiment is **not** in this repository and there is no artefact
+for it here, so treat the figure as reported rather than reproduced; the method is stated above so
+you can run it yourself. What matters for this section is the *direction*, which is not in doubt:
+connect is milliseconds, the gap is seconds, so the gap is not connect.) The seconds between readiness and a usable tool are dominated by **model
+inference**, which in that same experiment ranged from 1.6 s to 26 s between steps. "Time to a
+usable MCP tool" is an honest label; "therefore MCP costs seconds" is not, and the label invites
+it.
 
 Here the documentation also corrected us. The headless docs say:
 
 > "Claude Code waits for still-pending servers before running the first turn, up to the
 > `MCP_TIMEOUT` startup timeout, 30 seconds by default."
 
-We had cited that as the ceiling on what the boot figure omits. But the same page adds:
+We had cited that as the ceiling on what the boot figure omits — and dropped the clause that
+opens the sentence, which is **"When you pass `--mcp-config` with `-p`,"**. Our boot runs did not
+pass `--mcp-config`. The same page then adds:
 
 > "The wait requires Claude Code v2.1.221 or later."
 
-**The box we measured runs 2.1.197.** There was no such wait during any of our measurements, so
-the 30-second ceiling never applied to them — the connect cost lands on the first tool call
+**The box we measured runs 2.1.197.** So there are *two* independent reasons the wait never
+happened during our measurements, and the 30-second ceiling never applied to them — the connect cost lands on the first tool call
 instead, which is exactly what arm 5 of our boot instrument times. We had quoted a real sentence
 from the right page and attached it to a measurement it did not govern. Reading the clause after
 the quote is not optional.
@@ -180,18 +206,32 @@ command's own command line, so it finds itself. We hit the bash equivalent of th
 this article — a `for` loop over `/proc` matched its own subshell and reported two sessions that
 did not exist.
 
+**The sharpest instance was in the tool meant to catch all the others.** This repository has a
+scrubber that refuses site-specific material before anything is published, with a suite of decoys
+proving each of its patterns fires. It reported the tree CLEAN while a compiled `.pyc` sat in it
+embedding an absolute build path. Two reasons, both structural rather than a rotted regex: `grep
+-I` *skips binary files*, and `git log -G` does not search binary diffs. Every decoy in the suite
+was text written to a `.txt`, so the file-type gate was never exercised at all — twelve green
+checks, and the one dimension that mattered untested.
+
+The same suite was hiding a second hole of its own making: the "absolute home path" pattern
+required a **trailing slash**, and its decoy always supplied one. A bare `/home/<user>` was
+invisible for as long as the suite was green. A decoy that is more convenient than the real
+payload is not a control; it is a mirror.
+
 ---
 
 ## 5. Dispersion is the finding, not the noise around it
 
 Twice in this work the unstable spread *was* the defect, while the median looked fine.
 
-The same boot arm measured 1.15 s on a quiet run and `ready p50=4.35s` (`min=3.68s  max=7.22s`)
-on a loaded one — the published figure is the loaded one, and the quieter reading is not in
-`samples/`, so treat it as an uncommitted aside rather than a result. Our
-time-to-usable-MCP-tool readings came out `min=6.83s  max=7.68s  spread=0.85s` on n=2, where the
-difference between the two reps was that a third MCP server happened to appear in one of them. A
-p50 drawn from either pair would be a tidy number standing for nothing.
+Across this work the same full-harness boot arm has read p50 1.15 s, 2.38 s, 4.35 s and
+`ready p50=1.88s` on one box within a few hours, purely as its load changed. Within a single
+three-rep run, the full-turn arm spanned `min=1.96s  max=3.65s` — an 87% swing with nothing
+changed but the moment it ran. Our time-to-usable-MCP-tool readings came out
+`min=5.22s  max=6.97s  spread=1.75s` on n=2, where the difference between the two reps was that a
+third MCP server happened to appear in one of them. A p50 drawn from any of those pairs would be a
+tidy number standing for nothing.
 
 So every instrument here prints **every repetition**, not just a midpoint, and the one with the
 smallest n prints the spread explicitly and tells you to report it. Where a figure moved between

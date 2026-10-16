@@ -1,36 +1,61 @@
 # agent-runtime-instruments
 
-**Six read-only instruments that measure what a coding-agent session actually costs — and a
-method for not fooling yourself with them.**
+**Measure what a coding-agent session actually costs — and don't let the measurement lie to you.**
 
-There are published numbers for per-session agent memory. There are very few published
-*instruments*, and almost no published *methods*. This repository is the instruments, the raw
-output they produced, **and every control that failed** — because the failed controls are the
-only reason to believe the rest.
-
-Everything here is `python3`, standard library only, no dependencies, one file per instrument.
+Six read-only instruments, no dependencies, standard-library Python. Plus the thing that is
+actually rare: **every control that failed, published alongside the ones that worked.**
 
 ---
 
-## Why the failures are kept
+## Start with the question you have
 
-Four of the defects found while building these were found *by the instruments themselves*, and
-every one produced a confident, publishable-looking number first:
+### "What is my agent costing me?" — one person, one machine
 
-| Instrument | What it reported | What was actually true |
-|---|---|---|
-| `census_background_work.py` v1 | "0 of 16 sessions own background work" | Its filter discarded `npm exec vite`, `sh -c npm run dev` — **the realistic shapes** — before the age test. Only an unwrapped `vite --host` could ever have matched. |
-| `census_background_work.py` v2 | "2 of 15" | Both hits were dead sessions' orphans; and one whole class of session lived in a different cgroup subtree it never looked at. Wrong in **numerator and denominator**. |
-| `bench_mcp_connect.py` | `mcp_tool_result=3.87s` | The server under test reported `"status": "failed"` **in the same output**. The model had called `ToolSearch` with `query: "select:mcp__echo__ping"`, so the target tool's name appeared inside *another* tool's arguments, and a substring match timed a failed tool *search*. |
-| `census_background_work.py` v3 | "15 live session cgroups" | Discovery used the broad "is this agent-internal?" pattern, which includes a bare `/bin/bash`, so every cgroup on the box containing a shell was counted — on a CI host that meant the **build runners** were reported as live agent sessions. |
+```bash
+./what-is-my-agent-costing-me
+```
 
-None of these was caught by being careful. Each was caught by one question, which every
-instrument here now answers in its own docstring and under `--help-blind`:
+About a minute. No setup, no database, no model requests spent. Answers:
+
+- RAM per session, **RSS *and* PSS** — read PSS if you want to know what one more session costs,
+  because the agent binary's pages are shared and RSS counts them once per session.
+- **How much of the last 7 days your agent was actually working**, versus sitting open holding a
+  process. Measured from your own transcripts. Almost nobody measures this about themselves, and
+  it is usually the surprising one.
+- How long a fresh agent process takes to be ready.
+- Whether an agent left something running that you have forgotten about.
+
+### "Can I pool this?" — building a system on agents
+
+```bash
+./can-i-pool-this          # SKIP_PAID=1 to run only the free parts
+```
+
+Spends ~8-10 cheap model requests. The four facts a pool design stands on:
+
+- The **concurrency distribution** that sizes the pool — active sessions against resident ones.
+- Per-session resident cost in **PSS**, which is what capacity arithmetic needs.
+- Whether a **prompt-cache entry survives the process that wrote it** — because if it does not,
+  turn-scoping has a per-turn token cost. It does. Measured token-exactly; see below.
+- What a turn pays to start, and **where those seconds actually go** (mostly inference, not tool
+  connect).
+
+---
+
+## The idea worth taking even if you never run these
+
+Every instrument here answers one question in its own docstring and under `--help-blind`:
 
 > **What would this print if it were blind?**
 
-If the answer is "the same thing it prints when the finding is genuinely zero", the instrument
-needs a control before any number it produces is worth reading.
+For three of the six, the answer is *"exactly what it prints when the finding is genuinely
+zero."* An instrument like that has no business being believed until something distinguishes the
+two cases. That question, plus publishing the controls that failed, is this repository's actual
+contribution — the measurements are examples of it.
+
+It is not a slogan. It found four real defects in these instruments, each of which had already
+produced a confident, plausible number. They are written up in **[`docs/method.md`](docs/method.md)**
+with the reproduction for each.
 
 ---
 
@@ -38,160 +63,135 @@ needs a control before any number it produces is worth reading.
 
 | File | Answers | Cost |
 |---|---|---|
-| `measure_session_footprint.py` | What does one live session cost in RAM, **RSS and PSS**? | free, `/proc` only |
-| `measure_active_concurrency.py` | How many sessions are *mid-turn* versus *resident*? | free, reads transcripts |
-| `bench_cold_start.py` | How long to boot, and to a first finished turn? | boot arms free; `turn` arm = 1 request |
-| `bench_mcp_connect.py` | How long to a **usable** MCP tool — the figure `init` hides? | 1 request per rep |
-| `census_background_work.py` | Which sessions own work a turn boundary would kill? | free, cgroup-based, **self-testing** |
-| `bench_cache_residency.py` | Does a prompt-cache hit need the writing process to still exist? | ~6 requests |
+| `measure_session_footprint.py` | RAM per live session, RSS and PSS | free, `/proc` |
+| `measure_active_concurrency.py` | mid-turn vs resident concurrency | free, reads transcripts |
+| `bench_cold_start.py` | boot to ready, and to a finished turn | boot free; `turn` = 1 request |
+| `bench_mcp_connect.py` | time to a **usable** MCP tool | 1 request per rep |
+| `census_background_work.py` | work a turn boundary would kill | free, **self-testing** |
+| `bench_cache_residency.py` | does a cache hit need the writer alive? | ~6 requests |
 
-Plus `instruments/echo_mcp_server.py`, a 60-line stdio MCP server with one tool, so
-`bench_mcp_connect.py` runs out of the box with no access to anyone's private MCP servers.
+`instruments/echo_mcp_server.py` is a 60-line stdio MCP server with one tool, so
+`bench_mcp_connect.py` runs out of the box without access to anyone's private servers.
+`instruments/engines.py` is the engine adapter table — see below.
 
-Every instrument takes `--help` and `--help-blind`. Several take `--anonymise`, which hashes
-session identifiers so output is safe to publish; the **token counts and timings are never
-altered**, only identifiers.
+All take `--help` and `--help-blind`; most take `--anonymise`, which hashes session identifiers
+so output is safe to publish and **never alters a token count or a timing**.
 
-```bash
-python3 instruments/measure_session_footprint.py --anonymise
-python3 instruments/measure_session_footprint.py --list-unmatched   # "is my zero real?"
-python3 instruments/census_background_work.py                        # exits 3 if blind
-ROOTS=~/.claude/projects DAYS=7 python3 instruments/measure_active_concurrency.py
-```
+Read-only, with one disclosed exception: `census_background_work.py`'s self-test spawns short-lived
+decoy processes of its own and kills them again.
 
-Read-only, with exactly one disclosed exception: `census_background_work.py`'s self-test spawns
-two short-lived decoy processes of its own and kills them again. Nothing here writes to, moves
-or deletes anything else — no database, no network calls, no configuration changes.
+### Which engines are actually supported
 
-`samples/` holds real output from each one, **including the runs that failed**:
-`bench_cache_residency.run1-redacted.out` (exit 3, a control that misread its own data),
-`census_background_work.selftest-FAILED.out` (exit 3), and
-`bench_mcp_connect.broken-server.out` (the counterfactual proving the fix discriminates).
+`instruments/engines.py` holds one adapter per engine, and **every instrument prints which
+adapters are measured and which are guesses, on every run**:
 
----
+- **Verified** (run, with output kept in `samples/`): Claude Code, its ACP host, Codex.
+- **Untested adapters** — patterns we believe from documentation, *not* measurements: goose,
+  aider, opencode, cursor-agent. Each says in the file why it may be wrong (opencode is
+  client/server, so its sessions are probably not separate processes at all).
 
-## What these actually measured
-
-Measured on one 16 GB Linux box running Claude Code 2.1.197 and Codex 0.147.0, 2026-10-16.
-**These are readings, not constants** — see `docs/limits.md`, and note that the box was under
-heavy load, which is itself visible in the spreads.
-
-- **19 resident session trees** (`session trees: 19`): `summed RSS: 7505 MB` against
-  `summed PSS: 6302 MB`, i.e. `PSS/RSS = 0.84`. Per session, RSS `p50=331 MB` and PSS
-  `p50=254 MB`, 6 processes each.
-- **Use PSS, not RSS, for capacity.** The CLI is a single ~323 MB compiled binary, so its
-  file-backed pages are shared across every concurrent session and summed RSS counts them once
-  per session. An independent third-party measurement reaches the same conclusion on different
-  hardware — quoted and verified in `docs/citations.md`.
-- **Readiness is not tool-ready.** Boot to the `system/init` event: `ready p50=4.35s` with the
-  full harness, `ready p50=0.98s` with `--bare`, and `ready p50=3.31s` for a full trivial turn
-  to `result`. But `init` is the *first* event in the stream and lists MCP servers as `pending`.
-  Time to a *usable* MCP tool, against a server that does no work at all:
-  `min=6.83s  max=7.68s  spread=0.85s` (n=2).
-- **A prompt-cache entry outlives the process that wrote it** — and this one is token-exact.
-  See below.
-- `LIVE sessions owning background work older than 900s: 0`, across `LIVE session cgroups: 12`,
-  by an instrument that fails loudly when it cannot see its own planted decoys. Two earlier
-  versions answered this confidently and both were wrong.
-
-### The result worth the repository
-
-`bench_cache_residency.py` arm 5. Process **A** writes a cache under a unique marker and
-**exits**. Process **B** then resumes with the *same* marker; process **C** resumes with a
-*different* one. B and C differ in nothing else.
-
-```
-A (writer; exits before B and C run):   read=14848  creation=11416
-B (new process, SAME marker):           read=26264  creation=2875
-C (new process, DIFFERENT marker):      read=14848  creation=14307
-
-B_read(26264) == C_read(14848) + A_creation(11416)        <- token-exact
-```
-
-B read **precisely** the bytes A wrote, on top of the prefix both share. Reproduced on an
-independent run: `B_read(26265) == C_read(14848) + A_creation(11417)`
-(`samples/bench_cache_residency.run3-redacted.out`), and the relation holds in a third run's
-data too (`'read': 26264, 'create': 2875` in
-`samples/bench_cache_residency.run2-redacted.out`, which predates the instrument printing the
-arithmetic itself).
-
-**A cache entry outlived the process that created it and was read, exactly, by a different
-one.** For anyone deciding between resident sessions and a turn-scoped worker pool, that
-removes the objection which looks most expensive on paper.
-
-**What this does not establish:** n=1 per arm per run. Arm 5 ran in three runs and the
-relation held in all three. But the *other* control in the same instrument — arm 4, a model
-switch — held in only **one** of the three runs where the current criterion was applied
-(`PRIMARY (hit-fraction) -> control HOLDS` in `samples/bench_cache_residency.out`, against
-`PRIMARY (hit-fraction) -> control FAILED` in
-`samples/bench_cache_residency.run3-redacted.out`). The reason is worth knowing: on a shared
-box other processes keep the alternate model's cache warm, so switching models does not
-reliably force a miss — and the documentation never actually says caches are model-scoped,
-which was arm 4's whole premise. Arm 5 does not depend on arm 4 (it carries its own control,
-C), which is why its result stands while arm 4's does not.
+For an untested engine, a zero means "this adapter found nothing", which is **not** evidence the
+engine was absent. If you run one and it works, flipping that flag and adding your output is the
+most useful contribution this repo can get. If it doesn't work, that's equally useful.
 
 ---
 
-## Install, and what runs where
+## What these measured here
 
-```bash
-git clone <this repo> && cd agent-runtime-instruments
-python3 instruments/measure_session_footprint.py --help
+One 16 GB Linux box, Claude Code 2.1.197, Codex 0.147.0, 2026-10-16, **under heavy load**.
+Readings, not constants — [`docs/limits.md`](docs/limits.md) says which moved and why.
+
+- `session trees: 17`, `summed RSS: 7513 MB` against `summed PSS: 5356 MB` — `PSS/RSS = 0.71`.
+  Per session, RSS `p50=392 MB`, PSS `p50=292 MB`.
+- `sessions with any activity in 7d: 42`, but `mean=0.15` sessions active per minute and
+  `busy_minutes=964/10080`. **The resident count and the working count are not the same number,
+  and the gap is the whole case for pooling.**
+- Boot: `ready p50=1.88s` full harness, `ready p50=0.65s` with `--bare`, `ready p50=2.49s` for a
+  full trivial turn. But `init` is the *first* stream event, with MCP servers still `pending`:
+  time to a *usable* MCP tool was `min=5.22s  max=6.97s  spread=1.75s` (n=2).
+- `LIVE sessions owning background work older than 900s: 0`, across `LIVE session cgroups: 17`,
+  from an instrument that exits non-zero when it cannot see its own planted decoys.
+
+### A prompt-cache entry outlives the process that wrote it
+
+Process **A** writes a cache under a unique marker and **exits**. **B** then resumes with the same
+marker, **C** with a different one; they differ in nothing else.
+
+```
+A (writer; exited):     read=14848  creation=11416
+B (SAME marker):        read=26264  creation=2875
+C (DIFFERENT marker):   read=14848  creation=14307
+
+B_read(26264) == C_read(14848) + A_creation(11416)
 ```
 
-Linux-only in practice: `measure_session_footprint.py` and `bench_cold_start.py` read `/proc`,
-and `census_background_work.py` needs cgroup v2 at `/sys/fs/cgroup`. The two benchmark
-instruments that spend model requests need the `claude` CLI on `PATH` and will **skip visibly**
-rather than crash or report zero if it is absent — see `samples/bench_cold_start.no-binaries.out`.
+Reproduced on an independent run: `B_read(26265) == C_read(14848) + A_creation(11417)`, and again
+by an independent reviewer on a differently-loaded box. **B read the whole of A's prompt after A
+was gone.** For a pooling decision, that removes the objection that looks most expensive on paper.
 
-Before publishing any output, run the scrubber:
+**Three things this is not**, all raised in review:
 
-```bash
-bash scripts/scrub_check.sh --all      # working tree + every blob in git history
-bash scripts/test_scrub_check.sh       # 12 patterns, one decoy each: proves it can FAIL
-```
+1. **It is one fact, not three.** The design forces `C_read == A_read`, so the identity reduces to
+   `B_read == A_read + A_creation` — "B read all of A's prompt". The single degree of freedom is
+   *all* rather than *some*. It is not three numbers independently coinciding.
+2. **It is fresh→fresh.** A has exited, so this compares two fresh processes. It does **not**
+   address whether a *resident* process renders its prefix differently from a fresh one — that
+   needs a resident arm. Fresh→fresh is, however, exactly the pooling case.
+3. **n=1 per arm per run.** And the instrument's *other* control — arm 4, a model switch — held in
+   only two of five observed runs, with an unverified premise: the documentation never says caches
+   are model-scoped. It ships as a control we do not trust.
 
 ---
 
-## Decisions, and the reasons
+## Before you publish any output
 
-**Licence: Apache-2.0.** It matches the licences of the projects these instruments are most
-likely to be used alongside — the Agent Client Protocol, Codex and goose are all Apache-2.0 —
-so output and derivations can move between them without a compatibility question. It also
-carries an explicit patent grant, which a bare MIT licence does not; for measurement tooling
-that may end up quoted in procurement or capacity arguments, that is worth having.
+```bash
+bash scripts/scrub_check.sh --all    # tree, every blob in history, and commit identities
+bash scripts/test_scrub_check.sh     # 24 payloads, one decoy each: proves it can FAIL
+bash scripts/check_figures.sh        # every figure in this README still matches its artefact
+```
 
-**This repository is the single source of truth for these instruments.** They were extracted
-from a private study, and that study's copy is a frozen audit record of what was run on the day
-— it is deliberately *not* maintained, and carries a pointer here. Fixes land here. The reason
-to be explicit: two maintained copies of a *self-testing* instrument is the worst available
-outcome, because each copy's self-test keeps passing while the two drift.
+The scrubber exists because a leak is the only irreversible mistake here, and it is deliberately
+paranoid: it refuses tracked binaries outright, because a compiled artefact can embed an absolute
+build path with no sign of it in the diff. That is not hypothetical — it happened here, and the
+gate certified the tree clean, because `grep -I` skips binary files and `git log -G` does not
+search binary diffs. Both legs now have decoys.
 
-**Name.** Descriptive rather than clever, and deliberately not `-metrics`: there is no exporter,
-no dashboard and no daemon here. These are instruments you run when you want a number.
+`samples/` holds real output from every instrument, **including the runs that failed**: a caching
+run that exited 3, a census self-test that missed its decoys, the MCP counterfactual that refuses
+a server which never connected, and `samples/gate-evidence/check_figures.RED.out` — the figure
+gate observed failing before the figures were corrected, because a gate whose first run is green
+tells you nothing.
+
+---
+
+## Decisions
+
+**Apache-2.0.** The projects these sit beside — the Agent Client Protocol, Codex, goose — are
+Apache-2.0, so output and derivations move between them without a compatibility question, and it
+carries an explicit patent grant that MIT does not.
+
+**One canonical copy.** These were extracted from a private study; that study's copy is a frozen
+audit record and is deliberately not maintained. Fixes land here. Two *maintained* copies of a
+self-testing instrument is the worst outcome available, because each copy's self-test keeps
+passing while the two drift.
+
+**Name.** Descriptive, and deliberately not `-metrics`: no exporter, no dashboard, no daemon.
 
 ---
 
 ## Contributing
 
-The bar is the method, not the style. A new instrument needs: a `--help-blind` answer, at least
-one control that can **fail**, a non-zero exit when it cannot measure, and real output in
-`samples/` — including the runs that went wrong. An instrument whose failed controls have been
-tidied away looks more reliable than it is.
+The bar is the method. A new instrument needs a `--help-blind` answer, at least one control that
+can **fail**, a non-zero exit when it cannot measure, and real output in `samples/` including what
+went wrong. An engine adapter needs honesty about whether you ran it.
 
-If you reproduce any of these numbers and get something different, that is the most useful
-thing you can report. Several of the figures here moved by 2-3x between runs minutes apart on
-the same box -- `ready p50=4.35s` above was 1.15 s on an earlier, quieter run of the same arm.
-`docs/limits.md` says which, and why.
+**If you reproduce a number here and get something different, that is the most useful thing you
+can report.** Several figures moved by 2-3x between runs minutes apart on one box.
 
----
-
-## Further reading in this repo
-
-- **`ARTICLE.md`** — the method: five things that were measured and the mistakes that produced
-  them. Start here if you want the reasoning rather than the tools.
-- **`docs/method.md`** — the rules, stated so they can be applied to instruments that are not
-  these.
-- **`docs/citations.md`** — every third-party quotation, with its verification status. 7 of 13
-  attributed quotations in the source study needed correction; this file is the audit.
-- **`docs/limits.md`** — what these instruments cannot tell you.
+- **[`ARTICLE.md`](ARTICLE.md)** — the method: five ways a runtime measurement lies, with worked
+  examples.
+- **[`docs/method.md`](docs/method.md)** — the rules, and the four defects that produced them.
+- **[`docs/citations.md`](docs/citations.md)** — every third-party quotation, verified, with an
+  enumerated audit of the 7 of 13 that needed correction.
+- **[`docs/limits.md`](docs/limits.md)** — what these cannot tell you.

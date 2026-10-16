@@ -20,28 +20,29 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 
-MIN_PAIRS=22
+MIN_PAIRS=24
 
 # figure-string | sample file it must appear in
 PAIRS=(
-  'session trees: 19|samples/measure_session_footprint.out'
-  'summed RSS: 7505 MB|samples/measure_session_footprint.out'
-  'summed PSS: 6302 MB|samples/measure_session_footprint.out'
-  'PSS/RSS = 0.84|samples/measure_session_footprint.out'
-  'p50=331 MB|samples/measure_session_footprint.out'
-  'p50=254 MB|samples/measure_session_footprint.out'
-  'sessions with any activity in 7d: 35|samples/measure_active_concurrency.out'
-  'mean=0.14|samples/measure_active_concurrency.out'
-  'busy_minutes=931/10080|samples/measure_active_concurrency.out'
-  'ready p50=4.35s|samples/bench_cold_start.out'
-  'ready p50=0.98s|samples/bench_cold_start.out'
-  'ready p50=3.31s|samples/bench_cold_start.out'
-  'min=6.83s  max=7.68s  spread=0.85s|samples/bench_mcp_connect.echo.out'
+  'session trees: 17|samples/measure_session_footprint.out'
+  'summed RSS: 7513 MB|samples/measure_session_footprint.out'
+  'summed PSS: 5356 MB|samples/measure_session_footprint.out'
+  'PSS/RSS = 0.71|samples/measure_session_footprint.out'
+  'p50=392 MB|samples/measure_session_footprint.out'
+  'p50=292 MB|samples/measure_session_footprint.out'
+  'sessions with any activity in 7d: 42|samples/measure_active_concurrency.out'
+  'mean=0.15|samples/measure_active_concurrency.out'
+  'busy_minutes=964/10080|samples/measure_active_concurrency.out'
+  'ready p50=1.88s|samples/bench_cold_start.out'
+  'ready p50=0.65s|samples/bench_cold_start.out'
+  'ready p50=2.49s|samples/bench_cold_start.out'
+  'min=1.96s  max=3.65s|samples/bench_cold_start.out'
+  'min=5.22s  max=6.97s  spread=1.75s|samples/bench_mcp_connect.echo.out'
+  'LIVE session cgroups: 17|samples/census_background_work.out'
   'LIVE sessions owning background work older than 900s: 0|samples/census_background_work.out'
-  'LIVE session cgroups: 12|samples/census_background_work.out'
+  'FLOOR DEMONSTRATION|samples/census_background_work.degraded.out'
   'B_read(26264) == C_read(14848) + A_creation(11416)|samples/bench_cache_residency.out'
   'B_read(26265) == C_read(14848) + A_creation(11417)|samples/bench_cache_residency.run3-redacted.out'
-  "'read': 26264, 'create': 2875|samples/bench_cache_residency.run2-redacted.out"
   'PRIMARY (hit-fraction) -> control HOLDS|samples/bench_cache_residency.out'
   'PRIMARY (hit-fraction) -> control FAILED|samples/bench_cache_residency.run3-redacted.out'
   'SELF-TEST FAILED -- do NOT believe the counts above.|samples/census_background_work.selftest-FAILED.out'
@@ -81,10 +82,13 @@ done
 
 # every sample file cited by name in the prose must exist and be tracked
 for f in $(grep -rhoE '[A-Za-z0-9_.-]+\.out' "${PROSE[@]}" | sort -u); do
-  if [ ! -f "samples/$f" ]; then
-    echo "FAIL: prose cites samples/$f which does not exist"; fail=1
-  elif ! git ls-files --error-unmatch "samples/$f" >/dev/null 2>&1; then
-    echo "FAIL: prose cites samples/$f which exists but is NOT TRACKED"; fail=1
+  # search anywhere under samples/, since some artefacts live in subdirectories
+  # (samples/gate-evidence/). Matching only samples/<name> reported a false missing file.
+  found=$(find samples -type f -name "$f" -print -quit 2>/dev/null)
+  if [ -z "$found" ]; then
+    echo "FAIL: prose cites $f which does not exist anywhere under samples/"; fail=1
+  elif ! git ls-files --error-unmatch "$found" >/dev/null 2>&1; then
+    echo "FAIL: prose cites $found which exists but is NOT TRACKED"; fail=1
   fi
 done
 

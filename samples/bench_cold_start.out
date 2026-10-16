@@ -1,28 +1,28 @@
 
 ### Claude Code, full harness (hooks + MCP + project-instruction discovery)
     argv: claude -p noop --output-format stream-json --verbose --max-turns 1
-    ready=         3.68s  first_out=   3.03s  peakRSS(tree)=    466 MB  procs=3
-    ready=         7.22s  first_out=   6.69s  peakRSS(tree)=    461 MB  procs=3
-    ready=         4.35s  first_out=   3.98s  peakRSS(tree)=    412 MB  procs=3
-    => ready p50=4.35s  min=3.68s  max=7.22s  (n=3/3)
+    ready=         1.88s  first_out=   1.68s  peakRSS(tree)=    419 MB  procs=3
+    ready=         2.02s  first_out=   1.85s  peakRSS(tree)=    479 MB  procs=3
+    ready=         1.62s  first_out=   1.52s  peakRSS(tree)=    477 MB  procs=3
+    => ready p50=1.88s  min=1.62s  max=2.02s  (n=3/3)
 
 ### Claude Code, --bare (no hooks/MCP/skills/project instructions)
     argv: claude --bare -p noop --output-format stream-json --verbose --max-turns 1
-    ready=         1.68s  first_out=   1.32s  peakRSS(tree)=    314 MB  procs=3
-    ready=         0.98s  first_out=   0.73s  peakRSS(tree)=    321 MB  procs=3
-    ready=         0.85s  first_out=   0.71s  peakRSS(tree)=    320 MB  procs=2
-    => ready p50=0.98s  min=0.85s  max=1.68s  (n=3/3)
+    ready=         0.71s  first_out=   0.63s  peakRSS(tree)=    322 MB  procs=2
+    ready=         0.65s  first_out=   0.56s  peakRSS(tree)=    326 MB  procs=2
+    ready=         0.65s  first_out=   0.56s  peakRSS(tree)=    327 MB  procs=2
+    => ready p50=0.65s  min=0.65s  max=0.71s  (n=3/3)
 
 ### Codex exec --json
     argv: codex exec --json --skip-git-repo-check noop
-    ready=         0.40s  first_out=   0.40s  peakRSS(tree)=    162 MB  procs=6  stderr: Reading additional input from stdin... 2026-10-16T11:03:34.798326Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.c
-    ready=         0.32s  first_out=   0.32s  peakRSS(tree)=    164 MB  procs=5  stderr: Reading additional input from stdin... 2026-10-16T11:03:50.443876Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.c
-    ready=         0.37s  first_out=   0.37s  peakRSS(tree)=    165 MB  procs=6  stderr: Reading additional input from stdin... 2026-10-16T11:04:06.810143Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.c
-    => ready p50=0.37s  min=0.32s  max=0.40s  (n=3/3)
+    ready=         0.18s  first_out=   0.18s  peakRSS(tree)=    163 MB  procs=5  stderr: Reading additional input from stdin... 2026-10-16T11:36:58.491631Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.c
+    ready=         0.26s  first_out=   0.26s  peakRSS(tree)=    163 MB  procs=5  stderr: Reading additional input from stdin... 2026-10-16T11:37:14.045059Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.c
+    ready=         0.17s  first_out=   0.17s  peakRSS(tree)=    165 MB  procs=6  stderr: Reading additional input from stdin... 2026-10-16T11:37:29.319528Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.c
+    => ready p50=0.18s  min=0.17s  max=0.26s  (n=3/3)
 
 ### Claude Code, FULL TURN to result (includes MCP connect + 1 inference)
     argv: claude -p say only: ok --output-format stream-json --verbose --max-turns 1
-    ready=         3.29s  first_out=   1.78s  peakRSS(tree)=    526 MB  procs=3
-    ready=         3.31s  first_out=   1.32s  peakRSS(tree)=    563 MB  procs=3
-    ready=         4.04s  first_out=   2.07s  peakRSS(tree)=    562 MB  procs=3
-    => ready p50=3.31s  min=3.29s  max=4.04s  (n=3/3)
+    ready=         1.96s  first_out=   0.94s  peakRSS(tree)=    530 MB  procs=3
+    ready=         2.49s  first_out=   0.98s  peakRSS(tree)=    533 MB  procs=3
+    ready=         3.65s  first_out=   1.01s  peakRSS(tree)=    531 MB  procs=3
+    => ready p50=2.49s  min=1.96s  max=3.65s  (n=3/3)

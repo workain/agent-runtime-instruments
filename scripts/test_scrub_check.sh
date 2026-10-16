@@ -25,6 +25,19 @@ DECOYS=(
   'private IPs / internal hosts|connect to 10.1.2.3 now'
   'credential-shaped strings|ghp_abcdefghij0123456789abcdefghij'
   'actions-runner / CI host paths|under actions-runner/_work'
+  # --- payloads that USED TO PASS. Each is here because the reviewer demonstrated it
+  # --- slipping through; the trailing-slash one is why the original decoy was useless.
+  'absolute home path|bare path /home/harness with no trailing slash'
+  'absolute home path|macOS style /Users/someone/work'
+  'absolute home path|root home /root/.config/thing'
+  'internal fleet-control product|underscore spelling harness_control_developer'
+  'internal PMO repo|underscore spelling agent_lab_manager'
+  'internal gateway/executor|gateway.sqlite3 on disk'
+  'private IPs / internal hosts|RFC1918 middle block 172.16.4.9 here'
+  'credential-shaped strings|github_pat_11ABCDEFG0abcdefghij1234567890'
+  'credential-shaped strings|ghs_abcdefghij0123456789abcdefghij'
+  'credential-shaped strings|gho_abcdefghij0123456789abcdefghij'
+  'credential-shaped strings|sk-proj-abcdefghij0123456789abcdefghij'
 )
 
 pass=0; fail=0

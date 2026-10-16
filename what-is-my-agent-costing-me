@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# For one person running coding agents on their own machine.
+#
+# Answers four questions, in about a minute, with no setup, no database, no cgroups and
+# no model requests spent:
+#
+#   1. How much RAM is each agent session actually using? (RSS *and* PSS -- see below)
+#   2. How much of the last 7 days was my agent actually WORKING, versus sitting open?
+#   3. How long does a fresh agent process take to become ready?
+#   4. Did an agent leave anything running that I have forgotten about?
+#
+# Question 2 is the one nobody measures about themselves and the one most likely to
+# surprise you.
+#
+# Nothing here writes, deletes or sends anything. Question 3 starts agent processes and
+# kills them at their readiness event, so it spends no model requests.
+set -uo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 2
+I=instruments
+
+say() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
+
+say "1. What is each session using? (RSS and PSS)"
+cat <<'NOTE'
+Read the PSS column, not RSS, if you want to know what another session would cost you.
+An agent CLI is typically one large compiled binary, so its pages are SHARED between
+concurrent sessions: RSS counts those once per session, PSS counts them once. If the two
+numbers are far apart, that gap is the shared binary.
+NOTE
+python3 "$I/measure_session_footprint.py" "$@" || true
+
+say "2. How much of the last 7 days was an agent actually working?"
+cat <<'NOTE'
+Measured from your own transcripts: a session "owns" a minute if it wrote anything in it.
+busy_minutes is out of the whole 7-day window, INCLUDING the minutes nothing happened --
+that is the point, and dividing by busy minutes instead would delete the very thing this
+measures.
+NOTE
+python3 "$I/measure_active_concurrency.py" "$@" || true
+
+say "3. How long does a fresh agent process take to be ready?"
+cat <<'NOTE'
+Two things worth knowing before you read this: "ready" is the FIRST event in the stream,
+and tools are typically still connecting at that point -- so this is a floor, not the cost
+of a useful turn. And on a loaded machine these numbers move by 2-3x between runs, so look
+at every repetition rather than the median.
+NOTE
+REPS="${REPS:-3}" python3 "$I/bench_cold_start.py" --skip-turn || true
+
+say "4. Did an agent leave anything running?"
+cat <<'NOTE'
+On an ordinary local machine there are no per-session cgroups, so this falls back to
+walking process parentage and says so loudly. In that mode its answer is a FLOOR: it
+cannot see a process that was backgrounded with `&` and reparented away. It demonstrates
+that blindness on itself rather than asking you to take it on trust.
+NOTE
+python3 "$I/census_background_work.py" "$@"
+rc=$?
+case "$rc" in
+  0) echo; echo "(cgroup mode: the zero above is a real count)";;
+  4) echo; echo "(degraded mode: the count above is a FLOOR -- see the warning)";;
+  3) echo; echo "(the self-test FAILED, so do not believe the count above)";;
+esac
+
+say "Done"
+cat <<'NOTE'
+What this did NOT measure: token cost, latency under concurrency, or output quality --
+only what a session costs to HOLD. Limits: docs/limits.md.
+If you are sizing a worker pool rather than checking your own laptop, run
+./can-i-pool-this instead.
+NOTE

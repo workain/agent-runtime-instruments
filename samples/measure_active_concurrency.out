@@ -1,20 +1,25 @@
-roots: <redacted>/.claude/projects, <redacted>/.codex/sessions
-transcripts found: 468
-corpus: 103 transcripts scanned, 365 older than 7d or unreadable, 16480 lines
-files with no parseable timestamp: 0/103
-sessions with any activity in 7d: 35
-ACTIVE sessions/min (raw)      : p50=0 p90=0 p99=2 max=8 mean=0.14  busy_minutes=931/10080 (9%)
-ACTIVE sessions/min (gap<=3m)  : p50=0 p90=0 p99=3 max=8 mean=0.15  busy_minutes=971/10080 (10%)
+engine adapters VERIFIED (run and output kept): claude-code, claude-code-acp, codex
+engine adapters UNTESTED (believed, not measured): goose, aider, opencode, cursor-agent
+  -> for an UNTESTED engine, a zero here means 'this adapter found nothing', which is NOT evidence the engine was absent. See instruments/engines.py.
 
-total session-ACTIVE-minutes in window: 1365 (23 session-hours in a 168-hour window)
+roots: <redacted>/.claude/projects, <redacted>/.claude/projects, <redacted>/.codex/sessions, <redacted>/goose/sessions
+ROOTS NOT FOUND (skipped): <redacted>/goose/sessions
+transcripts found: 992
+corpus: 264 transcripts scanned, 728 older than 7d or unreadable, 36806 lines
+files with no parseable timestamp: 0/264
+sessions with any activity in 7d: 42
+ACTIVE sessions/min (raw)      : p50=0 p90=0 p99=3 max=11 mean=0.15  busy_minutes=964/10080 (10%)
+ACTIVE sessions/min (gap<=3m)  : p50=0 p90=0 p99=3 max=11 mean=0.16  busy_minutes=1004/10080 (10%)
+
+total session-ACTIVE-minutes in window: 1523 (25 session-hours in a 168-hour window)
 per-session active minutes, top 10:
-     390  key-f82cb95e
-     291  key-64152904
-     132  key-ab2e21e2
-     106  key-466a85d2
+     389  key-f82cb95e
+     297  key-64152904
+     140  key-ab2e21e2
+     126  key-466a85d2
+      59  key-813fbe6e
       56  key-7de6e802
+      54  key-acb5927f
       43  key-9b5d2970
       42  key-bbfc0d38
       39  key-7745e6c9
-      32  key-acb5927f
-      27  key-813fbe6e

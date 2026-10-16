@@ -1,11 +1,11 @@
-SELF-TEST [cgroup handle (v1 reparenting defect)]: decoy pids=[2446470] detected=NO
-SELF-TEST [agent-internal FILTER (v2 `sh -c` defect)]: decoy pids=[2446491, 2446492] detected=NO
+SELF-TEST [cgroup handle (v1 reparenting defect)]: decoy pids=[2524156] detected=NO ppid=[1] reparented=YES
+SELF-TEST [agent-internal FILTER (v2 `sh -c` defect)]: decoy pids=[2524267, 2524268] detected=NO
 SELF-TEST FAILED -- the counts below are UNMEASURED.
 
 criterion: a process in a LIVE session's own cgroup, not agent-internal, older than 900s
 
 
-LIVE session cgroups: 12
+LIVE session cgroups: 17
 LIVE sessions owning background work older than 900s: 0
 ORPHAN cgroups (dead session, process left behind): 0
 SELF-TEST FAILED -- do NOT believe the counts above.

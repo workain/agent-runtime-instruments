@@ -52,9 +52,19 @@ import os
 import re
 import sys
 
-# Default roots are the vendor-standard per-user transcript locations. Point ROOTS at
-# your own if your harness relocates them (colon-separated, ~ expanded).
-DEFAULT_ROOTS = "~/.claude/projects:~/.codex/sessions"
+
+# the one shared module in this repo: the engine adapter table (instruments/engines.py)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import engines
+except ImportError:                                  # pragma: no cover
+    engines = None
+
+# Default roots come from the engine adapter table, so this instrument learns about a new
+# engine when engines.py does. Point ROOTS at your own if your harness relocates them
+# (colon-separated, ~ expanded).
+DEFAULT_ROOTS = (":".join(engines.transcript_roots()) if engines
+                 else "~/.claude/projects:~/.codex/sessions")
 
 TS = re.compile(rb'"timestamp"\s*:\s*"([0-9T:\-\.]+Z)"')
 
@@ -83,6 +93,9 @@ def main():
         print(__doc__)
         return 0
 
+    if engines:
+        print(engines.provenance_banner())
+        print()
     roots = [os.path.expanduser(r) for r in
              os.environ.get("ROOTS", DEFAULT_ROOTS).split(":") if r.strip()]
     days = int(os.environ.get("DAYS", "7"))

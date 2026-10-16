@@ -23,7 +23,7 @@ marked NOT PRESENT and is **not used anywhere in this repository**.
 | "Summing RSS instead would count the shared runtime once per agent: the same ramp reads 340 MB per session in RSS against 238 MB in PSS." | [omg.dev/tools/coding-agent-capacity](https://omg.dev/tools/coding-agent-capacity) | `ARTICLE.md` §2, `README.md` |
 | "the median session's whole process tree measured 238 MB and the p90 measured 997 MB" | same | available, not currently quoted |
 | "each additional one costs about the same 167 MB" | same | available, not currently quoted |
-| "Claude Code waits for still-pending servers before running the first turn, up to the `MCP_TIMEOUT` startup timeout, 30 seconds by default." | [code.claude.com/docs/en/headless](https://code.claude.com/docs/en/headless) | `ARTICLE.md` §3 |
+| "**When you pass `--mcp-config` with `-p`,** Claude Code waits for still-pending servers before running the first turn, up to the `MCP_TIMEOUT` startup timeout, 30 seconds by default." | [code.claude.com/docs/en/headless](https://code.claude.com/docs/en/headless) | `ARTICLE.md` §3 — **the opening clause was previously dropped**, which mattered: our boot runs did not pass `--mcp-config`, so that is a *second* independent reason the 30 s ceiling never applied to them. Dropping a governing clause is the same defect §3 is about. |
 | "The wait requires Claude Code v2.1.221 or later." | same | `ARTICLE.md` §3 — **this is the clause that corrected us** |
 | "A remote server with a cached tool list skips the wait, shows `pending` in `system/init`, and connects on its first tool call." | same | `instruments/bench_mcp_connect.py` docstring |
 | "Claude Code finds the session by its ID in any project on this machine." | same (**headless** page, *not* the CLI reference) | context for `--resume` |
@@ -59,7 +59,27 @@ quoted.
 ## Quoted-from versus reported-by
 
 A page with a commercial interest in the claim is still usable, but the interest has to be
-visible. These two sentences are accurate and verbatim:
+visible.
+
+### Our load-bearing citation has a commercial interest, and this was missed
+
+**`omg.dev/tools/coding-agent-capacity`** — the source of the RSS-vs-PSS sentence quoted in
+`ARTICLE.md` §2 and `README.md` — **sells per-session agent capacity** (its page advertises an
+"Always On 24 sessions 36 GB" tier). "Use PSS, not RSS" is precisely the accounting choice under
+which *more sessions fit per machine*, which is the thing being sold.
+
+The quotation is verbatim and we verified it against raw page bytes. But this is our **only
+load-bearing third-party citation**, and the disclosure rule stated below was applied to a
+different source and not to this one — found by an independent reviewer. Stated now:
+
+- the sentence is accurate, and
+- the source has an interest in the conclusion it supports, and
+- our own measurement is independent of it (`samples/measure_session_footprint.out` shows the
+  RSS/PSS gap on our own hardware), so the argument does not rest on their number.
+
+### A competing vendor's page, disclosed from the start
+
+These two sentences are accurate and verbatim:
 
 > "They are also deliberately task-scoped: idle sessions expire, the VM is reclaimed, and
 > anything still running inside is gone." … "There is no way to keep a daemon alive."
@@ -86,3 +106,24 @@ The source study's own honest denominator was **6 of ~40 verified**. This file b
 of *first-hand verified* quotations to 13 — but only across the quotations this repository
 actually uses. The remaining ~27 from the study were not re-checked, because nothing here
 depends on them.
+
+### The "7 of 13" denominator, enumerated
+
+A reviewer pointed out that "7 of 13" could not be reconstructed from the two tables above,
+because one of the seven (the version clause) sits in the *verified* table rather than the
+corrections table. Enumerated, so the count is checkable rather than asserted:
+
+**The 13 quotations re-checked:** (1) RSS-vs-PSS, (2) median/p90 session tree, (3) "each
+additional one costs about the same 167 MB", (4) the 32-session totals, (5) the `MCP_TIMEOUT`
+wait, (6) `--resume` finds the session by id, (7) the cache-key description, (8) cache entry
+readable after the first response, (9) the 20-block lookback, (10) TTL and price multipliers,
+(11) model-scoped caches, (12) cloud sessions task-scoped, (13) "no way to keep a daemon alive".
+
+**The 7 that needed correction:** (4) not a sentence at all, a table row — dropped. (5) the
+governing clause `"When you pass --mcp-config with -p"` was dropped, and the following sentence's
+version requirement was missed. (6) attributed to the wrong page. (7) not present on the page —
+dropped. (8) "begins streaming" where the page says "begins". (9) *positions*, not content
+blocks. (11) not present on the page — claim dropped.
+
+**The 6 that stood as quoted:** (1), (2), (3), (10) (with the per-model exceptions added), (12),
+(13).

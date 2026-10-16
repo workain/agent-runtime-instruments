@@ -23,12 +23,18 @@ command -v git >/dev/null 2>&1 || { echo "SCRUB-ERROR: git not found" >&2; exit 
 # match the public package names this repo legitimately discusses (claude-agent-acp,
 # --remote-control, claude-agent-sdk) would fire constantly and be switched off.
 PATTERNS=(
-  'absolute home path|/home/[a-z][a-z0-9_-]*/'
-  'internal fleet-control product|harness-control|harness-projects|harness-tmux|harness/sessions'
-  'internal PMO repo|agent-lab-manager'
-  'internal MCP servers|cao-mcp-server|harness-control-mcp-server|gateway\.mcp_server'
-  'internal gateway/executor|gateway\.db|executor\.api|hangar-deploy|alm-service'
-  'operator account identifiers|klabulan|claude-code-hangar'
+  # The trailing slash here used to be MANDATORY, so a bare `/home/harness` was
+  # invisible -- and the decoy for this pattern always supplied one, so the suite could
+  # never have caught it. Found by an independent reviewer. /Users and /root added for
+  # the same reason: the pattern was named "absolute home path" and only knew one OS.
+  'absolute home path|(/home|/Users)/[A-Za-z0-9_][A-Za-z0-9_.-]*|/root(/|$|[^A-Za-z0-9])'
+  # `harness[_-]control` not `harness-control`: the underscore spelling appears in
+  # module paths and env var names and was passing.
+  'internal fleet-control product|harness[_-]control|harness[_-]projects|harness[_-]tmux|harness/sessions'
+  'internal PMO repo|agent[_-]lab[_-]manager'
+  'internal MCP servers|cao[_-]mcp[_-]server|harness[_-]control[_-]mcp[_-]server|gateway\.mcp_server'
+  'internal gateway/executor|gateway\.(db|sqlite3?)|executor\.api|hangar[_-]deploy|alm[_-]service'
+  'operator account identifiers|klabulan|claude[_-]code[_-]hangar'
   # {12,} is deliberate, not an oversight: the instruments' own --anonymise emits
   # `sess-<8 hex>`, which is a sha256 PREFIX of the real tag and not a truncation of it
   # (verified: anonymise('pressure-telemetry-1654') == 'sess-36e72ec4', which is not a
@@ -37,8 +43,11 @@ PATTERNS=(
   'session identifiers|sess-[0-9a-f]{12,}'
   'bare UUIDs (session ids leak this way)|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
   'email addresses|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-  'private IPs / internal hosts|\b10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b|\b192\.168\.[0-9]{1,3}\.[0-9]{1,3}\b'
-  'credential-shaped strings|ghp_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}'
+  # 172.16/12 was missing: RFC1918 has three blocks and this knew two.
+  'private IPs / internal hosts|\b10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b|\b192\.168\.[0-9]{1,3}\.[0-9]{1,3}\b|\b172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}\b'
+  # GitHub has retired `ghp_` as the only shape: fine-grained PATs are `github_pat_`,
+  # and app/user tokens are `ghs_`/`gho_`. OpenAI project keys are `sk-proj-`.
+  'credential-shaped strings|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[so]_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}'
   'actions-runner / CI host paths|actions-runner'
 )
 

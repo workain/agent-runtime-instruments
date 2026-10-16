@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# For someone building a system on top of coding agents, deciding whether to hold a
+# process per session or spawn one per turn.
+#
+# Four facts a pool design actually stands on, measured rather than argued:
+#
+#   1. The concurrency distribution -- how many sessions are mid-turn at once, versus how
+#      many hold a process. This is what sizes the pool, and the gap is usually large.
+#   2. Per-session resident cost in PSS, which is what capacity arithmetic needs.
+#   3. Whether a prompt-cache entry survives the process that wrote it. If it does not,
+#      turn-scoping has a per-turn token cost. (It does. Measured token-exactly.)
+#   4. What a turn actually pays to start, and where those seconds really go.
+#
+# SPENDS MODEL REQUESTS: roughly 8-10 cheap ones. Set SKIP_PAID=1 to run only the free
+# parts.
+set -uo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 2
+I=instruments
+
+say() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
+
+say "1. Active vs resident concurrency -- the number that sizes the pool"
+cat <<'NOTE'
+A resident-session model provisions for the peak and pays for the floor. Compare the mean
+and p50 below against the number of session trees in step 2: if the active mean is a small
+fraction of the resident count, the floor is what you are paying for.
+Minutes with zero active sessions are counted in the denominator deliberately.
+NOTE
+python3 "$I/measure_active_concurrency.py" "$@" || true
+
+say "2. Resident cost per session -- use the PSS column"
+cat <<'NOTE'
+Capacity arithmetic on summed RSS is pessimistic BY CONSTRUCTION, not conservatively:
+the agent binary's pages are shared across sessions, so RSS counts them once per session.
+Price pool workers at a MID-TURN peak, not at this idle resident figure -- a worker doing
+work costs more than a session sitting open.
+NOTE
+python3 "$I/measure_session_footprint.py" "$@" || true
+
+say "3. Work a turn boundary would kill -- the one class that vetoes pooling"
+cat <<'NOTE'
+A session owning a dev server or a watch build cannot be turn-scoped: the worker exits and
+takes the work with it. This is the question whose answer can veto the architecture, so
+read the exit code: 0 = real count, 4 = floor from the degraded method, 3 = do not believe it.
+NOTE
+python3 "$I/census_background_work.py" "$@" || true
+
+if [ "${SKIP_PAID:-0}" = "1" ]; then
+  say "Skipping the paid measurements (SKIP_PAID=1)"
+  echo "Steps 4 and 5 spend model requests and were not run. That is not a result."
+  exit 0
+fi
+
+say "4. Does a prompt-cache entry survive the process that wrote it?"
+cat <<'NOTE'
+This is the objection that looks most expensive on paper: that a resident process holds a
+warm cache a fresh worker would lose. Arm 5 is the one that settles it -- a writer process
+exits, then two new processes resume, one with the same prefix marker and one without.
+Watch for the EXACT line. If arm 4's control FAILED on your run, arms 1-2 proved nothing
+that run; arm 5 carries its own control and is unaffected.
+NOTE
+python3 "$I/bench_cache_residency.py" "$@" || true
+
+say "5. What a turn pays to start, and where the seconds go"
+cat <<'NOTE'
+Two figures, because the cheap one is a floor: boot stops at the first stream event, where
+tools are still connecting; a full turn to `result` includes one inference round-trip.
+The gap between them is mostly INFERENCE, which varies by an order of magnitude run to
+run -- not tool connect, which is tens of milliseconds. Do not attribute the gap to MCP.
+NOTE
+REPS="${REPS:-3}" python3 "$I/bench_cold_start.py" || true
+python3 "$I/bench_mcp_connect.py" "$@" || true
+
+say "Done"
+cat <<'NOTE'
+Read docs/limits.md before quoting any of this. In particular: these are readings from one
+box on one day, the caching result is n=1 per arm, and the instruments report spreads
+because twice in this work the spread WAS the finding.
+NOTE
