@@ -38,7 +38,7 @@ PAIRS=(
   'ready p50=2.49s|samples/bench_cold_start.out'
   'min=1.96s  max=3.65s|samples/bench_cold_start.out'
   'min=5.22s  max=6.97s  spread=1.75s|samples/bench_mcp_connect.echo.out'
-  'LIVE session cgroups: 17|samples/census_background_work.out'
+  'LIVE session cgroups: 20|samples/census_background_work.out'
   'LIVE sessions owning background work older than 900s: 0|samples/census_background_work.out'
   'FLOOR DEMONSTRATION|samples/census_background_work.degraded.out'
   'B_read(26264) == C_read(14848) + A_creation(11416)|samples/bench_cache_residency.out'

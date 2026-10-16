@@ -47,7 +47,9 @@ ENGINES = [
         entrypoint=r"claude-agent-acp|npm exec @agentclientprotocol",
         transcripts="~/.claude/projects",
         verified=True,
-        note="the Agent Client Protocol host wrapper; measured in the same samples",
+        note="the Agent Client Protocol host wrapper; measured in "
+             "samples/measure_session_footprint.out and "
+             "samples/census_background_work.out",
     ),
     dict(
         name="codex",

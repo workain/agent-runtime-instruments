@@ -109,7 +109,7 @@ Readings, not constants — [`docs/limits.md`](docs/limits.md) says which moved 
 - Boot: `ready p50=1.88s` full harness, `ready p50=0.65s` with `--bare`, `ready p50=2.49s` for a
   full trivial turn. But `init` is the *first* stream event, with MCP servers still `pending`:
   time to a *usable* MCP tool was `min=5.22s  max=6.97s  spread=1.75s` (n=2).
-- `LIVE sessions owning background work older than 900s: 0`, across `LIVE session cgroups: 17`,
+- `LIVE sessions owning background work older than 900s: 0`, across `LIVE session cgroups: 20`,
   from an instrument that exits non-zero when it cannot see its own planted decoys.
 
 ### A prompt-cache entry outlives the process that wrote it
