@@ -146,10 +146,17 @@ was gone.** For a pooling decision, that removes the objection that looks most e
 ## Before you publish any output
 
 ```bash
-bash scripts/scrub_check.sh --all    # tree, every blob in history, and commit identities
-bash scripts/test_scrub_check.sh     # 24 payloads, one decoy each: proves it can FAIL
-bash scripts/check_figures.sh        # every figure in this README still matches its artefact
+bash scripts/preflight.sh            # every gate, under set -e
+ln -sf ../../scripts/preflight.sh      .git/hooks/pre-commit
+ln -sf ../../scripts/pre-push-hook.sh  .git/hooks/pre-push
 ```
+
+Install both hooks, not just the first. A pre-commit run **cannot** see a new commit's
+author identity or its blobs in history, because neither exists yet when it runs — and a
+commit was pushed twice here carrying an identity the pre-commit run had no way to
+inspect. (The immediate cause is worth knowing: in `VAR=x git add -A && git commit`, the
+environment prefix applies only to the **first** command, and `GIT_AUTHOR_EMAIL` overrides
+`git config`.)
 
 The scrubber exists because a leak is the only irreversible mistake here, and it is deliberately
 paranoid: it refuses tracked binaries outright, because a compiled artefact can embed an absolute

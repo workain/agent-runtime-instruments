@@ -13,3 +13,11 @@ echo "preflight: figures"   && bash scripts/check_figures.sh    >/dev/null
 echo "preflight: scrub"     && bash scripts/scrub_check.sh --all >/dev/null
 echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null
 echo "preflight: OK -- all gates pass"
+echo
+echo "NOTE: run as a pre-COMMIT hook, this cannot see two things, because they do not"
+echo "exist yet when it runs: the new commit's AUTHOR IDENTITY and its blobs in history."
+echo "Both are checked by scrub_check.sh --all, so install it as pre-push too:"
+echo "  ln -sf ../../scripts/scrub_check.sh .git/hooks/pre-push   # with --all"
+echo "This gap is not theoretical: a commit was pushed twice carrying an identity the"
+echo "pre-commit run had no way to inspect, because the env-var prefix in"
+echo "\`VAR=x git add -A && git commit\` applies only to the FIRST command."
