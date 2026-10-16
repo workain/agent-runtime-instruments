@@ -97,77 +97,100 @@ for f in $(grep -rhoE '[A-Za-z0-9_.-]+\.out' "${PROSE[@]}" | sort -u); do
   fi
 done
 
-# EVERY backticked figure in EVERY prose file must exist in some artefact.
+# EVERY measurement-SHAPED span in EVERY prose file must exist in some artefact,
+# BACKTICKED OR NOT, or be exempted below with a reason.
 #
-# This leg inverts the direction of the one above, and it exists because the declared-pair
-# approach has a hole a reviewer demonstrated: guard 1 asks whether a figure is cited
-# *somewhere* in PROSE, so any one file satisfies the pair. Drifting only ONE file's copy
-# of a pinned string left the gate green with nonsense in it:
+# Two review rounds established why this has to be the default rather than a filter.
 #
-#   sed -i 's/min=1.96s  max=3.65s/min=9.99s  max=0.01s/' docs/limits.md
-#   bash scripts/check_figures.sh   -> exit 0
+# (a) Declared pairs ask whether a figure is cited SOMEWHERE in the prose, so any one
+#     file satisfies a pair. Drifting only one file's copy left the gate green with
+#     nonsense in it.
+# (b) An earlier version of this leg only looked at BACKTICKED spans with a unit or an
+#     `=`. So `103 transcripts` and `sessions with any activity in 7d: 35` survived four
+#     commits unnoticed -- and when the prose was finally corrected, the figures that got
+#     fixed were exactly the ones this gate could see, and no others. THE GATE'S BLIND
+#     SPOT AND THE SURVIVING DRIFT WERE THE SAME SET. That is the failure mode to design
+#     against: when the correction signal IS the gate, its coverage becomes the ceiling
+#     on the prose's accuracy.
 #
-# That is exactly how `spread=0.85s` survived sixty lines below figures that had been
-# fixed, for three review rounds. Declared pairs catch a figure going stale everywhere;
-# this leg catches it going stale anywhere. Both are needed.
+# So the default is inverted: anything shaped like a measurement must match an artefact,
+# and every exemption is listed with a reason. The exemption list is long and that is the
+# deliberate trade -- paid once, after which a stale figure cannot enter silently in any
+# shape.
 #
-# NON-MEASUREMENTS must be allowlisted explicitly, below, with a reason -- a CLI flag or
-# a figure quoted from third-party documentation has no artefact here by construction.
-NON_MEASUREMENT=(
-  '2.1.197'            # CLI version, read from `claude --version`, not a measurement
-  '2.1.221'            # version requirement quoted from vendor docs
-  '0.147.0'            # Codex version
-  '245,517,112'        # the system-install binary size, quoted in ARTICLE as a contrast
-  '25-58 ms'           # third-party isolated-connect figure; labelled as having no artefact here
-  '1.05-2.42 s'        # from that same third-party experiment
-  '323 MB'             # prose gloss of the pinned `323021104 bytes = ...` figure
-  '0.1x'               # documented price multiplier
-  '0.025x'
-  '0.05x'
-  '1.25x'
-  '20 blocks'          # documented lookback window
-  '5-minute'
-  '1-hour'
-  'MCP_TIMEOUT'
-  '30 seconds'
-  '900s'               # the criterion's default, not a reading
-  'SELF_TEST_AGE_GAP_S'
-  # --- not measurements: code parameters, env vars and mount options ---
-  'min_age=1'          # a function argument discussed in prose, not a reading
-  'SELF_TEST=0'        # env var
-  'hidepid=2'          # a /proc mount option
-  'mean=0.00'          # the HYPOTHETICAL blind output, quoted to contrast with a real one.
-                       # Deliberately allowlisted rather than fixed: the whole point of
-                       # that passage is that this value is what a BLIND run prints, so it
-                       # must not exist in an artefact. If it ever appears in samples/,
-                       # that is a finding about the instrument, not about this list.
-  ' returns 0 bytes, so '   # a prose span about kernel behaviour caught by the figure regex
+# samples/gate-evidence/ is EXCLUDED from the search. See the note at that directory:
+# it records what a GATE printed, including the stale figures a round was fixing, so
+# searching it makes every previously-wrong figure permanently findable. Measured: with
+# it included, both `spread=0.85s` and `activity in 7d: 35` passed this leg on the
+# strength of a file whose purpose is to record them as WRONG.
+EXEMPT=(
+  # --- not measurements: versions, env vars, parameters, mount options ---
+  '2.1.197' '2.1.221' '0.147.0' 'SELF_TEST=0' 'SKIP_PAID=1' 'min_age=1' 'hidepid=2'
+  'SELF_TEST_AGE_GAP_S' 'MCP_TIMEOUT' '900s' '900 s' '10 s' '2 s'
+  # --- figures quoted from THIRD-PARTY sources; no artefact here by construction, and
+  # --- each is attributed at its use site (docs/citations.md) ---
+  '238 MB' '340 MB' '0.1x' '0.025x' '0.05x' '1.25x' '20 blocks' '5-minute' '1-hour'
+  '30 seconds' '25-58 ms' '58 ms' '1.05-2.42 s' '2.42 s' '1.6 s' '26 s'
+  # --- measured by `stat`, not by an instrument here, and used only as a contrast ---
+  '245,517,112 bytes'
+  # --- HISTORICAL readings, explicitly labelled in the prose as uncommitted asides:
+  # --- earlier boot p50s on a quieter box, and the +3s stdin artefact's own figures ---
+  '1.15 s' '2.38 s' '4.35 s' '3.48 s' '4.04 s'
+  # --- HYPOTHETICAL blind output. These MUST NOT exist in an artefact: the passages
+  # --- quoting them exist to say "this is what a blind run prints". If one ever appears
+  # --- under samples/, that is a finding about the instrument, not about this list. ---
+  'mean=0.00' 'session trees: 0' 'owning background work: 0'
+  # --- prose glosses of a pinned figure; the pinned form is what the pairs assert ---
+  '16 GB'               # gloss of `MemTotal: 15987 MB`
+  '323 MB'              # gloss of the pinned `323021104 bytes = 323 MB decimal = 308 MiB`
+  '0.65 s'              # gloss of the pinned `ready p50=0.65s`
+  # --- the A/B/C cache table re-spaced for readability; the pinned identity line
+  # --- `B_read(26264) == C_read(14848) + A_creation(11416)` is what guards these ---
+  'read=14848  creation=11416' 'read=14848  creation=14307' 'read=26264  creation=2875'
+  'read=14848   creation=11416' 'read=14848   creation=14307' 'read=26264   creation=2875'
+  # --- extractor artefacts: prose fragments that merely contain a digit ---
+  'on n=2,' 'on n=2.' 'The caching result is n=1' 'timings too: 24'
+  # --- counts belonging to the SOURCE STUDY's corpus, not to this repo's samples.
+  # --- docs/limits.md names them precisely to stop the two corpora being confused. ---
+  '146 transcripts' '97 sessions'
+  # --- counts quoted from the instruments' own defect history (v1/v2/v3 answers) ---
+  '16 sessions' '15 cgroups' '15 live'
+  'returns 0 bytes, so'
+  'v1 | "0 of 16 sessions own background work" | Its filter discarded'
+  'v3 | "15 live session cgroups" | Discovery used the broad "is this agent-internal?" pattern, which matches a bare'
 )
-is_non_measurement() {
+is_exempt() {
   local f="$1" n
-  for n in "${NON_MEASUREMENT[@]}"; do [ "$f" = "$n" ] && return 0; done
+  for n in "${EXEMPT[@]}"; do [ "$f" = "$n" ] && return 0; done
   return 1
 }
 
 for pf in "${PROSE[@]}"; do
-  # backticked spans that look like a measurement: contain a digit and a unit/equals
   while IFS= read -r fig; do
     [ -z "$fig" ] && continue
-    is_non_measurement "$fig" && continue
-    # samples/gate-evidence/ is EXCLUDED, and this is load-bearing. That directory
-    # records what a GATE printed, including the stale figures a round was fixing -- so
-    # searching it makes every previously-wrong figure permanently findable, turning the
-    # evidence of a past defect into a licence to reintroduce it. Measured: with it
-    # included, `spread=0.85s` (the round-3 block) passed this leg, because 0.85 survives
-    # inside check_figures.RED.out. An artefact of a failure is not an artefact of a
-    # measurement.
+    is_exempt "$fig" && continue
+    # a sample FILENAME is not a figure; the cited-artefact leg above already asserts
+    # each one exists and is tracked. Exempting them by name here would need an edit
+    # every time a sample is added, which is how an exemption list rots.
+    case "$fig" in *.out) continue;; esac
     if ! grep -rqF --exclude-dir=gate-evidence -- "$fig" samples/ 2>/dev/null; then
-      echo "FAIL: $pf quotes \`$fig\` which appears in NO artefact under samples/."
-      echo "      Either it drifted, or it is not a measurement and belongs in"
-      echo "      NON_MEASUREMENT in this script with a reason."
+      echo "FAIL: $pf states '$fig' which appears in NO artefact under samples/."
+      echo "      Either it drifted, or it is not a measurement and belongs in EXEMPT"
+      echo "      in this script WITH A REASON."
       fail=1
     fi
-  done < <(grep -ohE '`[^`]*[0-9][^`]*`' "$pf" 2>/dev/null            | sed 's/^`//; s/`$//'            | grep -E '[0-9]'            | grep -E '(=|[0-9] ?(s|ms|MB|MiB|GB|%)|bytes)'            | sort -u)
+  done < <( { grep -ohE '`[^`]*[0-9][^`]*`' "$pf" | sed 's/^`//; s/`$//'
+              grep -ohE '[A-Za-z][A-Za-z0-9_ ()<=-]{2,34}[:=] ?[0-9][0-9.,/]*' "$pf"
+              grep -ohE '\b[0-9][0-9.,]* ?(MB|MiB|GB|KB|ms|bytes)\b' "$pf"
+              grep -ohE '\b[0-9]+[0-9.,]* ?s\b' "$pf"
+              # NUMBER-FIRST counts, e.g. `103 transcripts`. Restricted to the nouns the
+              # instruments actually report, rather than any `<digits> <word>`: the
+              # generic form returned 25 spans of pure prose noise ("0 makes", "13 that")
+              # and an exemption list of that shape rots into a dumping ground. Naming
+              # the quantities keeps every entry meaningful. This is the shape that let
+              # `103 transcripts` survive four commits with no gate noticing.
+              grep -ohE '\b[0-9][0-9.,]* (transcripts|sessions|session trees|trees|cgroups|processes|procs|lines)\b' "$pf"
+            } 2>/dev/null | sed 's/^ *//; s/ *$//' | sort -u )
 done
 
 # Every engine adapter claiming verified=True must name a tracked sample. Without this,

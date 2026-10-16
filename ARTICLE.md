@@ -253,9 +253,21 @@ runs, this repository publishes both runs rather than the nicer one.
 The related discipline: a count with no denominator beside it cannot disagree with anything.
 Our active-concurrency instrument counts minutes in which *no* session was working, because they
 are real — the denominator is the whole window, not the busy part of it. Measured:
-`sessions with any activity in 7d: 35`, `mean=0.15`, `busy_minutes=964/10080`. Divide by busy
-minutes instead and that `mean=0.15` becomes about 1.4, and the idle floor the entire argument
-turns on disappears.
+`sessions with any activity in 7d: 42`, `mean=0.15`, `busy_minutes=964/10080`, and
+`total session-ACTIVE-minutes in window: 1523`.
+
+Divide by busy minutes instead and the mean of the **raw** series becomes 1523/964 = **1.58**, and
+the idle floor the entire argument turns on disappears. Both inputs are named on purpose: a
+derived figure appears in no artefact by construction, so no gate can pin it, and the only defence
+is letting the reader do the division. (The gap-filled series gives 1523/1004 = 1.52; this
+sentence means the raw one.)
+
+I got this wrong in a way worth recording, because it is a shape a gate cannot see. An earlier
+revision said "about 1.4" — and 1.4 is the ratio of the **old** sample's numerator to the
+**current** sample's denominator. 1.5 had been right for the generation it was written against,
+~1.6 is right for this one, and 1.4 was right for neither: it is the one value no single
+generation yields. Recomputing a derived figure means re-deriving **both** sides from the same
+artefact, not refreshing the half that looks stale.
 
 ---
 

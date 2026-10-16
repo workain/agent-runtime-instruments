@@ -1,3 +1,22 @@
+# WARNING TO ANYONE ADDING GATE EVIDENCE HERE, AND TO ANY GATE THAT SEARCHES samples/:
+#
+# This directory records what a GATE PRINTED -- including the stale figures the round was
+# fixing. That makes every previously-wrong figure permanently findable under samples/, so
+# a gate asserting "this figure exists in an artefact" will PASS a stale figure on the
+# strength of a file whose entire purpose is to record it as WRONG.
+#
+# Measured, not hypothetical: with this directory included in the search, both
+# `spread=0.85s` and `sessions with any activity in 7d: 35` passed the figure gate while
+# being the exact defects two review rounds blocked on.
+#
+# scripts/check_figures.sh therefore searches with --exclude-dir=gate-evidence. If you add
+# another kind of evidence directory, exclude it too. An artefact of a FAILURE is not an
+# artefact of a MEASUREMENT.
+#
+# This hazard was created by the artefact below, which a reviewer asked for in round 2 and
+# which was worth having -- the exclusion is its price, noted here at the source rather
+# than only at the gate.
+#
 # check_figures.sh observed RED, before any figure was corrected.
 # Requested by the independent reviewer: a gate whose first-ever run is green
 # tells you nothing. This is the run against the stale prose.

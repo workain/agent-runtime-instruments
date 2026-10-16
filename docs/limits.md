@@ -17,8 +17,9 @@ Stated so the gaps are visible rather than implied absent.
   defect, which is what an admitted coverage limit looks like when it goes unaddressed.
 - **Two different corpora appear in this repo and must not be mixed.** The source study's
   concurrency figures (146 transcripts, 97 sessions, mean 0.43 active) came from two transcript
-  roots; the sample here (103 transcripts, `sessions with any activity in 7d: 35`, `mean=0.15`,
-  `busy_minutes=964/10080`) uses only the vendor-default root. Same instrument, different populations, so different numbers. The *shape* reproduces — a
+  roots; the sample here (`264 transcripts scanned`,
+  `sessions with any activity in 7d: 42`, `mean=0.15`, `busy_minutes=964/10080`) uses only the
+  vendor-default root. Same instrument, different populations, so different numbers. The *shape* reproduces — a
   low active mean against a much larger resident count — the integers do not.
 - **Codex was unauthenticated** (HTTP 401), so its boot figure is boot-to-first-event, and its
   capability set was read from `--help`, not exercised.
