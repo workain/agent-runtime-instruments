@@ -101,8 +101,8 @@ most useful contribution this repo can get. If it doesn't work, that's equally u
 One 16 GB Linux box, Claude Code 2.1.197, Codex 0.147.0, 2026-10-16, **under heavy load**.
 Readings, not constants — [`docs/limits.md`](docs/limits.md) says which moved and why.
 
-- `session trees: 17`, `summed RSS: 7513 MB` against `summed PSS: 5356 MB` — `PSS/RSS = 0.71`.
-  Per session, RSS `p50=392 MB`, PSS `p50=292 MB`.
+- `session trees: 20`, `summed RSS: 7483 MB` against `summed PSS: 5175 MB` — `PSS/RSS = 0.69`.
+  Per session, RSS `p50=350 MB`, PSS `p50=236 MB`.
 - `sessions with any activity in 7d: 42`, but `mean=0.15` sessions active per minute and
   `busy_minutes=964/10080`. **The resident count and the working count are not the same number,
   and the gap is the whole case for pooling.**

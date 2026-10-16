@@ -6,10 +6,15 @@ Stated so the gaps are visible rather than implied absent.
 
 - **One box, one day.** A 16 GB Linux box, Claude Code 2.1.197, Codex 0.147.0, 2026-10-16. Every
   number is a reading, not a constant.
-- **The box was heavily loaded**, and it shows: the full-harness boot arm spans
-  `min=3.68s  max=7.22s` inside a single three-rep run, and time-to-usable-MCP-tool read
-  `min=6.83s  max=7.68s  spread=0.85s` on n=2. Treat all timings as single-digit-second
+- **The box was heavily loaded**, and it shows: within one three-rep run the full-turn arm spans
+  `min=1.96s  max=3.65s`, and time-to-usable-MCP-tool read
+  `min=5.22s  max=6.97s  spread=1.75s` on n=2. Treat all timings as single-digit-second
   magnitudes, not values.
+- **This paragraph carried four stale figures through a review round.** They were corrected in
+  `ARTICLE.md` and missed here — in the document whose entire job is honesty about readings. Two
+  of the four existed in no sample at all. `scripts/check_figures.sh` now pins this file's quoted
+  timings too: 24 pairs covering only README and ARTICLE left the gate green straight across the
+  defect, which is what an admitted coverage limit looks like when it goes unaddressed.
 - **Two different corpora appear in this repo and must not be mixed.** The source study's
   concurrency figures (146 transcripts, 97 sessions, mean 0.43 active) came from two transcript
   roots; the sample here (103 transcripts, `sessions with any activity in 7d: 35`, `mean=0.14`,

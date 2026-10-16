@@ -133,6 +133,10 @@ def main():
     ap.add_argument("--list-unmatched", action="store_true",
                     help="also print the heaviest UNCLASSIFIED processes -- the check for "
                          "'is this zero real, or is my pattern wrong?'")
+    ap.add_argument("--binary-sizes", action="store_true",
+                    help="also report the ON-DISK size of each matched session's "
+                         "executable -- the quantity the PSS argument rests on, and one "
+                         "that is easy to confuse with a process tree's peak RSS")
     ap.add_argument("--help-blind", action="store_true",
                     help="print what this instrument prints when it cannot see, and exit")
     args = ap.parse_args()
@@ -226,6 +230,36 @@ def main():
         if q:
             print(f"per-session PSS  p50={q[len(q)//2]:.0f} MB  max={q[-1]:.0f} MB")
         print(f"procs per session p50={sorted(x[1] for x in rows)[len(rows)//2]}")
+
+    if args.binary_sizes:
+        # The shared-pages argument depends on the size of the BINARY on disk, which is a
+        # different quantity from a process tree's peak RSS and has been confused with it.
+        # Reported in BOTH conventions because 323,021,104 bytes is "323 MB" decimal and
+        # "308 MiB" binary, and a review disagreement here turned out to be exactly that
+        # plus two different files on the same box.
+        print("\non-disk size of each session's executable (the basis of the PSS argument):")
+        seen_exe = {}
+        # EVERY member of every session tree, not just the roots: the root is typically a
+        # node/npm wrapper and the large agent binary sits deeper down, so scanning roots
+        # alone reported the wrapper and missed the thing the argument is about.
+        for pid in claimed:
+            try:
+                exe = os.readlink(f"/proc/{pid}/exe")
+                seen_exe.setdefault(exe, os.path.getsize(exe))
+            except OSError:
+                continue
+        if not seen_exe:
+            print("  none readable (/proc/<pid>/exe needs the same uid or CAP_SYS_PTRACE)")
+        for exe, n in sorted(seen_exe.items(), key=lambda kv: -kv[1]):
+            shown = exe
+            if args.anonymise:
+                # an exe path under a per-account directory is site-specific; keep the
+                # package/binary tail, which is what identifies WHICH binary this is
+                parts = exe.strip("/").split("/")
+                shown = ("/".join(parts[-3:]) if len(parts) > 3 else exe)
+                if not exe.startswith(("/usr/", "/bin/", "/sbin/", "/lib")):
+                    shown = "<redacted>/" + shown
+            print(f"  {n} bytes = {n/1e6:.0f} MB decimal = {n/1048576:.0f} MiB  {shown}")
 
     if args.list_unmatched:
         print("\nheaviest UNCLASSIFIED processes (is your agent in here? then the count "

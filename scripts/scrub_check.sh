@@ -40,14 +40,16 @@ PATTERNS=(
   # (verified: anonymise('pressure-telemetry-1654') == 'sess-36e72ec4', which is not a
   # prefix of the input). A tighter bound would flag every anonymised sample. The
   # consequence, stated: a real identifier that is only 8 hex chars long would pass.
-  'session identifiers|sess-[0-9a-f]{12,}'
+  'session identifiers|[Ss][Ee][Ss][Ss]-[0-9a-fA-F]{12,}'
   'bare UUIDs (session ids leak this way)|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
   'email addresses|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   # 172.16/12 was missing: RFC1918 has three blocks and this knew two.
+  'cloud metadata endpoint|169\.254\.169\.254'
+  'internal hostnames|[A-Za-z0-9-]+\.internal\.[A-Za-z0-9.-]+'
   'private IPs / internal hosts|\b10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b|\b192\.168\.[0-9]{1,3}\.[0-9]{1,3}\b|\b172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}\b'
   # GitHub has retired `ghp_` as the only shape: fine-grained PATs are `github_pat_`,
   # and app/user tokens are `ghs_`/`gho_`. OpenAI project keys are `sk-proj-`.
-  'credential-shaped strings|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[so]_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}'
+  'credential-shaped strings|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[so]_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}'
   'actions-runner / CI host paths|actions-runner'
 )
 

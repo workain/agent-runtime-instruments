@@ -93,11 +93,21 @@ not. We publish both, and the run that exited 3.
 
 ## 2. Use PSS, not RSS — or your capacity number is wrong by construction
 
-Measured here: `session trees: 17`, with `summed RSS: 7513 MB` against `summed PSS: 5356 MB`.
-Per session, RSS `p50=392 MB` and PSS `p50=292 MB`.
+Measured here: `session trees: 20`, with `summed RSS: 7483 MB` against `summed PSS: 5175 MB`.
+Per session, RSS `p50=350 MB` and PSS `p50=236 MB`.
 
-The gap is not noise and not rounding. The CLI is a single compiled binary of about 323 MB, so
-its file-backed pages are *shared* between every concurrent session. Summed RSS counts those
+The gap is not noise and not rounding. The CLI is one large compiled binary whose file-backed
+pages are *shared* between every concurrent session. Measured here, and reported in both unit
+conventions because that ambiguity caused a real disagreement in review:
+`323021104 bytes = 323 MB decimal = 308 MiB` for the SDK-spawned binary
+(`samples/measure_session_footprint.out`, via `--binary-sizes`). A second copy ships as the system
+install at **245,517,112 bytes**, so "the binary" is two different sizes on one machine depending
+which one a session launched. Either way it is hundreds of megabytes and it is shared, which is
+all the PSS argument needs.
+
+A reviewer flagged this sentence as wrong by ~38%; we had measured different files in different
+units. **That the number survived is not the point. The point is that the sentence named neither
+the binary nor the megabyte, so it could not be checked.** It now names both. Summed RSS counts those
 pages once per session; summed PSS counts them once. Every session you add makes the error
 bigger. A capacity claim built on summed RSS is pessimistic **by construction** — it is not a
 conservative estimate, it is an arithmetic mistake with a direction.
@@ -136,7 +146,10 @@ this is the protocol floor rather than any real server's cost: `min=5.22s  max=6
 **And this is where we nearly mis-attributed our own number.** It is tempting to read that gap as
 the cost of connecting MCP. It is not. An experiment that isolates connect properly — call the
 same tool twice in one session, so the second call cannot pay connect, and subtract — puts MCP
-connect at **25-58 ms**. (That experiment is **not** in this repository and there is no artefact
+connect at **25-58 ms, or outside both measurement windows entirely**. That disjunct is the
+source's own and it matters: if connect lands outside both windows the subtraction never captured
+it, and it could sit inside `init`, which the same experiment measures at 1.05-2.42 s. Dropping it
+would be this section's own mistake, one clause later. (That experiment is **not** in this repository and there is no artefact
 for it here, so treat the figure as reported rather than reproduced; the method is stated above so
 you can run it yourself. What matters for this section is the *direction*, which is not in doubt:
 connect is milliseconds, the gap is seconds, so the gap is not connect.) The seconds between readiness and a usable tool are dominated by **model

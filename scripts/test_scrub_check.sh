@@ -38,6 +38,10 @@ DECOYS=(
   'credential-shaped strings|ghs_abcdefghij0123456789abcdefghij'
   'credential-shaped strings|gho_abcdefghij0123456789abcdefghij'
   'credential-shaped strings|sk-proj-abcdefghij0123456789abcdefghij'
+  'credential-shaped strings|xoxb-1234567890-abcdefghijkl'
+  'session identifiers|uppercase id sess-FB657A1FB0B8 here'
+  'cloud metadata endpoint|curl 169.254.169.254/latest/meta-data'
+  'internal hostnames|host agent-box-01.internal.example.dev'
 )
 
 pass=0; fail=0

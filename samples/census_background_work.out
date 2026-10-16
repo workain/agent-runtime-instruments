@@ -1,10 +1,16 @@
-SELF-TEST [cgroup handle (v1 reparenting defect)]: decoy pids=[2523647] detected=YES ppid=[1] reparented=YES
-SELF-TEST [agent-internal FILTER (v2 `sh -c` defect)]: decoy pids=[2523801, 2523802] detected=YES
+SELF-TEST [cgroup handle (v1 reparenting defect)]: decoy pids=[2639181] detected=YES ppid=[1] reparented=YES
+SELF-TEST [agent-internal FILTER (v2 `sh -c` defect)]: decoy pids=[2639239, 2639240] detected=YES
+SELF-TEST [age() and the age THRESHOLD]: age 2.0s -> 6.0s over 4s  positive=YES  grew_correctly=YES  included_below_threshold=YES  excluded_above_threshold=YES
+  independent-recomputation cross-check (pid, age(), recomputed, ok):
+    pid        1  age()=   2157073s  recomputed=   2157073s  ok
+    pid        2  age()=   2157073s  recomputed=   2157073s  ok
+    pid  2639307  age()=         6s  recomputed=         6s  ok
+    pid  2639178  age()=        10s  recomputed=        10s  ok
 
 criterion: a process in a LIVE session's own cgroup, not agent-internal, older than 900s
 
 
-LIVE session cgroups: 17
+LIVE session cgroups: 20
 LIVE sessions owning background work older than 900s: 0
 ORPHAN cgroups (dead session, process left behind): 0
-SELF-TEST PASSED -- a zero above is 'none found', by an instrument just shown to fire on both known defect classes.
+SELF-TEST PASSED -- a zero above is 'none found', by an instrument just shown to fire on both known defect classes AND to measure age monotonically and threshold it in both directions.

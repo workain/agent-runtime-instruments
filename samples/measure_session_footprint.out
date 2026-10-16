@@ -3,32 +3,47 @@ engine adapters UNTESTED (believed, not measured): goose, aider, opencode, curso
   -> for an UNTESTED engine, a zero here means 'this adapter found nothing', which is NOT evidence the engine was absent. See instruments/engines.py.
 
 root pid procs   RSS MB   PSS MB     cpu_s kind                                     tag
- 2451854     6      714      520        14 claude-code-acp                          
- 2519637     6      744      515         7 claude-code-acp                          
- 2444790     6      746      519        25 claude-code-acp                          
- 2465821     6      707      515        14 claude-code-acp                          
- 2461068     6      734      504        35 claude-code-acp                          
- 2478260     8      528      292        25 claude-code-acp                          
- 2007228     6      392      305       303 claude-code-acp                          
- 2194155     6      426      337       107 claude-code-acp                          
- 2314980     8      423      316       113 claude-code-acp                          
- 1804660     6      357      273       294 claude-code-acp                          
- 2240313     6      241      171      2236 claude-code-acp                          
- 1108545     6      221      147      2229 claude-code-acp                          
- 3883847     6      292      221      5478 claude-code-acp                          
- 3885779     6      252      183      4362 claude-code-acp                          
- 3422968     6      249      182      4686 claude-code-acp                          
- 3324844     6      244      177      7406 claude-code-acp                          
- 3327899     6      242      177      7482 claude-code-acp                          
+ 2604804     6      719      531        14 claude-code-acp                          
+ 2526544     6      732      544        33 claude-code-acp                          
+ 2519637     6      512      326        38 claude-code-acp                          
+ 2533920    11      727      519       150 claude-code-acp                          
+ 2451854     6      233      146        23 claude-code-acp                          
+ 2461068     6      514      328        65 claude-code-acp                          
+ 2478260     8      464      273        46 claude-code-acp                          
+ 2465821     6      178       92        23 claude-code-acp                          
+ 2444790     6      412      234        37 claude-code-acp                          
+ 2007228     6      350      267       346 claude-code-acp                          
+ 2194155     6      354      269       146 claude-code-acp                          
+ 2314980     8      380      276       147 claude-code-acp                          
+ 1804660     6      275      196       308 claude-code-acp                          
+ 2240313     6      152       88      2246 claude-code-acp                          
+ 1108545     6      133       69      2237 claude-code-acp                          
+ 3883847     6      282      213      5493 claude-code-acp                          
+ 3885779     6      254      187      4376 claude-code-acp                          
+ 3422968     6      301      236      4699 claude-code-acp                          
+ 3324844     6      265      200      7420 claude-code-acp                          
+ 3327899     6      247      182      7495 claude-code-acp                          
 
-session trees: 17
-summed RSS: 7513 MB   summed PSS: 5356 MB (PSS/RSS = 0.71)
-per-session RSS  p50=392 MB  max=746 MB
-per-session PSS  p50=292 MB  max=520 MB
+session trees: 20
+summed RSS: 7483 MB   summed PSS: 5175 MB (PSS/RSS = 0.69)
+per-session RSS  p50=350 MB  max=732 MB
+per-session PSS  p50=236 MB  max=544 MB
 procs per session p50=6
 
+on-disk size of each session's executable (the basis of the PSS argument):
+  323021104 bytes = 323 MB decimal = 308 MiB  <redacted>/@anthropic-ai/claude-agent-sdk-linux-x64/claude
+  323021104 bytes = 323 MB decimal = 308 MiB  <redacted>/@anthropic-ai/claude-agent-sdk-linux-x64/claude
+  98932688 bytes = 99 MB decimal = 94 MiB  /usr/bin/node
+  56004256 bytes = 56 MB decimal = 53 MiB  local/bin/uv
+  8020928 bytes = 8 MB decimal = 8 MiB  /usr/bin/python3.12
+  1446024 bytes = 1 MB decimal = 1 MiB  /usr/bin/bash
+  129784 bytes = 0 MB decimal = 0 MiB  /usr/bin/dash
+  64032 bytes = 0 MB decimal = 0 MiB  /usr/bin/tail
+  39880 bytes = 0 MB decimal = 0 MiB  /usr/bin/timeout
+  35336 bytes = 0 MB decimal = 0 MiB  /usr/bin/sleep
+
 MemTotal: 15987 MB
-MemAvailable: 7909 MB
+MemAvailable: 8551 MB
 SwapTotal: 32768 MB
-SwapFree: 26944 MB
-Committed_AS: 15659 MB
+SwapFree: 24573 MB
+Committed_AS: 17116 MB

@@ -24,12 +24,12 @@ MIN_PAIRS=24
 
 # figure-string | sample file it must appear in
 PAIRS=(
-  'session trees: 17|samples/measure_session_footprint.out'
-  'summed RSS: 7513 MB|samples/measure_session_footprint.out'
-  'summed PSS: 5356 MB|samples/measure_session_footprint.out'
-  'PSS/RSS = 0.71|samples/measure_session_footprint.out'
-  'p50=392 MB|samples/measure_session_footprint.out'
-  'p50=292 MB|samples/measure_session_footprint.out'
+  'session trees: 20|samples/measure_session_footprint.out'
+  'summed RSS: 7483 MB|samples/measure_session_footprint.out'
+  'summed PSS: 5175 MB|samples/measure_session_footprint.out'
+  'PSS/RSS = 0.69|samples/measure_session_footprint.out'
+  'p50=350 MB|samples/measure_session_footprint.out'
+  'p50=236 MB|samples/measure_session_footprint.out'
   'sessions with any activity in 7d: 42|samples/measure_active_concurrency.out'
   'mean=0.15|samples/measure_active_concurrency.out'
   'busy_minutes=964/10080|samples/measure_active_concurrency.out'
@@ -50,6 +50,11 @@ PAIRS=(
   'SKIPPED|samples/bench_cold_start.no-binaries.out'
 )
 
+# docs/limits.md is in this list deliberately. A review round found four stale figures in
+# it while the gate was green, because every declared pair happened to be cited only in
+# README or ARTICLE -- the gate's coverage is the list, and the list had a hole exactly
+# where the defect lived. limits.md now quotes the SAME pinned strings, so the existing
+# pairs cover it; the "cited nowhere in the prose" check is what keeps that true.
 PROSE=(README.md ARTICLE.md docs/method.md docs/limits.md)
 
 if [ "${#PAIRS[@]}" -lt "$MIN_PAIRS" ]; then
@@ -92,8 +97,39 @@ for f in $(grep -rhoE '[A-Za-z0-9_.-]+\.out' "${PROSE[@]}" | sort -u); do
   fi
 done
 
+# Every engine adapter claiming verified=True must name a tracked sample. Without this,
+# flipping one flag makes provenance_banner() assert "VERIFIED (run and output kept)"
+# about an adapter whose own note still says "UNTESTED ADAPTER, pattern from
+# documentation only" -- and every gate stays green. A reviewer demonstrated exactly
+# that. This is the figures rule applied to the other kind of claim.
+while IFS=$'\t' read -r name note; do
+  [ -z "$name" ] && continue
+  named=0
+  for f in $(echo "$note" | grep -ohE '[A-Za-z0-9_.-]+\.out' || true); do
+    found=$(find samples -type f -name "$f" -print -quit 2>/dev/null)
+    if [ -n "$found" ] && git ls-files --error-unmatch "$found" >/dev/null 2>&1; then
+      named=1
+    fi
+  done
+  if [ "$named" -eq 0 ]; then
+    echo "FAIL: engine adapter '$name' claims verified=True but its note names no"
+    echo "      tracked sample file. A verification claim needs an artefact, same as a"
+    echo "      figure. Either cite the sample or set verified=False."
+    fail=1
+  fi
+done < <(python3 - <<'PY'
+import importlib.util
+spec = importlib.util.spec_from_file_location("e", "instruments/engines.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+for e in m.ENGINES:
+    if e["verified"]:
+        print(e["name"] + "\t" + e["note"])
+PY
+)
+
 if [ "$fail" -eq 0 ]; then
-  echo "all $verified figures verified against their artefacts, and every cited sample exists"
+  echo "all $verified figures verified against their artefacts, every cited sample exists,"
+  echo "and every verified=True engine adapter names a tracked sample"
   exit 0
 fi
 echo

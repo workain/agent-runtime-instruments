@@ -360,16 +360,38 @@ def self_test_age(internal_re, session_dirs):
         # divisor -- that a young decoy is too young to reveal. A reviewer clamped age()
         # at 10 s and every other assertion here still passed, because the decoy was 6 s
         # old. This leg catches that immediately and without waiting.
-        try:
-            with open("/proc/1/stat") as fh:
-                st1 = fh.read()
-            with open("/proc/uptime") as fh:
-                up1 = float(fh.read().split()[0])
-            indep = up1 - int(st1[st1.rindex(")") + 2:].split()[19]) / CLK
-            measured = age(1)
-            agrees = indep > 0 and abs(measured - indep) <= max(2.0, indep * 0.02)
-        except Exception:
-            indep, measured, agrees = -1.0, -1.0, False
+        # Several processes of DIFFERING ages, not just pid 1. With one target the leg
+        # had kill-breadth 1: a mutation sparing pid 1 (`if pid==1 then real else
+        # clamp`) evaded it entirely while announcing a controlled zero. Contrived, but
+        # cheap to close -- pid 1, the decoy itself, and this process.
+        # Targets must SPAN ages, not merely be several. A first attempt used pid 1, the
+        # decoy and this process -- the latter two were 6 s and 10 s old, so a clamp at
+        # 300 s sparing pid 1 still evaded the whole leg. Include the OLDEST non-pid-1
+        # process available, so the span covers the band a clamp would live in.
+        oldest, oldest_age = None, 0.0
+        for d in os.listdir("/proc"):
+            if not d.isdigit() or int(d) == 1:
+                continue
+            a = age(int(d))
+            if a > oldest_age:
+                oldest, oldest_age = int(d), a
+        targets = [t for t in (1, oldest, pid, os.getpid()) if t]
+        agrees, checked = True, []
+        for t in targets:
+            try:
+                with open(f"/proc/{t}/stat") as fh:
+                    stt = fh.read()
+                with open("/proc/uptime") as fh:
+                    upt = float(fh.read().split()[0])
+                ind = upt - int(stt[stt.rindex(")") + 2:].split()[19]) / CLK
+                mea = age(t)
+                okt = ind > 0 and abs(mea - ind) <= max(2.0, ind * 0.02)
+            except Exception:
+                ind, mea, okt = -1.0, -1.0, False
+            checked.append((t, mea, ind, okt))
+            agrees = agrees and okt
+        indep = checked[0][2]
+        measured = checked[0][1]
         # classify() returns (live, orphan) -- take [0]
         inc = any(pid == q for _, (_, bg) in
                   classify(1, internal_re, session_dirs)[0].items() for q, _, _ in bg)
@@ -381,8 +403,10 @@ def self_test_age(internal_re, session_dirs):
               f"grew_correctly={'YES' if grew else 'NO'}  "
               f"included_below_threshold={'YES' if inc else 'NO'}  "
               f"excluded_above_threshold={'YES' if exc else 'NO'}")
-        print(f"  long-process cross-check: age(1)={measured:.0f}s vs independently "
-              f"computed {indep:.0f}s  agrees={'YES' if agrees else 'NO'}")
+        print("  independent-recomputation cross-check (pid, age(), recomputed, ok):")
+        for t, mea, ind, okt in checked:
+            print(f"    pid {t:>8}  age()={mea:>10.0f}s  recomputed={ind:>10.0f}s  "
+                  f"{'ok' if okt else 'MISMATCH'}")
         if not (positive and grew and inc and exc and agrees):
             print("  -> the age comparison is NOT controlled on this run; a zero below "
                   "could be an age() defect rather than an absence of work")
