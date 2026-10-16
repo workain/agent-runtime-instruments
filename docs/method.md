@@ -148,6 +148,25 @@ paraphrases; quoting it as the source's own words is the defect. Audit: `docs/ci
   orphaned commit the API served happily was refused by `git fetch origin <short-sha>` —
   so a short-SHA probe reported it gone. Check the API *and* a full-40-character fetch,
   and treat agreement between them as the only clean answer.
+- **An absence claim needs a control proving the instrument can detect PRESENCE.**
+  Otherwise "absent" and "I measured nothing" are the same output. This landed on both
+  sides of this repo's review in its final minutes. A reviewer's absence sweep reported
+  five figures absent; the reading was void, because `grep` on that box is **ugrep**, not
+  GNU grep, it was returning **exit 2 (an error)** rather than 1 (a real no-match), and a
+  `sed` in the pipeline had swallowed the status anyway. They caught it by asserting the
+  same loop could find a string they knew was present — it called that absent too, which
+  is how they knew the instrument was broken rather than the tree clean. The same claim
+  here had been made from *empty output with no control*: same answer, reached by luck.
+  So: run the positive control first, read the **exit status** rather than inferring from
+  empty output, and treat a status other than 0-or-1 as an error, never as absence.
+- **Configuring anonymity is not demonstrating it.** Stripping `GITHUB_TOKEN`/`GH_TOKEN`/
+  `GIT_ASKPASS` and disabling the credential helper *configures* an unauthenticated probe.
+  It does not prove you got one — and without that proof, "not anonymously fetchable" is
+  indistinguishable from "fetched with a credential I forgot I had, and the object simply
+  is not there." The demonstration is a third control: point the same probe at a
+  **private** repo and require it to FAIL (`could not read Username`). This generalises
+  the env-var trap elsewhere in this file: **the environment you think you set is not the
+  environment you got until something proves it.**
 - **Verify against an artefact that survives the machine you are typing on.** Deleting
   and recreating a repository is two operations, and the second can fail: here
   `gh repo delete` succeeded and `gh repo create` then hit a rate limit, so for some
