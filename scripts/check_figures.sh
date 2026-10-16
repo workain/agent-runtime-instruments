@@ -97,6 +97,79 @@ for f in $(grep -rhoE '[A-Za-z0-9_.-]+\.out' "${PROSE[@]}" | sort -u); do
   fi
 done
 
+# EVERY backticked figure in EVERY prose file must exist in some artefact.
+#
+# This leg inverts the direction of the one above, and it exists because the declared-pair
+# approach has a hole a reviewer demonstrated: guard 1 asks whether a figure is cited
+# *somewhere* in PROSE, so any one file satisfies the pair. Drifting only ONE file's copy
+# of a pinned string left the gate green with nonsense in it:
+#
+#   sed -i 's/min=1.96s  max=3.65s/min=9.99s  max=0.01s/' docs/limits.md
+#   bash scripts/check_figures.sh   -> exit 0
+#
+# That is exactly how `spread=0.85s` survived sixty lines below figures that had been
+# fixed, for three review rounds. Declared pairs catch a figure going stale everywhere;
+# this leg catches it going stale anywhere. Both are needed.
+#
+# NON-MEASUREMENTS must be allowlisted explicitly, below, with a reason -- a CLI flag or
+# a figure quoted from third-party documentation has no artefact here by construction.
+NON_MEASUREMENT=(
+  '2.1.197'            # CLI version, read from `claude --version`, not a measurement
+  '2.1.221'            # version requirement quoted from vendor docs
+  '0.147.0'            # Codex version
+  '245,517,112'        # the system-install binary size, quoted in ARTICLE as a contrast
+  '25-58 ms'           # third-party isolated-connect figure; labelled as having no artefact here
+  '1.05-2.42 s'        # from that same third-party experiment
+  '323 MB'             # prose gloss of the pinned `323021104 bytes = ...` figure
+  '0.1x'               # documented price multiplier
+  '0.025x'
+  '0.05x'
+  '1.25x'
+  '20 blocks'          # documented lookback window
+  '5-minute'
+  '1-hour'
+  'MCP_TIMEOUT'
+  '30 seconds'
+  '900s'               # the criterion's default, not a reading
+  'SELF_TEST_AGE_GAP_S'
+  # --- not measurements: code parameters, env vars and mount options ---
+  'min_age=1'          # a function argument discussed in prose, not a reading
+  'SELF_TEST=0'        # env var
+  'hidepid=2'          # a /proc mount option
+  'mean=0.00'          # the HYPOTHETICAL blind output, quoted to contrast with a real one.
+                       # Deliberately allowlisted rather than fixed: the whole point of
+                       # that passage is that this value is what a BLIND run prints, so it
+                       # must not exist in an artefact. If it ever appears in samples/,
+                       # that is a finding about the instrument, not about this list.
+  ' returns 0 bytes, so '   # a prose span about kernel behaviour caught by the figure regex
+)
+is_non_measurement() {
+  local f="$1" n
+  for n in "${NON_MEASUREMENT[@]}"; do [ "$f" = "$n" ] && return 0; done
+  return 1
+}
+
+for pf in "${PROSE[@]}"; do
+  # backticked spans that look like a measurement: contain a digit and a unit/equals
+  while IFS= read -r fig; do
+    [ -z "$fig" ] && continue
+    is_non_measurement "$fig" && continue
+    # samples/gate-evidence/ is EXCLUDED, and this is load-bearing. That directory
+    # records what a GATE printed, including the stale figures a round was fixing -- so
+    # searching it makes every previously-wrong figure permanently findable, turning the
+    # evidence of a past defect into a licence to reintroduce it. Measured: with it
+    # included, `spread=0.85s` (the round-3 block) passed this leg, because 0.85 survives
+    # inside check_figures.RED.out. An artefact of a failure is not an artefact of a
+    # measurement.
+    if ! grep -rqF --exclude-dir=gate-evidence -- "$fig" samples/ 2>/dev/null; then
+      echo "FAIL: $pf quotes \`$fig\` which appears in NO artefact under samples/."
+      echo "      Either it drifted, or it is not a measurement and belongs in"
+      echo "      NON_MEASUREMENT in this script with a reason."
+      fail=1
+    fi
+  done < <(grep -ohE '`[^`]*[0-9][^`]*`' "$pf" 2>/dev/null            | sed 's/^`//; s/`$//'            | grep -E '[0-9]'            | grep -E '(=|[0-9] ?(s|ms|MB|MiB|GB|%)|bytes)'            | sort -u)
+done
+
 # Every engine adapter claiming verified=True must name a tracked sample. Without this,
 # flipping one flag makes provenance_banner() assert "VERIFIED (run and output kept)"
 # about an adapter whose own note still says "UNTESTED ADAPTER, pattern from

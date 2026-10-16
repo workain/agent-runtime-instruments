@@ -17,8 +17,8 @@ Stated so the gaps are visible rather than implied absent.
   defect, which is what an admitted coverage limit looks like when it goes unaddressed.
 - **Two different corpora appear in this repo and must not be mixed.** The source study's
   concurrency figures (146 transcripts, 97 sessions, mean 0.43 active) came from two transcript
-  roots; the sample here (103 transcripts, `sessions with any activity in 7d: 35`, `mean=0.14`,
-  `busy_minutes=931/10080`) uses only the vendor-default root. Same instrument, different populations, so different numbers. The *shape* reproduces — a
+  roots; the sample here (103 transcripts, `sessions with any activity in 7d: 35`, `mean=0.15`,
+  `busy_minutes=964/10080`) uses only the vendor-default root. Same instrument, different populations, so different numbers. The *shape* reproduces — a
   low active mean against a much larger resident count — the integers do not.
 - **Codex was unauthenticated** (HTTP 401), so its boot figure is boot-to-first-event, and its
   capability set was read from `--help`, not exercised.
@@ -57,7 +57,7 @@ Stated so the gaps are visible rather than implied absent.
 ### `bench_cold_start.py`
 - `boot` stops at the first stream event, before any tool is callable. It is a floor by
   construction.
-- `procs=2..3` in the benchmark against ~6 in a real session: the benchmark process tree is
+- `procs=3` in the benchmark against ~6 in a real session: the benchmark process tree is
   smaller than a live session's, so its peak RSS is also a floor.
 - Measures the CLIs on `PATH`. A missing binary is `SKIPPED` **visibly**, never reported as zero
   (`samples/bench_cold_start.no-binaries.out`).
@@ -70,7 +70,7 @@ Stated so the gaps are visible rather than implied absent.
 - The model must choose to call the tool. A run that ends without the call prints `NEVER-CALLED`
   — a different finding from a failed connect, distinguished by the `init` server-status line.
 - Other MCP servers configured on the box appear in `init` and affect timing. One of our two reps
-  had a third server appear; that is most of the `spread=0.85s`.
+  had a third server appear; that is most of the `spread=1.75s`.
 
 ### `census_background_work.py`
 - Sees a session's own cgroup. Work handed to a systemd unit, another cgroup, or a remote host is

@@ -253,8 +253,8 @@ runs, this repository publishes both runs rather than the nicer one.
 The related discipline: a count with no denominator beside it cannot disagree with anything.
 Our active-concurrency instrument counts minutes in which *no* session was working, because they
 are real — the denominator is the whole window, not the busy part of it. Measured:
-`sessions with any activity in 7d: 35`, `mean=0.14`, `busy_minutes=931/10080`. Divide by busy
-minutes instead and that `mean=0.14` becomes about 1.5, and the idle floor the entire argument
+`sessions with any activity in 7d: 35`, `mean=0.15`, `busy_minutes=964/10080`. Divide by busy
+minutes instead and that `mean=0.15` becomes about 1.4, and the idle floor the entire argument
 turns on disappears.
 
 ---

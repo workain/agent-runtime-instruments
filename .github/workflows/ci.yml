@@ -31,6 +31,9 @@ jobs:
           done
           exit $fail
 
+      - name: every gate, via the same preflight developers run locally
+        run: bash scripts/preflight.sh
+
       - name: every prose figure still matches the artefact it came from
         run: bash scripts/check_figures.sh
 

@@ -140,7 +140,7 @@ paraphrases; quoting it as the source's own words is the defect. Audit: `docs/ci
 - **A missing field is not a zero.** Unreadable PSS prints `n/a`; an absent `/proc/meminfo` key
   prints `n/a (absent)`. A missing measurement that renders as 0 makes a session look free.
 - **Use a denominator that can disagree with you.** Count the minutes in which nothing happened;
-  they are real. Dividing by busy minutes only turns a `mean=0.14` into about 1.5 and deletes
+  they are real. Dividing by busy minutes only turns a `mean=0.15` into about 1.4 and deletes
   the idle floor the whole argument rests on.
 - **A flat offset is invisible to comparison.** A constant added to every arm leaves all ratios
   intact, so nothing looks wrong. Capture and print stderr; that is where ours was.
