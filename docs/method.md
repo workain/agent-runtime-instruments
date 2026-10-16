@@ -148,6 +148,23 @@ paraphrases; quoting it as the source's own words is the defect. Audit: `docs/ci
   orphaned commit the API served happily was refused by `git fetch origin <short-sha>` —
   so a short-SHA probe reported it gone. Check the API *and* a full-40-character fetch,
   and treat agreement between them as the only clean answer.
+- **Verify against an artefact that survives the machine you are typing on.** Deleting
+  and recreating a repository is two operations, and the second can fail: here
+  `gh repo delete` succeeded and `gh repo create` then hit a rate limit, so for some
+  minutes the repository did not exist. "I had confirmed the local copy" is one copy on
+  one disk. Push a complete mirror first (`git push --mirror` to a holding repo, or
+  `git bundle create`) and verify the mirror's **commit count and tip SHA** before the
+  delete. The rate limit is a recurring environmental fact rather than bad luck — it
+  also broke the reviewer's own `gh repo view` in the same session, which is why their
+  visibility check used REST.
+- **A single POSITIVE probe can be measuring the wrong thing**, which is the twin of the
+  rule above and was learned the same way. A removal check printed "still served" because
+  its clone had failed, so the `cd` failed and `git cat-file` ran in the *local* repo,
+  where the object exists. Make a probe state its own ground — print the tree it is
+  running in — and refuse to conclude when its setup fails. The reviewer's version adds
+  the control that makes it conclusive: count the objects **before and after** the fetch,
+  because "not our ref" in a tree that already holds the object is indistinguishable from
+  a real removal.
 - **A force-push does not delete anything.** It makes an object unreachable, and every
   reachable-objects gate then goes green and is *correct* to: `git log --all` and a
   pre-push ancestry scan both stop at reachability. The remote keeps serving the object
