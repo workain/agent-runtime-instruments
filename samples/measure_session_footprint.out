@@ -1,0 +1,32 @@
+root pid procs   RSS MB   PSS MB     cpu_s kind                                     tag
+ 2310860     8      668      592       340 Claude Code CLI                          sess-12600fa0
+ 2069976     3      610      562       580 Claude Code CLI                          sess-5d617fe2
+ 2287988     3      583      525       211 Claude Code CLI                          sess-971f7550
+ 2176028     3      562      514       278 Claude Code CLI                          sess-a5c9e5c2
+ 2368742     3      549      485        89 Claude Code CLI                          sess-7e84fd75
+ 2081688     3      543      494       300 Claude Code CLI                          sess-0e92dce5
+ 2080728     3      530      481       290 Claude Code CLI                          sess-ea898388
+ 2176795     5      525      472       162 Claude Code CLI                          sess-5eb8144e
+ 2007228     6      363      285       259 ACP host (agent-client-protocol entrypoint) 
+ 2194155     6      331      254        70 ACP host (agent-client-protocol entrypoint) 
+ 2314980     8      328      237        60 ACP host (agent-client-protocol entrypoint) 
+ 1804660     6      255      181       270 ACP host (agent-client-protocol entrypoint) 
+ 2240313     6      160       99      2223 ACP host (agent-client-protocol entrypoint) 
+ 1108545     6      249      188      2217 ACP host (agent-client-protocol entrypoint) 
+ 3883847     6      269      203      5458 ACP host (agent-client-protocol entrypoint) 
+ 3885779     6      251      187      4345 ACP host (agent-client-protocol entrypoint) 
+ 3422968     6      231      169      4669 ACP host (agent-client-protocol entrypoint) 
+ 3324844     6      255      193      7388 ACP host (agent-client-protocol entrypoint) 
+ 3327899     6      243      181      7465 ACP host (agent-client-protocol entrypoint) 
+
+session trees: 19
+summed RSS: 7505 MB   summed PSS: 6302 MB (PSS/RSS = 0.84)
+per-session RSS  p50=331 MB  max=668 MB
+per-session PSS  p50=254 MB  max=592 MB
+procs per session p50=6
+
+MemTotal: 15987 MB
+MemAvailable: 6590 MB
+SwapTotal: 32768 MB
+SwapFree: 26864 MB
+Committed_AS: 15334 MB

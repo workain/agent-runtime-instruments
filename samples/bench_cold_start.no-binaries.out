@@ -1,0 +1,11 @@
+
+### Claude Code, full harness (hooks + MCP + project-instruction discovery)
+    SKIPPED: 'claude' is not on PATH. Not a measurement of zero -- this arm did not run.
+
+### Claude Code, --bare (no hooks/MCP/skills/project instructions)
+    SKIPPED: 'claude' is not on PATH. Not a measurement of zero -- this arm did not run.
+
+### Codex exec --json
+    SKIPPED: 'codex' is not on PATH. Not a measurement of zero -- this arm did not run.
+
+(`turn` arm skipped by --skip-turn: the boot figures above stop before any tool is callable and are a FLOOR, not an end-to-end turn cost.)

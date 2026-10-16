@@ -1,0 +1,41 @@
+# RUN 3 of 4. Provenance, stated plainly: this run PREDATES the --anonymise flag, so its
+# session ids were replaced here post-hoc by sha256 prefix. It was NOT produced by the
+# published code -- samples/bench_cache_residency.out is the run that was. Token counts
+# and timings are untouched.
+#
+# Kept because arm 5 is the headline claim and one run is not a reproduction.
+ARM 1 -- RESIDENT: one process, two turns over stream-json stdin
+  resident turn1: cache_read=26220 cache_creation=0 input=2875
+  resident turn2: cache_read=29834 cache_creation=0 input=1083
+
+ARM 2 -- FRESH: turn 1 in one process, turn 2 in a NEW process via --resume
+  fresh turn1: {'sid': 'sid-8bfb172b', 'read': 26220, 'create': 0, 'inp': 2863}
+  fresh turn2 (new process, resumed, inside TTL): {'sid': 'sid-8bfb172b', 'read': 29095, 'create': 0, 'inp': 164}
+
+ARM 3 -- SUFFIX PERTURBATION (kept, and it FAILED as a control)
+  perturbed turn2: {'sid': 'sid-8bfb172b', 'read': 14848, 'create': 14467, 'inp': 2}
+
+ARM 4 -- PREFIX PERTURBATION, the real control: switch model to 'haiku' (caches are keyed per model)
+  model-switched turn2: {'sid': 'sid-8bfb172b', 'read': 31001, 'create': 0, 'inp': 10}
+
+ARM 5 -- DEAD-WRITER TEST: does a cache written by an EXITED process get read by a new one?
+  A (writer; exits before B and C run): {'sid': 'sid-5b051a77', 'read': 14848, 'create': 11417, 'inp': 2863}
+  B (new process, SAME marker as the dead writer):      {'sid': 'sid-5b051a77', 'read': 26265, 'create': 2875, 'inp': 164}
+  C (new process, DIFFERENT marker -- the control):     {'sid': 'sid-5b051a77', 'read': 14848, 'create': 14467, 'inp': 2}
+
+READING
+  resident 2nd-turn cache_read=29834   fresh 2nd-turn cache_read=29095
+  NOT like-for-like: the resident arm's turn 2 follows a longer cached prefix. Do not quote this pair as residency being cheaper.
+  suffix-perturbed cache_read=14848 vs unperturbed 29095  <- did NOT drop; either way this arm is NOT a reliable control (--append-system-prompt is a SUFFIX change)
+  model-switched hit_frac=100% (read=31001 creation=0) vs unperturbed hit_frac=100% (read=29095 creation=0)
+    PRIMARY (hit-fraction) -> control FAILED
+    SUPERSEDED (read-ratio) -> control FAILED  [kept visible: this is the test that misread a 4.9x creation increase as no-miss]
+
+VERDICT
+  ARMS 1-2 ARE UNCONTROLLED ON THIS RUN. Arm 4 did not show a miss, so on this run the instrument was not shown able to discriminate a hit from a miss, and a run in which nothing COULD have missed cannot evidence that nothing DID. Arm 4 is itself unreliable on a shared box: other processes warm the alternate model's cache. Arm 5 below does not depend on it.
+  Arm 2: a FRESH process resuming the session read 29095 cached tokens (creation=0, the new suffix). Residency was not required for a cache hit.
+  But on a busy box arm 2's prefix may ALREADY have been warm from an earlier run, in which case it shows a hit without showing WHOSE write was read. Arm 5 is the arm that separates those.
+  Arm 5: B (same marker as the dead writer) read 26265; C (different marker) read 14848.
+  => B read MORE than C by 11417 tokens. The only difference between them is whether the marker matches what the now-EXITED process A wrote. A cache entry outlived the process that created it and was read by a different one.
+     EXACT: B_read(26265) == C_read(14848) + A_creation(11417). B read precisely the bytes A wrote, on top of the prefix both share. Token-exact, not directional.
+  LIMIT: n=1 per arm throughout. Supported, not settled.

@@ -1,0 +1,18 @@
+# COUNTERFACTUAL run, kept deliberately. Same instrument, same prompt, but the MCP
+# server advertises an invented protocol version and is therefore rejected by the CLI.
+#
+# Before the fix this exact case printed `mcp_tool_result=3.87s` and exited 0 -- a
+# confident figure for a server that never connected, because the instrument matched
+# its target tool by substring over the whole JSON line and the model had called
+# ToolSearch with query "select:mcp__echo__ping". A fix with no counterfactual beside
+# it is an assertion.
+CLI: 2.1.197 (Claude Code)
+tool: mcp__echo__ping
+config: MCP_CONFIG=/tmp/broken_cfg.json
+(the documented pre-turn wait for pending MCP servers requires CLI v2.1.221+; on an older CLI the connect cost lands on the first tool call)
+rep1: init=1.34s  mcp_tool_use=none  mcp_tool_result=NEVER-CALLED
+       init mcp_servers: [{"name": "<other-server-1>", "status": "pending"}, {"name": "<other-server-2>", "status": "pending"}, {"name": "echo", "status": "failed"}]
+       REFUSING this rep: server 'echo' reported "status": "failed" in init -- nothing was connected, so any time below would be timing something else.
+
+NO REP PRODUCED A tool_result for mcp__echo__ping. See --help-blind: check the init mcp_servers line above to tell a failed connect from a model that simply declined to call the tool.
+exit recorded: 3 (3 = refused, correct)

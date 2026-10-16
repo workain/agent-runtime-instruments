@@ -1,0 +1,35 @@
+# RUN 1, kept as a FAILED run (exit 3). Provenance, stated plainly:
+# this run PREDATES the --anonymise flag, so its session ids were replaced here
+# post-hoc by sha256 prefix -- it was NOT produced by the published code, unlike
+# samples/bench_cache_residency.out. Token counts and timings are untouched.
+#
+# Why it is kept: the control criterion of the time was
+#   perturbed_read < 0.5 * unperturbed_read
+# It called the control FAILED while cache_creation had gone 2,875 -> 14,005 (4.9x)
+# under the perturbation. The control had plainly fired and the test could not see it,
+# because a read-only test cannot distinguish a PARTIAL miss from a hit. That is why
+# the hit-fraction criterion replaced it, and why both are printed on every run since.
+#
+# This run also predates arm 5, so it could not isolate whose write was being read.
+ARM 1 -- RESIDENT: one process, two turns over stream-json stdin
+  resident turn1: cache_read=16739 cache_creation=9481 input=2863
+  resident turn2: cache_read=43064 cache_creation=12356 input=1724
+
+ARM 2 -- FRESH: turn 1 in one process, turn 2 in a NEW process via --resume
+  fresh turn1: {'sid': 'sid-3fea35fc', 'read': 26220, 'create': 0, 'inp': 2863}
+  fresh turn2 (new process, resumed, inside TTL): {'sid': 'sid-3fea35fc', 'read': 26220, 'create': 2875, 'inp': 164}
+
+ARM 3 -- SUFFIX PERTURBATION (kept, and it FAILED as a control)
+  perturbed turn2: {'sid': 'sid-3fea35fc', 'read': 14848, 'create': 14463, 'inp': 2}
+
+ARM 4 -- PREFIX PERTURBATION, the real control: switch model to 'haiku' (caches are keyed per model)
+  model-switched turn2: {'sid': 'sid-3fea35fc', 'read': 16996, 'create': 14005, 'inp': 10}
+
+READING
+  resident 2nd-turn cache_read=43064   fresh 2nd-turn cache_read=26220
+  NOT like-for-like: the resident arm's turn 2 follows a longer cached prefix. Do not quote this pair as residency being cheaper.
+  suffix-perturbed cache_read=14848 vs unperturbed 26220  <- did NOT drop; either way this arm is NOT a reliable control (--append-system-prompt is a SUFFIX change)
+  model-switched cache_read=16996 creation=14005 vs unperturbed read=26220  <- control FAILED
+
+VERDICT
+  THIS RUN PROVES NOTHING. Arm 4 did not show a miss, so the instrument was not shown to discriminate a hit from a miss on this run -- and a run in which nothing COULD have missed cannot evidence that nothing DID.

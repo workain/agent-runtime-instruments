@@ -1,0 +1,88 @@
+# Citation audit
+
+Every third-party quotation this repository makes, with how it was verified.
+
+**Why this file exists.** The study these instruments came from attributed ~40 external sources
+and had verified 6 at first hand. When 13 of its attributed quotations were re-checked by
+fetching the pages, **7 needed correction.** The mechanism was not carelessness about any one
+sentence: several quotations had been taken from **search-result summaries**, which paraphrase,
+and then printed in quotation marks as if page-verbatim. That is a class of defect, not three
+accidents, so the remedy has to be mechanical — fetch the page, find the sentence, copy it.
+
+**Method used here.** Each URL was fetched and its body text read. Where a fetch returned a
+model-written summary rather than page text, raw bytes were pulled separately and the two
+cross-checked; both agree on every line below. A quotation that could not be found on the page is
+marked NOT PRESENT and is **not used anywhere in this repository**.
+
+---
+
+## Used, and verified verbatim
+
+| Quotation | Source | Used in |
+|---|---|---|
+| "Summing RSS instead would count the shared runtime once per agent: the same ramp reads 340 MB per session in RSS against 238 MB in PSS." | [omg.dev/tools/coding-agent-capacity](https://omg.dev/tools/coding-agent-capacity) | `ARTICLE.md` §2, `README.md` |
+| "the median session's whole process tree measured 238 MB and the p90 measured 997 MB" | same | available, not currently quoted |
+| "each additional one costs about the same 167 MB" | same | available, not currently quoted |
+| "Claude Code waits for still-pending servers before running the first turn, up to the `MCP_TIMEOUT` startup timeout, 30 seconds by default." | [code.claude.com/docs/en/headless](https://code.claude.com/docs/en/headless) | `ARTICLE.md` §3 |
+| "The wait requires Claude Code v2.1.221 or later." | same | `ARTICLE.md` §3 — **this is the clause that corrected us** |
+| "A remote server with a cached tool list skips the wait, shows `pending` in `system/init`, and connects on its first tool call." | same | `instruments/bench_mcp_connect.py` docstring |
+| "Claude Code finds the session by its ID in any project on this machine." | same (**headless** page, *not* the CLI reference) | context for `--resume` |
+| "Exact matching: Cache hits require 100% identical prompt segments, including all text and images up to and including the block marked with cache control." | [platform.claude.com/docs/en/build-with-claude/prompt-caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) | `instruments/bench_cache_residency.py` |
+| "For concurrent requests, note that a cache entry only becomes available after the first response begins." | same | `docs/limits.md` |
+| "The lookback window is 20 blocks. The system checks at most 20 positions per breakpoint, counting the breakpoint itself as the first." | same | `docs/limits.md` |
+| "By default, the cache has a 5-minute lifetime." | same | `instruments/bench_cache_residency.py` |
+
+## Corrections — what the source study said, and what the page says
+
+| # | Study's version | Verdict | Reality |
+|---|---|---|---|
+| 1 | Cache key is "derived from the exact bytes of the rendered prompt up to each `cache_control` breakpoint" | **NOT PRESENT** | Neither "exact bytes" nor "rendered prompt" occurs on the page. Its concept is a *cumulative hash of the prefix* ending at the breakpoint. **Quotation dropped; the mechanism is restated in our own words.** |
+| 2 | Caches are **model-scoped** | **NOT PRESENT** | The page's "Cache storage and sharing" section names only organization- and workspace-level isolation. Model-scoping may be true of the system, but **it cannot be cited to this page** — and our own arm 4 assumed it, which is why that arm is now a questionable control. See `ARTICLE.md` §1. |
+| 3 | A cache entry is readable only after the first response "begins streaming" | **WORDING** | The page says "after the first response **begins**". "Streaming" is ours. Corrected. |
+| 4 | A breakpoint "walks backward at most 20 content blocks" | **WORDING** | The unit is **positions**, not content blocks, and "a run of consecutive `tool_use` blocks counts as one position" — so a turn with many parallel tool calls does not consume the window as fast as "20 blocks" implies. Corrected. |
+| 5 | Cache reads at ~0.1× input price | **INCOMPLETE** | 0.1× is the documented *standard* multiplier, with **per-model exceptions**: the page's footnotes give 0.025× for Claude Fable 5.1 and Mythos 5.1, and 0.05× for Opus 5.5 and Sonnet 5.5. Any cost model built on a flat 0.1× is wrong for four current models. |
+| 6 | "32 concurrent sessions totaled 5.36 GB, with a median of 171 MB per session" | **NOT A SENTENCE** | Those figures are a **table row**, not prose; the page's own prose rounds them to 5.4 GB. Printing it in quotation marks would quote a sentence that does not exist. **Not used.** |
+| 7 | "finds the session by its ID in any project on this machine" cited to the CLI reference | **WRONG PAGE** | The CLI reference mentions `--resume` eleven times and contains this sentence zero times. It is on the headless page. Re-attributed. |
+
+**One correction made our argument weaker, and it is the most important one here.** Dropping
+the model-scoping claim (#2) removes the justification for arm 4 of the caching instrument — the
+control we had been describing as "the one that actually works". It is now published as a
+control whose premise is unverified and which failed on two of three runs. The headline caching
+result survives only because arm 5 carries a different control.
+
+Two corrections made the argument *stronger*: the version clause (#4 in `ARTICLE.md` §3) and the
+RSS/PSS sentence, which is better evidence for the accounting choice than anything originally
+quoted.
+
+---
+
+## Quoted-from versus reported-by
+
+A page with a commercial interest in the claim is still usable, but the interest has to be
+visible. These two sentences are accurate and verbatim:
+
+> "They are also deliberately task-scoped: idle sessions expire, the VM is reclaimed, and
+> anything still running inside is gone." … "There is no way to keep a daemon alive."
+>
+> — [agent37.com/blog/claude-code-cloud](https://agent37.com/blog/claude-code-cloud)
+
+**Disclosure:** that page advertises a competing always-on hosted product two sentences later.
+The quotations describe a limitation of someone else's product in a post selling the alternative.
+We consider them reliable because they are specific and checkable against vendor documentation,
+but a reader should know the source's position. They are **not load-bearing** for anything in
+this repository.
+
+---
+
+## Not verified at first hand
+
+Stated so the gap is visible rather than implied absent. These were cited in the source study,
+are **not** relied on anywhere here, and should be treated as reported-by until someone reads
+the page: OpenHands' "one pod per active conversation"; the Agent Client Protocol adoption
+figure "over 25 agents"; the durable-execution phrase "without holding a process open"; the
+OpenCode mutual-restart issue; and the upstream Claude Code memory-growth issue bodies.
+
+The source study's own honest denominator was **6 of ~40 verified**. This file brings the count
+of *first-hand verified* quotations to 13 — but only across the quotations this repository
+actually uses. The remaining ~27 from the study were not re-checked, because nothing here
+depends on them.

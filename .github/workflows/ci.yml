@@ -1,0 +1,71 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the scrubber scans history, not just the tip
+
+      - name: every instrument parses and prints its own help
+        run: |
+          for f in instruments/*.py; do
+            python3 -c "import ast,sys; ast.parse(open('$f').read())"
+            python3 "$f" --help > /dev/null
+          done
+
+      - name: every instrument answers "what would this print if it were blind?"
+        run: |
+          # not a formality: this is rule 1 of docs/method.md, enforced
+          fail=0
+          for f in instruments/*.py; do
+            case "$f" in */echo_mcp_server.py) continue;; esac
+            if ! python3 "$f" --help-blind | grep -q "WHAT WOULD THIS PRINT IF IT WERE BLIND"; then
+              echo "MISSING blind-mode answer: $f"; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: every prose figure still matches the artefact it came from
+        run: bash scripts/check_figures.sh
+
+      - name: scrub the working tree, the whole git history, and commit identities
+        run: bash scripts/scrub_check.sh --all
+
+      - name: prove the scrubber can fail (one decoy per pattern)
+        run: bash scripts/test_scrub_check.sh
+
+      - name: the bundled MCP server speaks the protocol
+        run: |
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ping","arguments":{}}}' \
+          | python3 instruments/echo_mcp_server.py | tee /tmp/mcp.out
+          grep -q '"protocolVersion": "2025-06-18"' /tmp/mcp.out
+          grep -q '"text": "pong"' /tmp/mcp.out
+          test "$(grep -c jsonrpc /tmp/mcp.out)" = 3   # a notification must get NO reply
+
+      - name: instruments that cannot measure here must refuse, not print zero
+        run: |
+          # no transcripts at this path -> exit 2, not "mean=0.00"
+          set +e
+          ROOTS=/nonexistent/path python3 instruments/measure_active_concurrency.py; rc=$?
+          set -e
+          test "$rc" = 2 || { echo "expected exit 2 on an empty corpus, got $rc"; exit 1; }
+
+      - name: a missing agent binary skips visibly rather than reporting zero
+        run: |
+          mkdir -p /tmp/pyonly && ln -sf "$(command -v python3)" /tmp/pyonly/python3
+          out=$(PATH=/tmp/pyonly REPS=1 /tmp/pyonly/python3 instruments/bench_cold_start.py --skip-turn)
+          echo "$out"
+          echo "$out" | grep -q "SKIPPED" || { echo "expected a visible SKIP"; exit 1; }
+          echo "$out" | grep -q "not a measurement of zero" \
+            || echo "$out" | grep -q "Not a measurement of zero" \
+            || { echo "a skip must say it is not a zero"; exit 1; }

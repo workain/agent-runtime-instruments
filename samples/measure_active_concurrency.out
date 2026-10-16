@@ -1,0 +1,20 @@
+roots: <redacted>/.claude/projects, <redacted>/.codex/sessions
+transcripts found: 468
+corpus: 103 transcripts scanned, 365 older than 7d or unreadable, 16480 lines
+files with no parseable timestamp: 0/103
+sessions with any activity in 7d: 35
+ACTIVE sessions/min (raw)      : p50=0 p90=0 p99=2 max=8 mean=0.14  busy_minutes=931/10080 (9%)
+ACTIVE sessions/min (gap<=3m)  : p50=0 p90=0 p99=3 max=8 mean=0.15  busy_minutes=971/10080 (10%)
+
+total session-ACTIVE-minutes in window: 1365 (23 session-hours in a 168-hour window)
+per-session active minutes, top 10:
+     390  key-f82cb95e
+     291  key-64152904
+     132  key-ab2e21e2
+     106  key-466a85d2
+      56  key-7de6e802
+      43  key-9b5d2970
+      42  key-bbfc0d38
+      39  key-7745e6c9
+      32  key-acb5927f
+      27  key-813fbe6e
