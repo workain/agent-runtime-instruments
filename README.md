@@ -146,10 +146,16 @@ was gone.** For a pooling decision, that removes the objection that looks most e
 ## Before you publish any output
 
 ```bash
-bash scripts/preflight.sh            # every gate, under set -e
+bash scripts/preflight.sh                      # every local gate, under set -e
+bash scripts/check_remote_identities.sh        # asks the REMOTE what it still serves
 ln -sf ../../scripts/preflight.sh      .git/hooks/pre-commit
 ln -sf ../../scripts/pre-push-hook.sh  .git/hooks/pre-push
 ```
+
+Verify both symlinks resolve. A **dangling** hook symlink is silently skipped by git —
+`git push` exits 0 with no warning — so a reader following these two lines against a file
+that isn't in the repo installs nothing while being told they are covered. That happened
+here.
 
 Install both hooks, not just the first. A pre-commit run **cannot** see a new commit's
 author identity or its blobs in history, because neither exists yet when it runs — and a

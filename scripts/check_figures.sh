@@ -155,6 +155,13 @@ EXEMPT=(
   '146 transcripts' '97 sessions'
   # --- counts quoted from the instruments' own defect history (v1/v2/v3 answers) ---
   '16 sessions' '15 cgroups' '15 live'
+  # --- the WRONG figure, quoted in docs/method.md as the example of the defect it
+  # --- caused. It must not match an artefact: that is the point of quoting it. Caught
+  # --- by this gate on its first run against the paragraph describing it, which is the
+  # --- gate working rather than a problem. ---
+  '103 transcripts'
+  # --- extractor artefact: prose containing "404'd" matches the label:N shape ---
+  "blob the GitHub API 404'd was still served by"
   'returns 0 bytes, so'
   'v1 | "0 of 16 sessions own background work" | Its filter discarded'
   'v3 | "15 live session cgroups" | Discovery used the broad "is this agent-internal?" pattern, which matches a bare'

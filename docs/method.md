@@ -142,5 +142,32 @@ paraphrases; quoting it as the source's own words is the defect. Audit: `docs/ci
 - **Use a denominator that can disagree with you.** Count the minutes in which nothing happened;
   they are real. Dividing by busy minutes only turns a `mean=0.15` into about 1.4 and deletes
   the idle floor the whole argument rests on.
+- **A single negative probe proves nothing — ask both surfaces, with the full SHA.** This
+  repo has been misled by one-sided removal checks **twice, in opposite directions**. A
+  `.pyc` blob the GitHub API 404'd was still served by `git fetch origin <full-sha>`. An
+  orphaned commit the API served happily was refused by `git fetch origin <short-sha>` —
+  so a short-SHA probe reported it gone. Check the API *and* a full-40-character fetch,
+  and treat agreement between them as the only clean answer.
+- **A force-push does not delete anything.** It makes an object unreachable, and every
+  reachable-objects gate then goes green and is *correct* to: `git log --all` and a
+  pre-push ancestry scan both stop at reachability. The remote keeps serving the object
+  with no detector on your side at all. `scripts/check_remote_identities.sh` exists
+  because that was the only blind spot nothing in this repo could see.
+- **House style for counts in prose: write `label: N`, not `N things`.** The figure gate
+  catches `label: N` by shape, for any label. Number-first counts are caught only via a
+  hand-maintained noun list, so every new countable noun is a new blind spot — which is
+  exactly how an unbackticked `103 transcripts` survived four commits. This convention
+  costs nothing and needs no list. (A reviewer proposed deriving the noun list from
+  `samples/` instead and then measured it: derivation surfaced `bytes`, `input`, `cache`,
+  `did` and `follows` at high frequency while `transcripts` and `lines` appeared once
+  each — longer, noisier, and a false-positive generator. They withdrew it. Testing a
+  recommendation before making it changed the answer, for the second time in that
+  review.)
+- **A dangling hook symlink is silently skipped.** `ln -sf ../../scripts/<name>
+  .git/hooks/pre-push` pointing at a file that is not in the repository installs
+  *nothing*: git skips it, `git push` exits 0, and no warning is printed — while the
+  README says you are covered. A gate that exists only on its author's disk is the
+  gate-provenance failure in its purest form, and it happened here inside the remedy for
+  a leak.
 - **A flat offset is invisible to comparison.** A constant added to every arm leaves all ratios
   intact, so nothing looks wrong. Capture and print stderr; that is where ours was.
