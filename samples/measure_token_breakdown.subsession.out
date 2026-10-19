@@ -36,6 +36,45 @@ TOP 5 TURNS BY cache_read (the turns re-reading the most cached context):
          2000       80  main thread / Task
          1500       20  explore / (no tool call)
 
+LOOP FLAGS
+  Mechanical signals, computed from transcript STRUCTURE only -- turn boundaries and
+  tool_use block counts -- never from judging what was said. THESE ARE FLAGS, NOT
+  VERDICTS: a flagged span means an unusual amount of work by the threshold YOU set,
+  which is a pointer to look. It is not a finding that the work was wasted, and no
+  threshold here is a validated constant.
+
+  real user turns (span boundaries): 2
+  user entries NOT counted as operator input: none
+    No isMeta, tool_result-only or engine-injected user entry was seen at all. For a
+    real Claude Code transcript that is itself unusual -- tool results come back as user
+    entries -- so check that this is the format you think it is.
+
+  SIGNAL 1 -- tool calls per span between consecutive real user turns
+    spans: 2  tool calls per span: p50=1 p90=6 max=6  (assistant turns per span: p50=1 max=6)
+    threshold: NOT SET -> NOT COMPUTED
+      Not a clean result and not a dirty one: no span was tested. No default ships
+      because no published threshold is grounded -- the frameworks' own ceilings span 5
+      to 1000 and exist as cost backstops, not as non-convergence detectors. Pick one
+      from the distribution above via --flag-span-tool-calls N or
+      ARI_FLAG_SPAN_TOOL_CALLS, and treat it as a starting point for recalibration.
+
+  SIGNAL 2 -- repeated / near-duplicate invocations: NOT IMPLEMENTED
+      NOT IMPLEMENTED -- repeated/near-duplicate invocations. Published work rates this
+      the most frequent of 14 multi-agent failure modes (MAST FM-1.3, step repetition,
+      15.7% over 1600+ annotated traces), so it is the next signal to add, not one that
+      was judged unimportant. It is deferred rather than approximated: matching on tool
+      NAME alone would report a Bash-heavy session as one long repetition, and the
+      command-level clustering that makes it meaningful is being built separately.
+      Nothing partial is reported under its name.
+
+  SIGNAL 3 -- consecutive assistant turns that called no tool
+    longest streak anywhere: 1 turn(s)
+    main thread: 5 turns, 1 with no tool call, in 1 streak(s), longest=1
+    sidechains: 2 turns, 1 with no tool call, in 1 streak(s), longest=1
+    threshold: NOT SET -> NOT COMPUTED
+      No streak was tested. Same reason as signal 1 for shipping no default; set one
+      with --flag-no-tool-streak N or ARI_FLAG_NO_TOOL_STREAK.
+
 BY SUBSESSION (caller's manifest tree, summed bottom-up; own = this node's transcript, subtree = own + all descendants):
   root-session (root): own[in=49 out=490 cache_create=4900 cache_read=20500]  subtree[in=50 out=497 cache_create=4970 cache_read=21200]
   child-explore (parent root-session): own[in=1 out=7 cache_create=70 cache_read=700]  subtree[in=1 out=7 cache_create=70 cache_read=700]
