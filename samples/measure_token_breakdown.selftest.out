@@ -7,11 +7,16 @@ SELF-TEST [positive control: exact totals over a synthetic fixture]
   main-thread output               got=430 expected=430 OK
   subagent explore output          got=60 expected=60 OK
   (no tool call) turns             got=2 expected=2 OK
-  coverage: 6 of 6 usage-bearing
+  coverage: 6 of 6 usage-bearing, fully-attributed=6 OK
 
-SELF-TEST [negative control: rename the usage field, the diagnostic MUST flag it]
-  coverage now: 0 of 6 usage-bearing (6 flagged with no usage field)
-  negative control FIRED (good: a renamed field is caught)
+SELF-TEST [negative control A: rename ALL usage fields -> no turn measurable]
+  usage-bearing now 0 of 6; refusal=FIRED
 
-SELF-TEST PASSED -- positive control exact, negative control fired.
+SELF-TEST [negative control B: rename ONE field (output_tokens) -- the case the all-or-nothing check passed silently]
+  usage-bearing still 6, but output_tokens present on 0/6; refusal=FIRED
+
+SELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]
+  duplicate-label refused=True; dangling-parent refused=True
+
+SELF-TEST PASSED -- positive control exact; both negative controls and both manifest guards fired.
 exit=0

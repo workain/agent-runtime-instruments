@@ -11,6 +11,15 @@
     "total_turns": 7,
     "usage_bearing": 7,
     "without_usage": 0,
+    "fully_attributed": 7,
+    "field_present": {
+      "input_tokens": 7,
+      "output_tokens": 7,
+      "cache_creation_input_tokens": 7,
+      "cache_read_input_tokens": 7
+    },
+    "fields_entirely_absent": [],
+    "fields_partially_absent": [],
     "sidechain_turns": 2,
     "sidechain_without_type": 0
   },

@@ -5,6 +5,11 @@ sources UNREADABLE (reported, not counted as zero):
   n/a  samples/fixtures/token_breakdown.missing.jsonl
 
 attribution coverage: 7 of 7 assistant turns were usage-bearing; 0 carried no recognised usage field
+usage-field presence across usage-bearing turns (a field missing here is a silent 0, not a measured one):
+  input_tokens: 7/7
+  output_tokens: 7/7
+  cache_creation_input_tokens: 7/7
+  cache_read_input_tokens: 7/7
 sidechain (subagent) turns: 2
 
 TOTAL over 7 usage-bearing turns: in=50 out=497 cache_create=4970 cache_read=21200

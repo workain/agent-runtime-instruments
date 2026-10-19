@@ -2,6 +2,11 @@ sources read:
   samples/fixtures/token_breakdown.jsonl
 
 attribution coverage: 6 of 6 assistant turns were usage-bearing; 0 carried no recognised usage field
+usage-field presence across usage-bearing turns (a field missing here is a silent 0, not a measured one):
+  input_tokens: 6/6
+  output_tokens: 6/6
+  cache_creation_input_tokens: 6/6
+  cache_read_input_tokens: 6/6
 sidechain (subagent) turns: 2
 
 TOTAL over 6 usage-bearing turns: in=49 out=490 cache_create=4900 cache_read=20500

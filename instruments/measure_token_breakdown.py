@@ -31,11 +31,11 @@ ONE MEASUREMENT TRAP THIS REPO WOULD OTHERWISE HIT. A single logical assistant t
 written to the transcript as SEVERAL `.jsonl` entries that share one `message.id` -- a
 `thinking` block, then one entry per `tool_use` block -- and EVERY one of those entries
 repeats the SAME `usage` object. Summing `usage` over raw entries therefore multiplies a
-turn's cost by its block count (measured here: 7715 assistant entries collapsed to 3531
-distinct turns, so a naive sum over-counts output tokens by ~2.2x). This instrument keys
-every turn by `message.id` and counts its `usage` ONCE, unioning the `tool_use` names
-across the turn's entries. The positive control (`--self-test`) builds a split turn on
-purpose and fails if the dedup regresses.
+turn's cost by its block count. This instrument keys every turn by `message.id` and counts
+its `usage` ONCE, unioning the `tool_use` names across the turn's entries. The positive
+control (`--self-test`) builds one turn as three entries repeating a single `usage` and
+fails if the dedup regresses -- a reproducible stand-in for the production transcripts
+where this was first seen.
 
 Read-only: opens the transcript and manifest paths for READING only. No writes, no
 network, no database. `--self-test` builds its fixture in memory and writes nothing.
@@ -50,12 +50,16 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
       1. NO TRANSCRIPT. A path that does not exist or cannot be read yields no turns. If
          NO source is readable the run REFUSES (exit 2): "I looked in the wrong place"
          must not share a shape with "this session was free".
-      2. A TRANSCRIPT WITH ZERO USAGE-BEARING TURNS. A file of the right shape whose
-         assistant turns carry no recognised `usage` field (an older format, or a renamed
-         field) would otherwise print `total=0`. Instead the coverage line reports
-         "N of M assistant turns carried no recognised usage field", and if NO turn in
-         the whole corpus is usage-bearing the run REFUSES (exit 2). A zero cost is a
-         MEASURED zero only when turns were measured; otherwise it is no measurement.
+      2. A TRANSCRIPT WHOSE USAGE FIELDS ARE WRONG -- wholly or in PART. If NO assistant
+         turn carries any recognised `usage` field (an older format, every field renamed)
+         the run REFUSES (exit 2) rather than printing `total=0`. The subtler case is a
+         SINGLE renamed field: three fields still parse, so the turn is still "usage-
+         bearing", but the renamed one reads as a silent 0 for a whole token dimension --
+         `cache_read` quietly dropping to 0 across a real session is exactly the "looks
+         free" trap. So presence is tracked PER FIELD: any canonical field absent from
+         EVERY usage-bearing turn is treated as unmeasured and the run REFUSES (exit 2),
+         and a field missing from SOME turns prints a WARNING that its total is a floor.
+         A zero cost is a MEASURED zero only when that field was actually present.
       3. A MANIFEST NODE WHOSE PATH IS MISSING/UNREADABLE. It is reported as `n/a` in the
          rollup and contributes nothing to its parent's sum -- never silently dropped and
          never counted as 0, because a child that cost nothing and a child we could not
@@ -67,10 +71,11 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
 
     The positive control: `--self-test` builds a synthetic transcript with hand-computed
     totals (including a split turn, a sidechain, and a no-tool turn) and asserts the
-    computed numbers match EXACTLY. The negative control, in the same run, renames the
-    usage field in that same fixture and asserts the coverage line flags every turn as
-    unmeasured and the run refuses -- a diagnostic that cannot fail would certify a broken
-    parse as a clean zero.
+    computed numbers match EXACTLY. TWO negative controls run in the same pass, because a
+    control defeated by a one-field change is no control: (a) rename ALL usage fields and
+    assert every turn reads as unmeasured and the run refuses; (b) rename a SINGLE field
+    and assert the per-field diagnostic flags that one dimension as absent and the run
+    still refuses -- the weaker all-or-nothing check passed (b) silently.
 """
 import argparse
 import hashlib
@@ -211,14 +216,51 @@ def agent_key(t):
     return t["agent"] or NO_AGENT_TYPE
 
 
+def _is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 def coverage(turns):
     total = len(turns)
-    usage = sum(1 for t in turns if t["has_usage"])
+    ub = [t for t in turns if t["has_usage"]]
+    # PER-FIELD presence, not just "has any field": a single renamed field leaves a turn
+    # usage-bearing (the other three parse) while silently zeroing one whole dimension.
+    present = {k: 0 for k in USAGE_FIELDS}
+    full = 0
+    for t in ub:
+        got = sum(1 for k in USAGE_FIELDS if _is_num(t["usage"].get(k)))
+        for k in USAGE_FIELDS:
+            if _is_num(t["usage"].get(k)):
+                present[k] += 1
+        if got == len(USAGE_FIELDS):
+            full += 1
     side = [t for t in turns if t["sidechain"]]
     side_no_type = sum(1 for t in side if not t["agent"])
-    return dict(total_turns=total, usage_bearing=usage,
-                without_usage=total - usage,
+    return dict(total_turns=total, usage_bearing=len(ub),
+                without_usage=total - len(ub),
+                fully_attributed=full, field_present=present,
+                fields_entirely_absent=[k for k in USAGE_FIELDS if present[k] == 0],
+                fields_partially_absent=[k for k in USAGE_FIELDS
+                                         if 0 < present[k] < len(ub)],
                 sidechain_turns=len(side), sidechain_without_type=side_no_type)
+
+
+def refusal_reason(cov):
+    """Return why this corpus cannot be measured, or None if it can.
+
+    Two refusals, so a renamed field cannot pass as a measured zero: no usage AT ALL, or
+    a whole canonical token dimension absent from every usage-bearing turn. A field absent
+    from only SOME turns is a floor (a WARNING), not a refusal -- it was measured somewhere.
+    """
+    if cov["usage_bearing"] == 0:
+        return (f"{cov['total_turns']} assistant turns found but NONE carried a recognised "
+                f"usage field, so total=0 would be no measurement, not a free session")
+    if cov["fields_entirely_absent"]:
+        return (f"usage was found, but the field(s) "
+                f"[{', '.join(cov['fields_entirely_absent'])}] are ABSENT from every "
+                f"usage-bearing turn -- a renamed or unsupported field reads as a silent 0 "
+                f"for that whole dimension, which is no measurement")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -238,17 +280,38 @@ def load_manifest(path):
         return None, f"cannot read manifest {path!r}: {e}"
     except Exception as e:
         return None, f"manifest {path!r} is not valid JSON: {e}"
+    return validate_manifest(data)
+
+
+def validate_manifest(data):
+    """Validate parsed manifest JSON (split out so the self-test exercises it without
+    writing a file -- this instrument stays read-only)."""
     if not isinstance(data, list):
         return None, "manifest must be a JSON list of {label, transcript_path, parent_label}"
-    nodes = []
+    nodes, seen = [], set()
     for i, item in enumerate(data):
         if not isinstance(item, dict) or "label" not in item \
                 or "transcript_path" not in item:
             return None, (f"manifest entry {i} must have at least 'label' and "
                           f"'transcript_path'")
-        nodes.append(dict(label=str(item["label"]),
+        label = str(item["label"])
+        # Duplicate labels are REFUSED, not merged: the rollup keys own-totals and the
+        # parent/child map by label, so two nodes sharing one would silently collapse into
+        # one -- a wrong number that still looks like a measurement.
+        if label in seen:
+            return None, (f"duplicate manifest label {label!r}: labels must be unique or "
+                          f"the rollup silently merges those nodes into one")
+        seen.add(label)
+        parent = item.get("parent_label")
+        nodes.append(dict(label=label,
                           path=str(item["transcript_path"]),
-                          parent=item.get("parent_label")))
+                          parent=(str(parent) if parent is not None else None)))
+    # A parent_label naming no node would silently reparent to root; refuse instead.
+    labels = {nd["label"] for nd in nodes}
+    for nd in nodes:
+        if nd["parent"] is not None and nd["parent"] not in labels:
+            return None, (f"manifest node {nd['label']!r} names parent_label "
+                          f"{nd['parent']!r}, which is not itself a node")
     return nodes, None
 
 
@@ -313,6 +376,14 @@ def print_report(sources_read, sources_na, turns, args):
     if cov["without_usage"]:
         print(f"  WARNING: {cov['without_usage']} of {cov['total_turns']} turns had no "
               f"usage field and are ABSENT from every total below -- not counted as 0.")
+    print("usage-field presence across usage-bearing turns (a field missing here is a "
+          "silent 0, not a measured one):")
+    for k in USAGE_FIELDS:
+        flag = "" if cov["field_present"][k] == cov["usage_bearing"] else "  <-- INCOMPLETE"
+        print(f"  {k}: {cov['field_present'][k]}/{cov['usage_bearing']}{flag}")
+    if cov["fields_partially_absent"]:
+        print(f"  WARNING: field(s) [{', '.join(cov['fields_partially_absent'])}] are "
+              f"missing from some turns; their totals below are FLOORS, not measured 0s.")
     print(f"sidechain (subagent) turns: {cov['sidechain_turns']}"
           + (f", of which {cov['sidechain_without_type']} with no recorded subagent type"
              if cov["sidechain_without_type"] else ""))
@@ -475,6 +546,12 @@ def _corrupt(lines):
     return out
 
 
+def _corrupt_one(lines, field):
+    """Rename ONE usage field. The turns stay usage-bearing on the other three fields, so
+    the all-or-nothing check misses it -- this is the case finding (a) was defeated by."""
+    return [l.replace(f'"{field}"', f'"{field}_RENAMED"') for l in lines]
+
+
 def self_test():
     print("SELF-TEST [positive control: exact totals over a synthetic fixture]")
     turns, _ = collect_turns(_fixture_lines())
@@ -512,25 +589,50 @@ def self_test():
         ok = False
     print(f"  {'(no tool call) turns':<32} got={nt} expected=2 "
           f"{'OK' if nt == 2 else 'MISMATCH'}")
-    print(f"  coverage: {cov['usage_bearing']} of {cov['total_turns']} usage-bearing")
+    full_ok = (cov["fully_attributed"] == 6
+               and all(cov["field_present"][k] == 6 for k in USAGE_FIELDS))
+    if not full_ok:
+        ok = False
+    print(f"  coverage: {cov['usage_bearing']} of {cov['total_turns']} usage-bearing, "
+          f"fully-attributed={cov['fully_attributed']} "
+          f"{'OK' if full_ok else 'MISMATCH'}")
 
-    print("\nSELF-TEST [negative control: rename the usage field, the diagnostic MUST "
-          "flag it]")
-    cturns, _ = collect_turns(_corrupt(_fixture_lines()))
-    ccov = coverage(cturns)
-    ctot = totals_of(cturns)
-    # the diagnostic must report every turn unmeasured, and the totals must be empty
-    neg_ok = (ccov["usage_bearing"] == 0 and ccov["without_usage"] == ccov["total_turns"]
-              and ccov["total_turns"] > 0 and ctot["turns"] == 0)
-    print(f"  coverage now: {ccov['usage_bearing']} of {ccov['total_turns']} usage-bearing"
-          f" ({ccov['without_usage']} flagged with no usage field)")
-    print(f"  negative control {'FIRED (good: a renamed field is caught)' if neg_ok else 'DID NOT FIRE'}")
-    if not neg_ok:
+    print("\nSELF-TEST [negative control A: rename ALL usage fields -> no turn measurable]")
+    ca = coverage(collect_turns(_corrupt(_fixture_lines()))[0])
+    a_ok = ca["usage_bearing"] == 0 and refusal_reason(ca) is not None
+    print(f"  usage-bearing now {ca['usage_bearing']} of {ca['total_turns']}; "
+          f"refusal={'FIRED' if a_ok else 'DID NOT FIRE'}")
+    if not a_ok:
+        ok = False
+
+    print("\nSELF-TEST [negative control B: rename ONE field (output_tokens) -- the case "
+          "the all-or-nothing check passed silently]")
+    cb = coverage(collect_turns(_corrupt_one(_fixture_lines(), "output_tokens"))[0])
+    # still usage-bearing on the other three fields, but output_tokens absent everywhere,
+    # and the run must refuse rather than report output=0
+    b_ok = (cb["usage_bearing"] == 6 and cb["field_present"]["output_tokens"] == 0
+            and "output_tokens" in cb["fields_entirely_absent"]
+            and refusal_reason(cb) is not None)
+    print(f"  usage-bearing still {cb['usage_bearing']}, but output_tokens present on "
+          f"{cb['field_present']['output_tokens']}/{cb['usage_bearing']}; "
+          f"refusal={'FIRED' if b_ok else 'DID NOT FIRE'}")
+    if not b_ok:
+        ok = False
+
+    print("\nSELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]")
+    dup_ok = validate_manifest(
+        [{"label": "x", "transcript_path": "a"},
+         {"label": "x", "transcript_path": "b"}])[1] is not None
+    unknown_ok = validate_manifest(
+        [{"label": "x", "transcript_path": "a", "parent_label": "ghost"}])[1] is not None
+    print(f"  duplicate-label refused={dup_ok}; dangling-parent refused={unknown_ok}")
+    if not (dup_ok and unknown_ok):
         ok = False
 
     print()
     if ok:
-        print("SELF-TEST PASSED -- positive control exact, negative control fired.")
+        print("SELF-TEST PASSED -- positive control exact; both negative controls and "
+              "both manifest guards fired.")
         return 0
     print("SELF-TEST FAILED -- do NOT believe this instrument's numbers.")
     return 3
@@ -615,14 +717,14 @@ def main():
         return 2
 
     cov = coverage(all_turns)
-    if cov["usage_bearing"] == 0:
-        msg = (f"REFUSING: {cov['total_turns']} assistant turns found but NONE carried a "
-               f"recognised usage field, so total=0 would be no measurement, not a free "
-               f"session. See --help-blind.")
+    reason = refusal_reason(cov)
+    if reason:
+        msg = f"REFUSING: {reason}. See --help-blind."
         if args.json:
             digest = build_digest(sources_read, sources_na, all_turns,
                                   (rollup(manifest_nodes, own_totals)
                                    if manifest_nodes else None), args)
+            digest["measured"] = False
             print(json.dumps(digest, indent=2))
             print(msg, file=sys.stderr)
         else:

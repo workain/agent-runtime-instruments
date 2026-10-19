@@ -1,0 +1,2 @@
+REFUSING: usage was found, but the field(s) [cache_read_input_tokens] are ABSENT from every usage-bearing turn -- a renamed or unsupported field reads as a silent 0 for that whole dimension, which is no measurement. See --help-blind.
+exit=2
