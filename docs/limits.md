@@ -118,6 +118,14 @@ Stated so the gaps are visible rather than implied absent.
   tree; the instrument does not verify it. A node whose transcript is unreadable is reported as
   `n/a` and contributes nothing to its parent, never a zero -- but a WRONG parent edge sums
   silently, because nothing here can know the real shape.
+- **Bash clustering is a first-token heuristic, not a parse.** It clusters a Bash turn by the
+  command's first word after stripping leading `cd ...&&` chains and `VAR=` prefixes, so
+  `git commit` and `git push` both land under `git`, and a command it cannot reduce to a plain
+  word lands in `(unparsed)` rather than a real bucket. It does not understand pipelines,
+  subshells, or what a command actually did -- read it as "what the turn started by running".
+- **The flat per-source table claims no hierarchy.** Passing several transcripts positionally
+  shows each one's own total side by side; it does not infer any parent/child relationship
+  between them. Use `--manifest` when a real tree exists -- the instrument never guesses one.
 - **It prepares data for an LLM; it does not call one.** `--json` is a digest meant to be handed
   to a model for qualitative review. No network, no model request, no judgement of its own.
 

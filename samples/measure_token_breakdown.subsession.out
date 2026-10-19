@@ -23,6 +23,10 @@ BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called,
       2       70        2500          700  (no tool call)
       1       80        2000          800  Task
 
+BY BASH COMMAND (Bash turns clustered by command's first token after stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- `git commit`/`git push` both cluster as `git`):
+  turns      out  cache_read cache_create  bash command cluster
+      1      200        8000         2000  git
+
 BY AGENT (same-session Task subagents separated from the main thread):
   turns      out  cache_read cache_create  agent
       5      437       16700         4370  main thread
@@ -75,6 +79,41 @@ LOOP FLAGS
     threshold: NOT SET -> NOT COMPUTED
       No streak was tested. Same reason as signal 1 for shipping no default; set one
       with --flag-no-tool-streak N or ARI_FLAG_NO_TOOL_STREAK.
+
+BY AGENT / SUBSESSION -- each manifest node's OWN total (its transcript only, not its subtree; one node = one session/agent):
+  turns      out  cache_read cache_create  cr/out  node
+      6      490       20500         4900    41.8  root-session
+      1        7         700           70   100.0  child-explore
+    n/a      n/a         n/a          n/a     n/a  child-gone (unreadable)
+
+BY AGENT x TOOL -- each node's OWN by-tool breakdown:
+  root-session:
+    turns      out  cache_read cache_create  tools
+        1      200        8000         2000  Bash+Grep
+        1      100        5000         1000  Read
+        1       40        3000          400  Grep
+        2       70        2500          700  (no tool call)
+        1       80        2000          800  Task
+  child-explore:
+    turns      out  cache_read cache_create  tools
+        1        7         700           70  Read
+  child-gone: n/a (transcript unreadable)
+
+GRAND TOTAL BY TOOL -- WITH agents (every node summed in: orchestrator + all subsessions):
+  turns      out  cache_read cache_create  tools
+      1      200        8000         2000  Bash+Grep
+      2      107        5700         1070  Read
+      1       40        3000          400  Grep
+      2       70        2500          700  (no tool call)
+      1       80        2000          800  Task
+
+GRAND TOTAL BY TOOL -- root node(s) ONLY (the orchestrator's own work, no delegated subsessions) -- compare to see how much of each tool is delegated:
+  turns      out  cache_read cache_create  tools
+      1      200        8000         2000  Bash+Grep
+      1      100        5000         1000  Read
+      1       40        3000          400  Grep
+      2       70        2500          700  (no tool call)
+      1       80        2000          800  Task
 
 BY SUBSESSION (caller's manifest tree, summed bottom-up; own = this node's transcript, subtree = own + all descendants):
   root-session (root): own[in=49 out=490 cache_create=4900 cache_read=20500]  subtree[in=50 out=497 cache_create=4970 cache_read=21200]

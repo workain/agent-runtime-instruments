@@ -15,6 +15,9 @@ SELF-TEST [negative control A: rename ALL usage fields -> no turn measurable]
 SELF-TEST [negative control B: rename ONE field (output_tokens) -- the case the all-or-nothing check passed silently]
   usage-bearing still 6, but output_tokens present on 0/6; refusal=FIRED
 
+SELF-TEST [Bash clustering positive control: known commands must cluster exactly]
+  clusters: got={'git': 2, 'pytest': 1, '(unparsed)': 1} expected={'git': 2, 'pytest': 1, '(unparsed)': 1} OK
+
 SELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]
   duplicate-label refused=True; dangling-parent refused=True
 
@@ -82,7 +85,7 @@ SELF-TEST [loop flags: an unusable threshold must REFUSE -- 0, negative, and an 
 SELF-TEST [loop flags: with NO threshold set, both signals must say NOT COMPUTED -- never 'clean' -- while still reporting the distribution]
   states=not_computed/not_computed, distribution still reported (max=7, longest streak=4) OK
 
-SELF-TEST PASSED -- positive controls exact; both usage negative controls, both manifest guards, and
-every loop-flag control fired (including the counterfactual that makes the flags' exclusion
+SELF-TEST PASSED -- totals exact, Bash clustering exact; both usage negative controls, both manifest guards,
+and every loop-flag control fired (including the counterfactual that makes the flags' exclusion
 rule falsifiable).
 exit=0

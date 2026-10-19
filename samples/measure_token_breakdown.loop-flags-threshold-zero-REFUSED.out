@@ -1,2 +1,2 @@
-REFUSING: ARI_FLAG_SPAN_TOOL_CALLS=0 is below 1. A threshold of 0 flags EVERY span and EVERY streak, including the empty ones -- a user turn answered with no tool call is a span of 0 -- and a negative threshold flags all of them unconditionally. A detector that fires on everything discriminates nothing. See --help-blind, blind mode 6.
+REFUSING: ARI_FLAG_SPAN_TOOL_CALLS=0 is below 1. A threshold of 0 flags EVERY span and EVERY streak, including the empty ones -- a user turn answered with no tool call is a span of 0 -- and a negative threshold flags all of them unconditionally. A detector that fires on everything discriminates nothing. See --help-blind, blind mode 7.
 exit=2
