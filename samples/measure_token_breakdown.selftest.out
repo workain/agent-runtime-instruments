@@ -1,0 +1,17 @@
+SELF-TEST [positive control: exact totals over a synthetic fixture]
+  input_tokens                     got=49      expected=49      OK
+  output_tokens                    got=490     expected=490     OK
+  cache_creation_input_tokens      got=4900    expected=4900    OK
+  cache_read_input_tokens          got=20500   expected=20500   OK
+  turns                            got=6       expected=6       OK
+  main-thread output               got=430 expected=430 OK
+  subagent explore output          got=60 expected=60 OK
+  (no tool call) turns             got=2 expected=2 OK
+  coverage: 6 of 6 usage-bearing
+
+SELF-TEST [negative control: rename the usage field, the diagnostic MUST flag it]
+  coverage now: 0 of 6 usage-bearing (6 flagged with no usage field)
+  negative control FIRED (good: a renamed field is caught)
+
+SELF-TEST PASSED -- positive control exact, negative control fired.
+exit=0

@@ -1,0 +1,2 @@
+{"type": "user", "message": {"role": "user", "content": "go"}}
+{"type": "assistant", "isSidechain": false, "message": {"id": "msg-child-0001", "role": "assistant", "content": [{"type": "text", "text": "ok"}, {"type": "tool_use", "name": "Read", "input": {}}], "usage": {"input_tokens": 1, "output_tokens": 7, "cache_creation_input_tokens": 70, "cache_read_input_tokens": 700}}}

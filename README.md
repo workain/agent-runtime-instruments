@@ -69,6 +69,7 @@ with the reproduction for each.
 | `bench_mcp_connect.py` | time to a **usable** MCP tool | 1 request per rep |
 | `census_background_work.py` | work a turn boundary would kill | free, **self-testing** |
 | `bench_cache_residency.py` | does a cache hit need the writer alive? | ~6 requests |
+| `measure_token_breakdown.py` | where a session's tokens went, by tool / subagent / subsession | free, reads transcripts |
 
 `instruments/echo_mcp_server.py` is a 60-line stdio MCP server with one tool, so
 `bench_mcp_connect.py` runs out of the box without access to anyone's private servers.

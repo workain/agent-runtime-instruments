@@ -1,0 +1,17 @@
+[
+  {
+    "label": "root-session",
+    "transcript_path": "samples/fixtures/token_breakdown.jsonl",
+    "parent_label": null
+  },
+  {
+    "label": "child-explore",
+    "transcript_path": "samples/fixtures/token_breakdown.child.jsonl",
+    "parent_label": "root-session"
+  },
+  {
+    "label": "child-gone",
+    "transcript_path": "samples/fixtures/token_breakdown.missing.jsonl",
+    "parent_label": "root-session"
+  }
+]

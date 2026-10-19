@@ -101,6 +101,26 @@ Stated so the gaps are visible rather than implied absent.
   available after the first response begins", so N parallel workers on an identical prefix all
   pay full price; and the lookback window is 20 *positions*, which a tool-heavy turn can exceed.
 
+### `measure_token_breakdown.py`
+- **By-tool attribution is turn-grain, not per-call.** A turn's `usage` is a single number
+  the engine records once; a turn that calls several tools cannot have it divided exactly
+  among them. The instrument groups each turn by the SET of tools it called and says so on
+  every run. Read `Bash+Grep` as "the turns that called Bash and Grep together", not as a
+  figure owned by either one.
+- **It counts logical turns, not transcript lines.** One assistant turn is written as several
+  entries that repeat the same `usage`; the instrument keys on `message.id` and counts each
+  once. A future format that stops carrying a stable per-turn id would make it over-count, and
+  the only signal would be a turn total larger than the session plausibly produced.
+- **"By agent" means same-session sidechains**, separated by `isSidechain` and labelled by
+  `attributionAgent`. It is not cross-session linkage: a child session launched as a separate
+  process is invisible here unless the caller names it in a `--manifest`.
+- **The subsession rollup is only as true as the manifest.** The caller asserts the parent/child
+  tree; the instrument does not verify it. A node whose transcript is unreadable is reported as
+  `n/a` and contributes nothing to its parent, never a zero -- but a WRONG parent edge sums
+  silently, because nothing here can know the real shape.
+- **It prepares data for an LLM; it does not call one.** `--json` is a digest meant to be handed
+  to a model for qualitative review. No network, no model request, no judgement of its own.
+
 ## Not evaluated at all
 
 No sandbox or microVM platform was measured. No hosted agent rail was called. Nothing here

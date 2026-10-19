@@ -1,0 +1,38 @@
+sources read:
+  samples/fixtures/token_breakdown.jsonl
+  samples/fixtures/token_breakdown.child.jsonl
+sources UNREADABLE (reported, not counted as zero):
+  n/a  samples/fixtures/token_breakdown.missing.jsonl
+
+attribution coverage: 7 of 7 assistant turns were usage-bearing; 0 carried no recognised usage field
+sidechain (subagent) turns: 2
+
+TOTAL over 7 usage-bearing turns: in=50 out=497 cache_create=4970 cache_read=21200
+cache_read : output overhead = 42.66
+
+BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called, not split per call):
+  turns      out  cache_read cache_create  tools
+      1      200        8000         2000  Bash+Grep
+      2      107        5700         1070  Read
+      1       40        3000          400  Grep
+      2       70        2500          700  (no tool call)
+      1       80        2000          800  Task
+
+BY AGENT (same-session Task subagents separated from the main thread):
+  turns      out  cache_read cache_create  agent
+      5      437       16700         4370  main thread
+      2       60        4500          600  explore
+
+TOP 5 TURNS BY cache_read (the turns re-reading the most cached context):
+   cache_read      out  agent / tools
+         8000      200  main thread / Bash+Grep
+         5000      100  main thread / Read
+         3000       40  explore / Grep
+         2000       80  main thread / Task
+         1500       20  explore / (no tool call)
+
+BY SUBSESSION (caller's manifest tree, summed bottom-up; own = this node's transcript, subtree = own + all descendants):
+  root-session (root): own[in=49 out=490 cache_create=4900 cache_read=20500]  subtree[in=50 out=497 cache_create=4970 cache_read=21200]
+  child-explore (parent root-session): own[in=1 out=7 cache_create=70 cache_read=700]  subtree[in=1 out=7 cache_create=70 cache_read=700]
+  child-gone (parent root-session): own=n/a (transcript unreadable), subtree=in=0 out=0 cache_create=0 cache_read=0
+  1 node(s) reported n/a -- their transcripts were unreadable and contribute nothing to any parent sum (not 0).
