@@ -242,6 +242,29 @@
       "by_tool": null
     }
   ],
+  "by_agent_bash": [
+    {
+      "label": "root-session",
+      "by_bash_command": [
+        {
+          "key": "git",
+          "input_tokens": 20,
+          "output_tokens": 200,
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 8000,
+          "turns": 1
+        }
+      ]
+    },
+    {
+      "label": "child-explore",
+      "by_bash_command": []
+    },
+    {
+      "label": "child-gone",
+      "by_bash_command": null
+    }
+  ],
   "grand_by_tool_with_agents": [
     {
       "key": "Bash+Grep",

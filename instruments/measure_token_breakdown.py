@@ -15,7 +15,9 @@ splits that spend three ways:
                    additionally clustered BY COMMAND (the command's first token, after
                    stripping `cd ...&&` chains and `VAR=` prefixes) so a lumped `Bash`
                    bucket splits into `git`, `pytest`, `curl`, ... -- a heuristic, not a
-                   semantic parse, with an explicit `(unparsed)` bucket.
+                   semantic parse, with an explicit `(unparsed)` bucket. The peel is
+                   quote-aware and runs to a fixed point, because a cluster key is
+                   PUBLISHED and is not anonymised: see `bash_cluster`.
   BY AGENT      -- separate same-session Task-tool subagent turns (`isSidechain: true`)
                    from the main thread, grouped by subagent type (`attributionAgent`)
                    where the transcript records one. These are sidechains WITHIN one
@@ -192,7 +194,15 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
     The positive controls: `--self-test` builds a synthetic transcript with hand-computed
     totals (including a split turn, a sidechain, and a no-tool turn) and asserts the
     computed numbers match EXACTLY, and a second fixture of known Bash commands
-    (`git`x2, `pytest`, and one unparseable) asserts the clustering matches exactly. TWO
+    (`git`x2, `pytest`, one unparseable, one with a QUOTED multi-word env value, and one
+    with an env prefix BEFORE a `cd ...&&` chain) asserts the clustering matches exactly.
+    A PRIVACY control runs five commands whose env value is a quoted multi-word secret
+    through the text report AND the `--json` digest, with and without `--anonymise`, and
+    fails if any WORD of any value appears anywhere in either -- the leak it exists to
+    catch shipped once, as a cluster key `efgh` derived from
+    `AWS_SECRET_ACCESS_KEY="abcd efgh ijkl"`. That control validates itself first: it
+    renders a secret-free fixture and fails if a sentinel word turns up there, so it
+    cannot pass by matching the report's own prose. TWO
     negative controls run in the same pass, because a control defeated by a one-field
     change is no control: (a) rename ALL usage fields and assert every turn reads as
     unmeasured and the run refuses; (b) rename a SINGLE field and assert the per-field
@@ -214,7 +224,9 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
     it. That leg now asserts over the whole serialised digest.
 """
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -233,9 +245,29 @@ NO_AGENT_TYPE = "(subagent type not recorded)"
 MAIN = "main thread"
 UNPARSED = "(unparsed)"
 
-_CD_CHAIN = re.compile(r"\s*cd\s+[^&|;]+?&&\s*")       # leading `cd <dir> && ` segments
-_ENV_PREFIX = re.compile(r"\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+")  # leading `VAR=val ` prefixes
+_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")  # a `VAR=value` token, value already unquoted
+_CHAIN_OPS = ("&&", "||", "|", ";", "&")
 _CMD_WORD = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _tokenise(cmd):
+    """Split a command into shell words, QUOTE-AWARE, with `&&`/`;`/`|` as their own
+    tokens even when unspaced (`cd /x&&make`). Returns None if the string does not
+    tokenise (an unbalanced quote) -- the caller must then not peel anything.
+
+    Quote-awareness is the whole point and is load-bearing for PRIVACY, not tidiness: a
+    peel step that does not know where a quoted value ENDS can stop in the middle of one
+    and hand the REMAINDER of a secret to the classifier, which then publishes a word of
+    it as a cluster key. Tokenising the WHOLE string once, before any peeling, makes
+    `VAR="abcd efgh"` a single token that is either consumed entirely or not at all.
+    """
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    try:
+        return list(lex)
+    except ValueError:
+        return None
 
 
 def bash_cluster(cmd):
@@ -245,27 +277,45 @@ def bash_cluster(cmd):
     `git commit` and `git push` both cluster under `git`; that is deliberate (the baseline
     is first-token-after-cd-chains-and-env-prefixes). Anything missing or that does not
     reduce to a plain command word goes to `(unparsed)`, never into a real cluster.
+
+    The returned key is PUBLISHED (text report, `--json` digest) and `--anonymise` does
+    NOT touch it, so the key must never be able to carry a fragment of a command's
+    content. Two properties keep that true, and both are positive-controlled in
+    `--self-test`:
+
+      * the leading `cd ... &&` chains and `VAR=value` env prefixes are peeled in ONE
+        loop that retries BOTH shapes until neither matches, so they compose in either
+        order (`CI=1 cd /repo && npm test` clusters as `npm`, not as `cd`). Two separate
+        single-pass loops could only ever strip them in one fixed order.
+      * peeling happens over quote-aware TOKENS (`_tokenise`), so a quoted value is one
+        token -- consumed whole or left whole. If the string does not tokenise at all we
+        peel NOTHING and fall back to the first whitespace word of the ORIGINAL string,
+        which is by construction the command's own first word rather than anything from
+        inside a value.
     """
     if not isinstance(cmd, str) or not cmd.strip():
         return UNPARSED
-    s = cmd.strip()
-    while True:                                 # peel leading `cd ... &&` chains
-        m = _CD_CHAIN.match(s)
-        if not m:
+    toks = _tokenise(cmd)
+    if toks is None:
+        # Unbalanced quoting: classify the original's first word WITHOUT peeling. Peeling
+        # here is what used to truncate a quoted value mid-way and leak the rest.
+        head = cmd.strip().split()
+        toks = head[:1]
+    else:
+        i = 0
+        while i < len(toks):                    # peel BOTH shapes, in any order, to a fixed point
+            if _ENV_ASSIGN.match(toks[i]):      # `VAR=value` -- one whole token
+                i += 1
+                continue
+            if toks[i] == "cd":                 # `cd <dir> && ` -- up to the chaining `&&`
+                j = i + 1
+                while j < len(toks) and toks[j] not in _CHAIN_OPS:
+                    j += 1
+                if j > i + 1 and j < len(toks) and toks[j] == "&&":
+                    i = j + 1
+                    continue
             break
-        s = s[m.end():]
-    while True:                                 # peel leading `VAR=val` env prefixes
-        m = _ENV_PREFIX.match(s)
-        if not m:
-            break
-        s = s[m.end():]
-    s = s.strip()
-    if not s:
-        return UNPARSED
-    try:
-        toks = shlex.split(s, comments=False, posix=True)
-    except ValueError:
-        toks = s.split()
+        toks = toks[i:]
     if not toks:
         return UNPARSED
     first = toks[0].split("/")[-1]              # /usr/bin/python3 -> python3
@@ -1174,6 +1224,24 @@ def print_crosstabs(nodes, per_path_turns, args):
         print(f"  {lab(nd['label'])}:")
         group_table(group(t, tool_key), "tools", indent="    ")
 
+    # Same split again by Bash command cluster, so manifest mode is not blind to a
+    # dimension the no-manifest report already prints. Nodes with no Bash turn are listed
+    # as `none` rather than omitted: an absent row and a node that ran no Bash command
+    # must not look the same.
+    print("\nBY AGENT x BASH COMMAND -- each node's OWN Bash turns, clustered by "
+          "command (same heuristic as the single-source report):")
+    for nd in nodes:
+        t = per_path_turns.get(nd["path"])
+        if t is None:
+            print(f"  {lab(nd['label'])}: n/a (transcript unreadable)")
+            continue
+        bb = group_bash(t)
+        if not bb:
+            print(f"  {lab(nd['label'])}: none (no Bash turns)")
+            continue
+        print(f"  {lab(nd['label'])}:")
+        group_table(bb, "bash command cluster", indent="    ")
+
     # the whole group's tool profile, WITH every subsession summed in vs the root(s) alone
     all_nodes_turns = [x for nd in nodes
                        for x in (per_path_turns.get(nd["path"]) or [])]
@@ -1239,6 +1307,11 @@ def build_digest(sources_read, sources_na, turns, per_path_turns, manifest_nodes
                   for x in (per_path_turns.get(nd["path"]) or [])]
         root_nt = [x for nd in manifest_nodes if nd["parent"] is None
                    for x in (per_path_turns.get(nd["path"]) or [])]
+        digest["by_agent_bash"] = [
+            dict(label=anon(nd["label"]),
+                 by_bash_command=(None if per_path_turns.get(nd["path"]) is None
+                                  else _glist(group_bash(per_path_turns[nd["path"]]))))
+            for nd in manifest_nodes]
         digest["grand_by_tool_with_agents"] = _glist(group(all_nt, tool_key))
         digest["grand_by_tool_root_only"] = _glist(group(root_nt, tool_key))
     if flags is not None:
@@ -1418,24 +1491,77 @@ def _corrupt_one(lines, field):
     return [l.replace(f'"{field}"', f'"{field}_RENAMED"') for l in lines]
 
 
+# Commands whose ENV-PREFIX VALUE is a multi-word secret. The value's words are the thing
+# that must never reach a cluster key or any printed line; `_SECRET_WORDS` is every word
+# of every value below, and the leak control asserts none of them appears ANYWHERE in the
+# text report or the `--json` digest -- with and without `--anonymise`, which by design
+# hashes transcript paths and manifest labels and does NOT touch cluster keys.
+_SECRET_CMDS = [
+    ('AWS_SECRET_ACCESS_KEY="abcd efgh ijkl" aws s3 ls', "aws"),
+    ('TOKEN="swordfish hunter2" curl https://example.invalid', "curl"),
+    ("API_KEY='alpha beta' python3 run.py", "python3"),
+    ('SECRET="zulu quebec" ./deploy.sh', "deploy.sh"),
+    ('PASSWORD="xyzzy plugh" mysql -u root', "mysql"),
+]
+# Deliberately distinctive: a sentinel that is also ordinary English ("one", "two") would
+# match the report's OWN prose and fail for a reason that has nothing to do with a leak.
+# The baseline check below enforces that choice instead of trusting it.
+_SECRET_WORDS = ["abcd", "efgh", "ijkl", "swordfish", "hunter2", "alpha", "beta",
+                 "zulu", "quebec", "xyzzy", "plugh"]
+
+
+def _bash_asst(mid, cmd, usage):
+    blk = ({"type": "tool_use", "name": "Bash", "input": {}} if cmd is None
+           else {"type": "tool_use", "name": "Bash", "input": {"command": cmd}})
+    return json.dumps(dict(type="assistant", isSidechain=False,
+                           message=dict(id=mid, role="assistant", content=[blk],
+                                        usage=usage)))
+
+
+def _u(i, o, cc, cr):
+    return {"input_tokens": i, "output_tokens": o,
+            "cache_creation_input_tokens": cc, "cache_read_input_tokens": cr}
+
+
 def _bash_fixture_lines():
     """Known Bash commands for the clustering positive control: 2x git (one behind a
-    `cd ...&&` chain), 1x pytest (behind a `VAR=` prefix), and one with no command."""
-    def asst(mid, cmd, usage):
-        blk = ({"type": "tool_use", "name": "Bash", "input": {}} if cmd is None
-               else {"type": "tool_use", "name": "Bash", "input": {"command": cmd}})
-        return json.dumps(dict(type="assistant", isSidechain=False,
-                               message=dict(id=mid, role="assistant", content=[blk],
-                                            usage=usage)))
-    u = lambda i, o, cc, cr: {"input_tokens": i, "output_tokens": o,
-                              "cache_creation_input_tokens": cc,
-                              "cache_read_input_tokens": cr}
+    `cd ...&&` chain), 1x pytest (behind a `VAR=` prefix), one with no command -- plus the
+    two shapes whose ABSENCE here is how a privacy leak and a misclustering shipped:
+
+      * a QUOTED, multi-word env value (`AWS_SECRET_ACCESS_KEY="abcd efgh ijkl" aws ...`).
+        A peel step that is blind to quoting stops at the first space INSIDE the value and
+        hands `efgh ijkl" aws s3 ls` to the classifier, publishing `efgh` -- a literal word
+        of the secret -- as the cluster key. Must cluster as `aws`.
+      * an env prefix BEFORE a `cd ...&&` chain (`CI=1 cd /repo && npm test`), the ordinary
+        ordering. Peeling the two shapes in two separate fixed passes can only strip them
+        in one order, so the `cd` chain survives and the turn clusters as `cd`. Must
+        cluster as `npm`.
+
+    Both are ordinary commands, not exotic ones; the old fixture simply never wrote one
+    down, which is precisely why nothing failed when the heuristic was wrong about them.
+    """
     return [
-        asst("msg-b-1", "git status", u(1, 10, 100, 1000)),
-        asst("msg-b-2", "cd /repo && git push origin main", u(1, 20, 200, 2000)),
-        asst("msg-b-3", "VAR=1 pytest -q tests/", u(1, 30, 300, 3000)),
-        asst("msg-b-4", None, u(1, 40, 400, 4000)),       # no command -> (unparsed)
+        _bash_asst("msg-b-1", "git status", _u(1, 10, 100, 1000)),
+        _bash_asst("msg-b-2", "cd /repo && git push origin main", _u(1, 20, 200, 2000)),
+        _bash_asst("msg-b-3", "VAR=1 pytest -q tests/", _u(1, 30, 300, 3000)),
+        _bash_asst("msg-b-4", None, _u(1, 40, 400, 4000)),       # no command -> (unparsed)
+        _bash_asst("msg-b-5", _SECRET_CMDS[0][0], _u(1, 50, 500, 5000)),   # quoted value
+        _bash_asst("msg-b-6", "CI=1 cd /repo && npm test", _u(1, 60, 600, 6000)),  # env+cd
     ]
+
+
+def _secret_fixture_lines():
+    """One Bash turn per `_SECRET_CMDS` entry -- the leak control's own transcript.
+
+    Opens with a REAL user turn so the transcript is loop-flag-shaped as well as
+    secret-bearing: the span/streak rows are then computed over, and printed alongside,
+    the very turns that carry the secrets. Without that turn signal 1 reads UNMEASURED and
+    the leak control would be asserting over a loop_flags block with no rows in it -- that
+    is, over none of the printed surface the loop flags added to this file.
+    """
+    user = json.dumps(dict(type="user", message=dict(role="user", content="go")))
+    return [user] + [_bash_asst(f"msg-s-{n}", cmd, _u(1, 10, 100, 1000))
+                     for n, (cmd, _) in enumerate(_SECRET_CMDS)]
 
 
 def self_test():
@@ -1510,11 +1636,78 @@ def self_test():
     bt, _ = collect_turns(_bash_fixture_lines())
     bg = group_bash(bt)
     got = {k: v["turns"] for k, v in bg.items()}
-    exp = {"git": 2, "pytest": 1, UNPARSED: 1}
+    exp = {"git": 2, "pytest": 1, UNPARSED: 1, "aws": 1, "npm": 1}
     bash_ok = got == exp
     if not bash_ok:
         ok = False
     print(f"  clusters: got={got} expected={exp} {'OK' if bash_ok else 'MISMATCH'}")
+    # Named separately from the dict compare above, because these two are the shapes the
+    # fixture used to omit, and a reader should see them pass or fail BY NAME.
+    quoted_ok = bash_cluster(_SECRET_CMDS[0][0]) == "aws"
+    envcd_ok = bash_cluster("CI=1 cd /repo && npm test") == "npm"
+    if not (quoted_ok and envcd_ok):
+        ok = False
+    print(f"  quoted multi-word env value -> real command (not a word of the value): "
+          f"{'OK' if quoted_ok else 'MISMATCH'}")
+    print(f"  env prefix BEFORE a `cd ...&&` chain -> real command (not `cd`): "
+          f"{'OK' if envcd_ok else 'MISMATCH'}")
+
+    print("\nSELF-TEST [PRIVACY control: no fragment of a quoted secret value may reach "
+          "any printed output -- cluster keys are NOT anonymised, so they must be safe "
+          "by derivation]")
+    leak_ok = True
+    for cmd, want in _SECRET_CMDS:
+        key = bash_cluster(cmd)
+        if key != want:
+            leak_ok = False
+            print(f"  MISCLUSTERED {cmd!r} -> {key!r} (expected {want!r})")
+    st, st_stats = collect_turns(_secret_fixture_lines())
+    # same report shape, no secrets -- and a real user turn, so its flags populate too
+    base, base_stats = collect_turns(
+        [json.dumps(dict(type="user", message=dict(role="user", content="go")))]
+        + _bash_fixture_lines()[:4])
+
+    def _render(trns, stats, anon_flag):
+        """Render EVERY printed surface this instrument has, so the assertion below covers
+        all of it: text report + `--json` digest, each with the LOOP FLAGS section
+        populated. The flags are included because they are a printed surface too -- they
+        carry no cluster key and no command string, and this control is what keeps that
+        true rather than something a reader has to re-derive from the flag code."""
+        a = argparse.Namespace(top=5, anonymise=anon_flag, json=False)
+        src = ["/tmp/secret-fixture.jsonl"]
+        flg = compute_flags([(src[0], trns, stats)], 1, 1)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_report(src, [], trns, a, flg)
+        return (buf.getvalue() + json.dumps(
+            build_digest(src, [], trns, {src[0]: trns}, None, None, a, flg))).lower()
+
+    def _hits(text):
+        return [w for w in _SECRET_WORDS
+                if re.search(r"(?<![A-Za-z0-9])" + re.escape(w) + r"(?![A-Za-z0-9])", text)]
+
+    # The control must be able to tell a leak from its own prose: a sentinel that shows up
+    # in a render containing NO secret at all would make this check meaningless.
+    collisions = _hits(_render(base, base_stats, False))
+    if collisions:
+        leak_ok = False
+        print(f"  CONTROL INVALID: sentinel word(s) {collisions} appear in a render with "
+              f"no secret input -- choose distinctive sentinels")
+    for anon_flag in (False, True):
+        rendered = _render(st, st_stats, anon_flag)
+        # (a) no whole command, and (b) no WORD of any secret value, anywhere
+        for cmd, _want in _SECRET_CMDS:
+            if cmd.lower() in rendered:
+                leak_ok = False
+                print(f"  FULL COMMAND LEAKED (anonymise={anon_flag}): {cmd!r}")
+        for w in _hits(rendered):
+            leak_ok = False
+            print(f"  SECRET-VALUE WORD LEAKED (anonymise={anon_flag}): {w!r}")
+    if not leak_ok:
+        ok = False
+    print(f"  {len(_SECRET_CMDS)} commands with quoted multi-word secret values, text "
+          f"report + --json digest + loop-flags section, with and without --anonymise: "
+          f"{'OK -- no value fragment printed' if leak_ok else 'LEAKED'}")
 
     print("\nSELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]")
     dup_ok = validate_manifest(
@@ -1842,10 +2035,10 @@ def self_test():
 
     print()
     if ok:
-        print("SELF-TEST PASSED -- totals exact, Bash clustering exact; both usage "
-              "negative controls, both manifest guards,\nand every loop-flag control "
-              "fired (including the counterfactual that makes the flags' exclusion\nrule "
-              "falsifiable).")
+        print("SELF-TEST PASSED -- totals exact, Bash clustering exact, no secret-value "
+              "fragment reached any output;\nboth usage negative controls, both manifest "
+              "guards, and every loop-flag control fired (including\nthe counterfactual "
+              "that makes the flags' exclusion rule falsifiable).")
         return 0
     print("SELF-TEST FAILED -- do NOT believe this instrument's numbers.")
     return 3

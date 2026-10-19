@@ -99,6 +99,13 @@ BY AGENT x TOOL -- each node's OWN by-tool breakdown:
         1        7         700           70  Read
   child-gone: n/a (transcript unreadable)
 
+BY AGENT x BASH COMMAND -- each node's OWN Bash turns, clustered by command (same heuristic as the single-source report):
+  root-session:
+    turns      out  cache_read cache_create  bash command cluster
+        1      200        8000         2000  git
+  child-explore: none (no Bash turns)
+  child-gone: n/a (transcript unreadable)
+
 GRAND TOTAL BY TOOL -- WITH agents (every node summed in: orchestrator + all subsessions):
   turns      out  cache_read cache_create  tools
       1      200        8000         2000  Bash+Grep
