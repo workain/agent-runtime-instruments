@@ -118,6 +118,24 @@ Of 13 quotations re-checked for this repository, 7 needed correction. The mechan
 quotations taken from **search-result summaries** and printed as page-verbatim. A summary
 paraphrases; quoting it as the source's own words is the defect. Audit: `docs/citations.md`.
 
+**The same defect arrived again by a different route, and the route is the point.** The
+loop-flag thresholds in `measure_token_breakdown.py` rest on what four agent frameworks use as
+their own loop ceilings, and those numbers reached this repository through **an agent's research
+brief** — a survey of published practice, written by reading *about* the frameworks rather than
+reading them. Re-fetching all four changed two of the numbers: one default was reported as a
+range where its own source assigns a single value, and another was cited at a version the
+project has since superseded. Neither error changed the conclusion the brief was commissioned to
+reach — the defaults still span two orders of magnitude, which is the whole argument — and that
+is precisely why neither would have been caught by anyone checking whether the conclusion held.
+A summary written by a model is not a weaker form of the primary source; it is the same hazard
+as a search-result snippet in a more confident voice, and **Rule 4 does not care which produced
+it**.
+
+The same pass found a claim attached to the wrong part of a paper it correctly cited: a ranking
+quoted to an abstract that does not rank anything, while the figures supporting it sit in the
+body. "Fetch the page" means the page the sentence is actually on. Audit: `docs/citations.md`,
+the loop-flag table.
+
 ---
 
 ## Small traps, each of which cost us a measurement
