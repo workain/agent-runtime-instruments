@@ -1,0 +1,34 @@
+sources read:
+  samples/fixtures/token_breakdown.jsonl
+
+attribution coverage: 6 of 6 assistant turns were usage-bearing; 0 carried no recognised usage field
+usage-field presence across usage-bearing turns (a field missing here is a silent 0, not a measured one):
+  input_tokens: 6/6
+  output_tokens: 6/6
+  cache_creation_input_tokens: 6/6
+  cache_read_input_tokens: 6/6
+sidechain (subagent) turns: 2
+
+TOTAL over 6 usage-bearing turns: in=49 out=490 cache_create=4900 cache_read=20500
+cache_read : output overhead = 41.84
+
+BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called, not split per call):
+  turns      out  cache_read cache_create  tools
+      1      200        8000         2000  Bash+Grep
+      1      100        5000         1000  Read
+      1       40        3000          400  Grep
+      2       70        2500          700  (no tool call)
+      1       80        2000          800  Task
+
+BY AGENT (same-session Task subagents separated from the main thread):
+  turns      out  cache_read cache_create  agent
+      4      430       16000         4300  main thread
+      2       60        4500          600  explore
+
+TOP 5 TURNS BY cache_read (the turns re-reading the most cached context):
+   cache_read      out  agent / tools
+         8000      200  main thread / Bash+Grep
+         5000      100  main thread / Read
+         3000       40  explore / Grep
+         2000       80  main thread / Task
+         1500       20  explore / (no tool call)

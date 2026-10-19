@@ -1,0 +1,180 @@
+{
+  "measured": true,
+  "sources_read": [
+    "samples/fixtures/token_breakdown.jsonl",
+    "samples/fixtures/token_breakdown.child.jsonl"
+  ],
+  "sources_unreadable": [
+    "samples/fixtures/token_breakdown.missing.jsonl"
+  ],
+  "coverage": {
+    "total_turns": 7,
+    "usage_bearing": 7,
+    "without_usage": 0,
+    "fully_attributed": 7,
+    "field_present": {
+      "input_tokens": 7,
+      "output_tokens": 7,
+      "cache_creation_input_tokens": 7,
+      "cache_read_input_tokens": 7
+    },
+    "fields_entirely_absent": [],
+    "fields_partially_absent": [],
+    "sidechain_turns": 2,
+    "sidechain_without_type": 0
+  },
+  "totals": {
+    "input_tokens": 50,
+    "output_tokens": 497,
+    "cache_creation_input_tokens": 4970,
+    "cache_read_input_tokens": 21200,
+    "turns": 7
+  },
+  "cache_read_to_output": 42.65593561368209,
+  "by_tool": [
+    {
+      "key": "Bash+Grep",
+      "input_tokens": 20,
+      "output_tokens": 200,
+      "cache_creation_input_tokens": 2000,
+      "cache_read_input_tokens": 8000,
+      "turns": 1
+    },
+    {
+      "key": "Read",
+      "input_tokens": 11,
+      "output_tokens": 107,
+      "cache_creation_input_tokens": 1070,
+      "cache_read_input_tokens": 5700,
+      "turns": 2
+    },
+    {
+      "key": "Grep",
+      "input_tokens": 4,
+      "output_tokens": 40,
+      "cache_creation_input_tokens": 400,
+      "cache_read_input_tokens": 3000,
+      "turns": 1
+    },
+    {
+      "key": "(no tool call)",
+      "input_tokens": 7,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 700,
+      "cache_read_input_tokens": 2500,
+      "turns": 2
+    },
+    {
+      "key": "Task",
+      "input_tokens": 8,
+      "output_tokens": 80,
+      "cache_creation_input_tokens": 800,
+      "cache_read_input_tokens": 2000,
+      "turns": 1
+    }
+  ],
+  "by_agent": [
+    {
+      "key": "main thread",
+      "input_tokens": 44,
+      "output_tokens": 437,
+      "cache_creation_input_tokens": 4370,
+      "cache_read_input_tokens": 16700,
+      "turns": 5
+    },
+    {
+      "key": "explore",
+      "input_tokens": 6,
+      "output_tokens": 60,
+      "cache_creation_input_tokens": 600,
+      "cache_read_input_tokens": 4500,
+      "turns": 2
+    }
+  ],
+  "top_by_cache_read": [
+    {
+      "cache_read": 8000,
+      "output": 200,
+      "agent": "main thread",
+      "tools": [
+        "Bash",
+        "Grep"
+      ]
+    },
+    {
+      "cache_read": 5000,
+      "output": 100,
+      "agent": "main thread",
+      "tools": [
+        "Read"
+      ]
+    },
+    {
+      "cache_read": 3000,
+      "output": 40,
+      "agent": "explore",
+      "tools": [
+        "Grep"
+      ]
+    },
+    {
+      "cache_read": 2000,
+      "output": 80,
+      "agent": "main thread",
+      "tools": [
+        "Task"
+      ]
+    },
+    {
+      "cache_read": 1500,
+      "output": 20,
+      "agent": "explore",
+      "tools": []
+    }
+  ],
+  "subsessions": [
+    {
+      "label": "root-session",
+      "parent": null,
+      "own": {
+        "input_tokens": 49,
+        "output_tokens": 490,
+        "cache_creation_input_tokens": 4900,
+        "cache_read_input_tokens": 20500
+      },
+      "subtree": {
+        "input_tokens": 50,
+        "output_tokens": 497,
+        "cache_creation_input_tokens": 4970,
+        "cache_read_input_tokens": 21200
+      }
+    },
+    {
+      "label": "child-explore",
+      "parent": "root-session",
+      "own": {
+        "input_tokens": 1,
+        "output_tokens": 7,
+        "cache_creation_input_tokens": 70,
+        "cache_read_input_tokens": 700
+      },
+      "subtree": {
+        "input_tokens": 1,
+        "output_tokens": 7,
+        "cache_creation_input_tokens": 70,
+        "cache_read_input_tokens": 700
+      }
+    },
+    {
+      "label": "child-gone",
+      "parent": "root-session",
+      "own": null,
+      "subtree": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    }
+  ]
+}

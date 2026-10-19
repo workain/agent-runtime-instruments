@@ -1,0 +1,2 @@
+REFUSING: not one source was readable, so a zero here would mean 'wrong path', not 'free session'. See --help-blind.
+exit=2

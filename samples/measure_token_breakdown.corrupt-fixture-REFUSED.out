@@ -1,0 +1,2 @@
+REFUSING: 6 assistant turns found but NONE carried a recognised usage field, so total=0 would be no measurement, not a free session. See --help-blind.
+exit=2
