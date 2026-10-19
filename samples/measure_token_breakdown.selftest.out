@@ -19,9 +19,10 @@ SELF-TEST [Bash clustering positive control: known commands must cluster exactly
   clusters: got={'git': 2, 'pytest': 1, '(unparsed)': 1, 'aws': 1, 'npm': 1} expected={'git': 2, 'pytest': 1, '(unparsed)': 1, 'aws': 1, 'npm': 1} OK
   quoted multi-word env value -> real command (not a word of the value): OK
   env prefix BEFORE a `cd ...&&` chain -> real command (not `cd`): OK
+  UNBALANCED quote -> (unparsed), never the raw first word of the original (which holds a secret fragment): OK
 
 SELF-TEST [PRIVACY control: no fragment of a quoted secret value may reach any printed output -- cluster keys are NOT anonymised, so they must be safe by derivation]
-  5 commands with quoted multi-word secret values, text report + --json digest + loop-flags section, with and without --anonymise: OK -- no value fragment printed
+  6 commands with quoted multi-word secret values, text report + --json digest + loop-flags section, with and without --anonymise: OK -- no value fragment printed
 
 SELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]
   duplicate-label refused=True; dangling-parent refused=True

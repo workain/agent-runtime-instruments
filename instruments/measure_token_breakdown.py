@@ -1502,12 +1502,20 @@ _SECRET_CMDS = [
     ("API_KEY='alpha beta' python3 run.py", "python3"),
     ('SECRET="zulu quebec" ./deploy.sh', "deploy.sh"),
     ('PASSWORD="xyzzy plugh" mysql -u root', "mysql"),
+    # UNBALANCED quote -- the shape that reaches the `toks is None` fallback, where no
+    # peeling happens and the key comes from the ORIGINAL string's first whitespace word.
+    # That word is `VAULT_KEY="grommet` here, which is a secret fragment, and the ONLY
+    # thing that stops it being published is the `_CMD_WORD` test at the end of
+    # `bash_cluster`. Every other entry above reduces to a real command word and so
+    # exercises the peel but never that test; deleting the test left the self-test green.
+    # Expected `(unparsed)`: on this path refusing to classify IS the privacy control.
+    ('VAULT_KEY="grommet flange aws s3 ls', UNPARSED),
 ]
 # Deliberately distinctive: a sentinel that is also ordinary English ("one", "two") would
 # match the report's OWN prose and fail for a reason that has nothing to do with a leak.
 # The baseline check below enforces that choice instead of trusting it.
 _SECRET_WORDS = ["abcd", "efgh", "ijkl", "swordfish", "hunter2", "alpha", "beta",
-                 "zulu", "quebec", "xyzzy", "plugh"]
+                 "zulu", "quebec", "xyzzy", "plugh", "grommet", "flange"]
 
 
 def _bash_asst(mid, cmd, usage):
@@ -1645,12 +1653,15 @@ def self_test():
     # fixture used to omit, and a reader should see them pass or fail BY NAME.
     quoted_ok = bash_cluster(_SECRET_CMDS[0][0]) == "aws"
     envcd_ok = bash_cluster("CI=1 cd /repo && npm test") == "npm"
-    if not (quoted_ok and envcd_ok):
+    unbal_ok = bash_cluster('VAULT_KEY="grommet flange aws s3 ls') == UNPARSED
+    if not (quoted_ok and envcd_ok and unbal_ok):
         ok = False
     print(f"  quoted multi-word env value -> real command (not a word of the value): "
           f"{'OK' if quoted_ok else 'MISMATCH'}")
     print(f"  env prefix BEFORE a `cd ...&&` chain -> real command (not `cd`): "
           f"{'OK' if envcd_ok else 'MISMATCH'}")
+    print(f"  UNBALANCED quote -> (unparsed), never the raw first word of the original "
+          f"(which holds a secret fragment): {'OK' if unbal_ok else 'MISMATCH'}")
 
     print("\nSELF-TEST [PRIVACY control: no fragment of a quoted secret value may reach "
           "any printed output -- cluster keys are NOT anonymised, so they must be safe "
