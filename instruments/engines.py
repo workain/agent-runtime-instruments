@@ -20,12 +20,14 @@ HONESTY RULE FOR THIS FILE, AND IT IS THE WHOLE POINT:
     paste the output into `samples/`, and send it. If it does NOT work, that is equally
     useful -- fix the pattern.
 
-WHAT WOULD AN INSTRUMENT USING THIS PRINT IF IT WERE BLIND?
-    Zero sessions, which is also the right answer on an idle box. The guard is
-    `--list-unmatched` on `measure_session_footprint.py`: it prints the heaviest
-    processes NO adapter claimed. If your engine is in that list, the zero is a defect
-    in this file, not a measurement.
+WHAT WOULD THIS PRINT IF IT WERE BLIND?
+    This file is a shared adapter TABLE, not a measuring instrument -- so the question is
+    really about an instrument that USES it, and the answer is: zero sessions, which is
+    also the right answer on an idle box. The guard is `--list-unmatched` on
+    `measure_session_footprint.py`: it prints the heaviest processes NO adapter claimed.
+    If your engine is in that list, the zero is a defect in this file, not a measurement.
 """
+import sys
 
 # entrypoint : a regex matching the process that IS one session of this engine.
 #              Keep these specific -- a generic `node` or `python` here would claim
@@ -126,6 +128,13 @@ def provenance_banner():
 
 
 if __name__ == "__main__":
+    # ci.yml runs the blind-mode check over EVERY instruments/*.py except the echo
+    # server, this file included. It is a table, not a measuring instrument, but the
+    # honest answer to the blind question still exists (above), so answer it rather than
+    # weaken the gate by excluding the file.
+    if "--help-blind" in sys.argv:
+        print(__doc__)
+        sys.exit(0)
     print(provenance_banner())
     print()
     for e in ENGINES:
