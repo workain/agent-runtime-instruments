@@ -703,11 +703,12 @@ def print_flags(flags):
             print("    threshold: NOT SET -> NOT COMPUTED")
             print(_wrap("Not a clean result and not a dirty one: no span was tested. No "
                         "default ships because no published threshold is grounded -- the "
-                        "frameworks' own ceilings span 5 to 1000 and exist as cost "
-                        "backstops, not as non-convergence detectors. Pick one from the "
-                        "distribution above via --flag-span-tool-calls N or "
-                        "ARI_FLAG_SPAN_TOOL_CALLS, and treat it as a starting point for "
-                        "recalibration.", indent="      "))
+                        "frameworks' own ceilings span 10 to 1000 (each read at first "
+                        "hand; see docs/citations.md) and exist as cost backstops, not as "
+                        "non-convergence detectors. Pick one from the distribution above "
+                        "via --flag-span-tool-calls N or ARI_FLAG_SPAN_TOOL_CALLS, and "
+                        "treat it as a starting point for recalibration.",
+                        indent="      "))
         else:
             print(f"    threshold: > {s1['threshold']} tool calls -- caller-set, strictly "
                   f"greater, so a span of exactly {s1['threshold']} is NOT flagged")
@@ -1654,12 +1655,13 @@ def main():
                          "MORE THAN N tool calls (strictly greater). Env: "
                          "ARI_FLAG_SPAN_TOOL_CALLS. NO DEFAULT -- unset reports the "
                          "distribution and says NOT COMPUTED, because no published "
-                         "threshold is grounded (framework ceilings span 5 to 1000). "
-                         "Whatever you pass is a starting point, not a validated constant")
+                         "threshold is grounded (framework ceilings span 10 to 1000; "
+                         "sources in docs/citations.md). Whatever you pass is a starting "
+                         "point, not a validated constant")
     ap.add_argument("--flag-no-tool-streak", type=int, default=None, metavar="N",
                     help="FLAG each run of MORE THAN N consecutive assistant turns that "
                          "called no tool at all. Env: ARI_FLAG_NO_TOOL_STREAK. Same "
-                         "no-default posture as above")
+                         "no-default posture as above (docs/citations.md)")
     ap.add_argument("--survey-user-entries", action="store_true",
                     help="print the census this instrument's span boundaries rest on -- "
                          "every `user` entry by whether it is operator input, and why not "
