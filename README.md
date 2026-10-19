@@ -187,6 +187,53 @@ a server which never connected, and `samples/gate-evidence/check_figures.RED.out
 gate observed failing before the figures were corrected, because a gate whose first run is green
 tells you nothing.
 
+### Merging a reviewed branch into `main`
+
+Squash it **locally, under the bot identity, then push** — not with `gh pr merge`. GitHub's
+squash-merge sets the resulting commit's *author* to whoever's token performed the merge, and this
+workspace has exactly one credential: the maintainer's own account. That is not a setting; it is
+what the merge API does. It is also how `40372496f26` — the squash of PR #2 — came to carry a real
+personal address permanently, which the identity gate then refused on *every* branch cut from
+`main`, and why that one commit is grandfathered by SHA in
+[`scripts/identity_allowlist.sh`](scripts/identity_allowlist.sh) — an exception keyed to one
+immutable commit, with its own controls in `scripts/test_identity_allowlist.sh`, which plant the
+*same* personal address on a different commit and require the gate to still refuse it. All three
+identity checks — the scrubber's, the pre-push hook's, and the one that asks the remote what it
+still serves — read that same file, so the exception cannot exist in one of them and quietly not
+in another. `main` has
+no branch protection,
+so nothing enforces this recipe up front; the gate only catches it afterwards, once the commit
+exists and the fix has become a history rewrite.
+
+```bash
+BOT_NAME='workain'
+BOT_MAIL="${BOT_NAME}@users.noreply.github.com"   # assembled rather than written out: the
+                                                  # scrubber's own `email addresses` pattern
+                                                  # matches a literal one, even in this file
+git fetch origin
+git worktree add /tmp/merge-main origin/main      # detached; leaves your own checkout alone
+cd /tmp/merge-main
+git merge --squash "origin/<branch>"
+
+# All four are set explicitly because GIT_AUTHOR_*/GIT_COMMITTER_* in the environment
+# OVERRIDE `git config`, and a session may well have them set to something personal.
+GIT_AUTHOR_NAME="$BOT_NAME"    GIT_AUTHOR_EMAIL="$BOT_MAIL" \
+GIT_COMMITTER_NAME="$BOT_NAME" GIT_COMMITTER_EMAIL="$BOT_MAIL" \
+  git commit -m "<subject> (#<pr>)"
+
+git log -1 --format='%an <%ae> | %cn <%ce>'       # read it before pushing, not after
+bash scripts/scrub_check.sh --all                 # the identity leg, while it is still private
+git push origin HEAD:main
+
+cd - && git worktree remove /tmp/merge-main
+gh pr close <pr> --comment "squash-merged to main as <sha>"   # a pushed squash does not
+                                                              # close the PR by itself
+```
+
+The verification line is the point of the recipe. Everything above it can be got right by habit;
+what makes the identity wrong is an environment you did not look at, and `git log -1` is the only
+step that sees it before the commit is public.
+
 ---
 
 ## Decisions

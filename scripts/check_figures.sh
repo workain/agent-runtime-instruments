@@ -170,6 +170,10 @@ EXEMPT=(
   # --- by this gate on its first run against the paragraph describing it, which is the
   # --- gate working rather than a problem. ---
   '103 transcripts'
+  # --- git plumbing in README's merge recipe, not measurements. The SHA must NOT be
+  # --- findable under samples/: it names the one commit grandfathered past the identity
+  # --- gate (scripts/identity_allowlist.sh), and an artefact is not where that lives. ---
+  '40372496f26' 'git log -1'
   # --- extractor artefact: prose containing "404'd" matches the label:N shape ---
   "blob the GitHub API 404'd was still served by"
   'returns 0 bytes, so'

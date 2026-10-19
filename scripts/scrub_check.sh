@@ -18,6 +18,12 @@ set -uo pipefail
 MODE="${1:---tree}"
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "SCRUB-ERROR: cannot cd to repo root" >&2; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "SCRUB-ERROR: git not found" >&2; exit 2; }
+# The identity leg's allowlist and matcher live in one file shared with
+# scripts/pre-push-hook.sh, which runs the same leg over a different rev range. A
+# missing one is a gate that cannot run, not a gate that passes.
+# shellcheck source=scripts/identity_allowlist.sh
+. scripts/identity_allowlist.sh 2>/dev/null || {
+  echo "SCRUB-ERROR: scripts/identity_allowlist.sh not found or not loadable" >&2; exit 2; }
 
 # Each entry: <label>|<extended regex>. Deliberately specific: a pattern broad enough to
 # match the public package names this repo legitimately discusses (claude-agent-acp,
@@ -145,6 +151,12 @@ scan_binaries() {
 scan_identities() {
   # Commit METADATA is public too, and file-content scanning cannot see it. A personal
   # author/committer address in history is as public as a leaked path and as permanent.
+  #
+  # The pattern below is NOT relaxed for anything. Individual already-public commits can
+  # be grandfathered by exact SHA in scripts/identity_allowlist.sh, which also explains
+  # why a SHA is the only form of exception that cannot widen over time. Each offending
+  # line is printed WITH its commit, because the SHA is what an exception would have to
+  # name -- and because "which commit carries this" was previously a second lookup.
   local revs bad
   revs=$(git rev-list --all 2>/dev/null)
   if [ -z "$revs" ]; then
@@ -152,12 +164,16 @@ scan_identities() {
     return
   fi
   echo "scanning commit identities (author + committer, all commits)"
-  bad=$(git log --all --format='%an <%ae>%n%cn <%ce>' | sort -u \
-        | grep -vE '@users\.noreply\.github\.com>$' || true)
+  # `|| exit 2` is load-bearing. identity_offenders refuses a malformed allowlist (and a
+  # failed git log) with exit 2, but it runs here inside a command substitution, whose
+  # subshell is all that `exit` can end. Without this, the refusal printed its reason to
+  # stderr and the scan carried on to "CLEAN" -- a gate announcing it could not run and
+  # passing anyway. Caught by scripts/test_identity_allowlist.sh controls E/F.
+  bad=$(identity_offenders --all) || exit 2
   if [ -n "$bad" ]; then
     fail=1
     echo "FINDING [commit identity]: non-noreply identities in history:"
-    echo "$bad" | sed 's/^/    /'
+    echo "$bad" | sed 's/^/    /' | head -25
   fi
 }
 

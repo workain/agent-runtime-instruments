@@ -20,6 +20,13 @@
 #        remote has forgotten is a different fact from one with a good identity.
 #     3. `gh` is absent or unauthenticated -> exit 2.
 #
+#     4. An allowlisted commit reading as a verified one. Commits named in
+#        scripts/identity_allowlist.sh are NOT scanned here, so each is printed
+#        individually as ALLOWLISTED and counted apart from the ones that passed -- the
+#        closing line never claims a commit carries a noreply identity when the gate
+#        did not look. A malformed allowlist refuses with exit 2 rather than scanning
+#        on, for the same reason an empty activity log does.
+#
 #   And one it cannot close: this sees what the ACTIVITY LOG recorded. An object reaching
 #   the remote by some other route is outside its view.
 set -uo pipefail
@@ -27,6 +34,20 @@ REPO="${1:-}"
 [ -n "$REPO" ] || REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#.*github\.com[:/]##; s#\.git$##')
 [ -n "$REPO" ] || { echo "usage: $0 <owner/repo>" >&2; exit 2; }
 command -v gh >/dev/null 2>&1 || { echo "REMOTE-CHECK-UNAVAILABLE: gh not on PATH" >&2; exit 2; }
+
+# The same allowlist the two LOCAL identity legs use (scrub_check.sh, pre-push-hook.sh),
+# deliberately the same file rather than a third copy of the rule. Sourced relative to
+# THIS script, not to the cwd: this gate takes owner/repo as an argument and is meant to
+# run from anywhere, so it never cds to the repo root the way those two do.
+# shellcheck source=scripts/identity_allowlist.sh
+. "$(dirname "${BASH_SOURCE[0]}")/identity_allowlist.sh" 2>/dev/null || {
+  echo "REMOTE-CHECK-UNAVAILABLE: cannot load identity_allowlist.sh beside this script" >&2
+  echo "  A gate that cannot read its own allowlist does not get to report a pass." >&2
+  exit 2; }
+# Validated ONCE, here, where a refusal can actually end the script. Inside the loop it
+# would run in a command substitution, whose subshell is all that an exit can end -- the
+# shape that already produced one gate printing "cannot run" and then a clean result.
+identity_allowlist_validate || exit 2
 
 shas=$(gh api "repos/$REPO/activity" --paginate \
          --jq '.[] | .before, .after' 2>/dev/null \
@@ -40,9 +61,16 @@ if [ "${n:-0}" -eq 0 ]; then
   exit 2
 fi
 
-fail=0; checked=0
+fail=0; checked=0; allowed=0
 while IFS= read -r sha; do
   [ -z "$sha" ] && continue
+  if identity_allowlist_contains "$sha"; then
+    # Counted and printed, never silently skipped: a `continue` here would shrink the
+    # closing line's own total, and an exempted commit would read as a verified one in
+    # the one gate whose entire job is saying what the remote still serves.
+    echo "  ${sha:0:10}  ALLOWLISTED -- not scanned (scripts/identity_allowlist.sh)"
+    checked=$((checked+1)); allowed=$((allowed+1)); continue
+  fi
   out=$(gh api "repos/$REPO/commits/$sha" \
           --jq '[.commit.author.email, .commit.committer.email] | join(" ")' 2>/dev/null) || {
     echo "  ${sha:0:10}  NOT RESOLVABLE on the remote (reported, not skipped)"
@@ -63,7 +91,14 @@ while IFS= read -r sha; do
 done <<< "$shas"
 
 if [ "$fail" -eq 0 ]; then
-  echo "all $checked pushed commits the activity log knows about carry a noreply identity"
+  if [ "$allowed" -gt 0 ]; then
+    # Deliberately NOT "all N ... carry a noreply identity": an allowlisted commit does
+    # not, which is why it needed allowlisting. Saying so is the whole point.
+    echo "$((checked - allowed)) of $checked pushed commits the activity log knows about"
+    echo "carry a noreply identity; $allowed allowlisted by SHA and not scanned at all"
+  else
+    echo "all $checked pushed commits the activity log knows about carry a noreply identity"
+  fi
   echo "(see the header: this reads the activity log, not every object the remote holds)"
   exit 0
 fi
