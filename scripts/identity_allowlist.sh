@@ -39,19 +39,44 @@ IDENTITY_ALLOWLIST=(
   40372496f2687e0d1140cf94675f87dbf2309adf
 )
 
-# Print an extended-regex alternation of the allowlisted SHAs. Exits 2 on a malformed
-# entry, and prints an alternation that cannot match anything when the list is empty.
-identity_allowlist_rx() {
+# Check every entry's SHAPE. Returns 2 (and says why) on a malformed one; never exits,
+# so a caller decides whether that is fatal -- which matters because the callers below
+# run in command substitutions, where an `exit` could only end the subshell anyway.
+identity_allowlist_validate() {
   local sha
   for sha in ${IDENTITY_ALLOWLIST[@]+"${IDENTITY_ALLOWLIST[@]}"}; do
     # 40 chars AND nothing outside [0-9a-f] -- the second half is what rejects a regex
-    # metacharacter, which is the entry that would quietly widen the match.
+    # metacharacter, which is the entry that would quietly widen the match. (A bare `.*`
+    # written here never even reaches this test as a metacharacter: an array literal is
+    # glob-expanded at assignment, so it arrives as a list of filenames. Both forms are
+    # refused, for the same reason -- neither is a commit.)
     [ "${#sha}" -eq 40 ] && [ -z "${sha//[0-9a-f]/}" ] && continue
     echo "IDENTITY-ALLOWLIST-ERROR: not a 40-char lowercase SHA: '$sha'" >&2
     echo "  Entries are matched whole, so anything else would either match nothing or" >&2
     echo "  match too much. Refusing to run the identity gate on a malformed list." >&2
-    exit 2
+    return 2
   done
+  return 0
+}
+
+# True if this exact SHA is allowlisted. For a caller that already HAS a full SHA and no
+# git history to match it against -- scripts/check_remote_identities.sh reads its SHAs
+# from the remote's activity log, some of them deliberately unreachable locally, which
+# is the whole reason that gate exists apart from the other two. Equality, not a regex:
+# the activity log is already filtered to full 40-char lowercase SHAs, the same form
+# stored here. Validate once at startup; this does not re-validate per call.
+identity_allowlist_contains() {
+  local sha
+  for sha in ${IDENTITY_ALLOWLIST[@]+"${IDENTITY_ALLOWLIST[@]}"}; do
+    [ "$1" = "$sha" ] && return 0
+  done
+  return 1
+}
+
+# Print an extended-regex alternation of the allowlisted SHAs. Exits 2 on a malformed
+# entry, and prints an alternation that cannot match anything when the list is empty.
+identity_allowlist_rx() {
+  identity_allowlist_validate || exit 2
   if [ "${#IDENTITY_ALLOWLIST[@]}" -eq 0 ]; then
     printf '%s' 'x^'          # matches nothing, so the filter below is a no-op
     return

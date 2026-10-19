@@ -36,7 +36,7 @@ cd "$TMP/clone" || exit 2
 # judgement on the wrong scanner.
 stage_scripts() {
   cp "$ROOT/scripts/scrub_check.sh" "$ROOT/scripts/identity_allowlist.sh" \
-     "$ROOT/scripts/pre-push-hook.sh" scripts/ \
+     "$ROOT/scripts/pre-push-hook.sh" "$ROOT/scripts/check_remote_identities.sh" scripts/ \
     || { echo "FAIL: cannot stage working-tree scripts"; exit 1; }
 }
 stage_scripts
@@ -130,6 +130,122 @@ else
   fail=$((fail+1))
 fi
 stage_scripts
+
+# ---------------------------------------------------------------------------
+# The REMOTE leg. check_remote_identities.sh reads the remote's activity log through
+# `gh`, so it is the one gate that cannot be exercised by planting a local commit -- and
+# `gh` is absent from some environments entirely (it is absent from the one this was
+# written in). So `gh` is STUBBED from fixture files: no network, deterministic, and it
+# makes the "the remote cannot resolve this SHA" branch testable, which a live remote
+# cannot be asked to produce on demand.
+#
+# What the stub does NOT prove: that the real `gh api` returns these shapes. That is
+# checked against the real remote by whoever has credentials; this suite checks the
+# allowlist logic layered on top of it, which is the part that can silently widen.
+# ---------------------------------------------------------------------------
+STUB="$TMP/bin"; mkdir -p "$STUB"
+cat > "$STUB/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+# fixture-backed stand-in for the two `gh api` calls check_remote_identities.sh makes
+case "${2:-}" in
+  */activity)  cat "$GH_FIXTURES/activity" ;;
+  */commits/*) f="$GH_FIXTURES/commit-${2##*/}"
+               [ -f "$f" ] || exit 1      # a SHA the remote will not resolve
+               cat "$f" ;;
+  *) exit 1 ;;
+esac
+STUBEOF
+chmod +x "$STUB/gh"
+export GH_FIXTURES="$TMP/fx"
+OTHER1=1111111111111111111111111111111111111111
+OTHER2=2222222222222222222222222222222222222222
+GONE=3333333333333333333333333333333333333333
+GOOD="workain${AT}users.noreply.github.com workain${AT}users.noreply.github.com"
+
+fixtures() {  # fixtures <sha>:<emails-or-"gone"> ...
+  rm -rf "$GH_FIXTURES"; mkdir -p "$GH_FIXTURES"; : > "$GH_FIXTURES/activity"
+  local spec sha body
+  for spec in "$@"; do
+    sha="${spec%%:*}"; body="${spec#*:}"
+    echo "$sha" >> "$GH_FIXTURES/activity"
+    [ "$body" = "gone" ] || echo "$body" > "$GH_FIXTURES/commit-$sha"
+  done
+}
+
+remote_check() {  # remote_check <label> <cwd> <want-rc> [<needle>...]
+  local label="$1" cwd="$2" want="$3"; shift 3
+  local out rc needle
+  # Captured and status-checked in ONE scope on purpose: an earlier version set the exit
+  # code inside the command substitution, where the assignment died with the subshell --
+  # the same shape as the `exit 2` bug these controls were written to catch.
+  out=$(cd "$cwd" && PATH="$STUB:$PATH" \
+          bash "$TMP/clone/scripts/check_remote_identities.sh" owner/repo 2>&1); rc=$?
+  if [ "$rc" -ne "$want" ]; then
+    echo "FAIL [$label]: exited $rc, expected $want"
+    echo "$out" | sed 's/^/      /' | head -6; fail=$((fail+1)); return
+  fi
+  for needle in "$@"; do
+    if ! echo "$out" | grep -qF "$needle"; then
+      echo "FAIL [$label]: output never said '$needle'"
+      echo "$out" | sed 's/^/      /' | head -6; fail=$((fail+1)); return
+    fi
+  done
+  echo "ok   [$label]"; pass=$((pass+1))
+}
+
+# R1: the grandfathered commit, served by the remote with the identity it really has.
+#     Must pass -- AND must say it was exempted rather than checked, and must not claim
+#     2 of 2 commits carry a noreply identity when it only ever looked at one.
+fixtures "$ALLOWED:Maxim Levko${AT}example.invalid Maxim Levko${AT}example.invalid" "$OTHER1:$GOOD"
+remote_check "remote: allowlisted commit passes and says so" "$TMP" 0 \
+  "ALLOWLISTED" "${ALLOWED:0:10}" "1 of 2 pushed commits" "1 allowlisted by SHA"
+
+# R2: any other identity the remote serves is still a finding.
+fixtures "$ALLOWED:$GOOD" "$OTHER1:jane.doe${AT}example.com jane.doe${AT}example.com"
+remote_check "remote: a different identity is still refused" "$TMP" 1 \
+  "FINDING" "${OTHER1:0:10}"
+
+# R3: the decisive one again, on this leg: the allowlisted commit's OWN address, on a
+#     different SHA the remote serves, must still be refused.
+fixtures "$ALLOWED:$GOOD" "$OTHER2:levko.maxim${AT}gmail.com levko.maxim${AT}gmail.com"
+remote_check "remote: the allowlisted IDENTITY on another SHA is still refused" "$TMP" 1 \
+  "FINDING" "${OTHER2:0:10}"
+
+# R4: a SHA the remote no longer resolves is still reported and still counted -- the
+#     behaviour that existed before the allowlist, guarded against this edit.
+fixtures "$GONE:gone" "$OTHER1:$GOOD"
+remote_check "remote: an unresolvable SHA is still reported, not skipped" "$TMP" 0 \
+  "NOT RESOLVABLE" "${GONE:0:10}"
+
+# R5: run from a DIFFERENT directory. The other two gates cd to the repo root before
+#     sourcing; this one never cds, so a cwd-relative source would break here and only
+#     here. $TMP above is already not the repo -- this one is deeper and unrelated.
+mkdir -p "$TMP/elsewhere/deeper"
+fixtures "$ALLOWED:Maxim Levko${AT}example.invalid Maxim Levko${AT}example.invalid"
+remote_check "remote: works when run from outside the repo" "$TMP/elsewhere/deeper" 0 \
+  "ALLOWLISTED"
+
+# R6: a malformed allowlist must stop this gate too, before it scans anything.
+sed -i "s|^  ${ALLOWED}\$|  4037249|" "$TMP/clone/scripts/identity_allowlist.sh"
+fixtures "$ALLOWED:$GOOD"
+remote_check "remote: malformed entry makes the gate refuse, not pass" "$TMP" 2 \
+  "IDENTITY-ALLOWLIST-ERROR"
+stage_scripts
+
+# R7: and with no allowlist file beside it at all, it must refuse rather than fall back
+#     to scanning without one -- the failure mode where a gate loses its exception list
+#     and starts reporting findings nobody can act on.
+mkdir -p "$TMP/lonely/scripts"
+cp "$ROOT/scripts/check_remote_identities.sh" "$TMP/lonely/scripts/"
+fixtures "$ALLOWED:$GOOD"
+out=$(cd "$TMP" && PATH="$STUB:$PATH" bash "$TMP/lonely/scripts/check_remote_identities.sh" \
+        owner/repo 2>&1); rc=$?
+if [ "$rc" -eq 2 ] && echo "$out" | grep -qF "cannot load identity_allowlist.sh"; then
+  echo "ok   [remote: refuses when its allowlist file is missing]"; pass=$((pass+1))
+else
+  echo "FAIL [remote: refuses when its allowlist file is missing]: exited $rc"
+  echo "$out" | sed 's/^/      /' | head -4; fail=$((fail+1))
+fi
 
 echo
 echo "identity-allowlist suite: $pass passed, $fail failed"

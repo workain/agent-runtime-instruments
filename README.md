@@ -187,7 +187,10 @@ personal address permanently, which the identity gate then refused on *every* br
 `main`, and why that one commit is grandfathered by SHA in
 [`scripts/identity_allowlist.sh`](scripts/identity_allowlist.sh) — an exception keyed to one
 immutable commit, with its own controls in `scripts/test_identity_allowlist.sh`, which plant the
-*same* personal address on a different commit and require the gate to still refuse it. `main` has
+*same* personal address on a different commit and require the gate to still refuse it. All three
+identity checks — the scrubber's, the pre-push hook's, and the one that asks the remote what it
+still serves — read that same file, so the exception cannot exist in one of them and quietly not
+in another. `main` has
 no branch protection,
 so nothing enforces this recipe up front; the gate only catches it afterwards, once the commit
 exists and the fix has become a history rewrite.
