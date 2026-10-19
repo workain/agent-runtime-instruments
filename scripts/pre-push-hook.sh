@@ -8,8 +8,20 @@
 # deadlock, and it happened here.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-bad=$(git log HEAD --format='%an <%ae>%n%cn <%ce>' | sort -u \
-      | grep -vE '@users\.noreply\.github\.com>$' || true)
+# Same allowlist and same matcher as scrub_check.sh's own identity leg -- deliberately
+# the same FILE, not a second copy of it. This leg and that one differ only in rev range
+# (HEAD's ancestry vs --all, see above); when they differed in their allowlist too, a
+# grandfathered commit would be refused by whichever copy was not updated, and this hook
+# would block every push off main while the scrubber said CLEAN.
+# shellcheck source=scripts/identity_allowlist.sh
+. scripts/identity_allowlist.sh 2>/dev/null || {
+  echo "pre-push REFUSED: scripts/identity_allowlist.sh missing -- the identity check" >&2
+  echo "  cannot run, and a check that cannot run does not get to pass." >&2
+  exit 1; }
+# `|| exit 1` for the same reason scrub_check.sh spells out at its own call site: the
+# refusal inside identity_offenders can only end the subshell this substitution runs in,
+# so an uncaught one would push with the check having never completed.
+bad=$(identity_offenders HEAD) || exit 1
 if [ -n "$bad" ]; then
   echo "pre-push REFUSED: non-noreply identity in the commits being pushed:" >&2
   echo "$bad" | sed 's/^/    /' >&2
