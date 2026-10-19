@@ -12,6 +12,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 echo "preflight: figures"   && bash scripts/check_figures.sh    >/dev/null
 echo "preflight: scrub"     && bash scripts/scrub_check.sh --all >/dev/null
 echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null
+echo "preflight: identity"  && bash scripts/test_identity_allowlist.sh >/dev/null
 echo "preflight: OK -- all gates pass"
 echo
 echo "NOTE: run as a pre-COMMIT hook, this cannot see two things, because they do not"
