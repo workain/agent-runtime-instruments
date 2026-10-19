@@ -1,0 +1,26 @@
+USER-ENTRY CENSUS -- which `user` entries count as operator input, and why not if not.
+This is what signal 1's span boundaries are built from; the exclusion rules are listed
+under --help-blind. Counts only: no entry's text is read.
+
+sources read:
+  samples/fixtures/loop_flags.flagged.jsonl
+  samples/fixtures/loop_flags.clean.jsonl
+  samples/fixtures/token_breakdown.jsonl
+
+user entries: 19
+  counted as REAL user turns (span boundaries): 5
+  excluded as isMeta: 2
+    isMeta:true -- a prompt the engine synthesised, e.g. the relaunch stub "Continue
+    from where you left off."
+  excluded as tool_result: 12
+    carries tool_result blocks only -- the engine handing a tool's output back, which is
+    the overwhelming majority of user entries in a real transcript
+  excluded as engine_injected: 0
+    promptSource names the engine itself (e.g. a <task-notification> injected when a
+    background task ends), with no isMeta to mark it
+  unaccounted for (must be 0): 0
+
+per source (real user turns / user entries):
+      2 / 11     samples/fixtures/loop_flags.flagged.jsonl
+      2 / 7      samples/fixtures/loop_flags.clean.jsonl
+      1 / 1      samples/fixtures/token_breakdown.jsonl

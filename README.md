@@ -69,7 +69,7 @@ with the reproduction for each.
 | `bench_mcp_connect.py` | time to a **usable** MCP tool | 1 request per rep |
 | `census_background_work.py` | work a turn boundary would kill | free, **self-testing** |
 | `bench_cache_residency.py` | does a cache hit need the writer alive? | ~6 requests |
-| `measure_token_breakdown.py` | where a session's tokens went, by tool / subagent / subsession | free, reads transcripts |
+| `measure_token_breakdown.py` | where a session's tokens went, by tool / subagent / subsession, plus mechanical loop flags | free, reads transcripts |
 
 `instruments/echo_mcp_server.py` is a 60-line stdio MCP server with one tool, so
 `bench_mcp_connect.py` runs out of the box without access to anyone's private servers.
@@ -77,6 +77,15 @@ with the reproduction for each.
 
 All take `--help` and `--help-blind`; most take `--anonymise`, which hashes session identifiers
 so output is safe to publish and **never alters a token count or a timing**.
+
+`measure_token_breakdown.py` also carries two **mechanical loop flags** — tool calls per span
+between consecutive real user turns, and runs of assistant turns that called no tool — computed
+from transcript structure, never from judging what was said. They are **flags, not verdicts**,
+and they ship **no default threshold**: the agent frameworks' own loop ceilings span 10 to 1000
+(`docs/citations.md`), so an unset threshold prints `threshold: NOT SET -> NOT COMPUTED` rather
+than a reassuring clean result. Set one with `--flag-span-tool-calls N` /
+`--flag-no-tool-streak N`, or the matching `ARI_FLAG_*` env vars; a value below 1 is refused.
+See `samples/measure_token_breakdown.loop-flags-FLAGGED.out` for a flagged run.
 
 Read-only, with one disclosed exception: `census_background_work.py`'s self-test spawns short-lived
 decoy processes of its own and kills them again.

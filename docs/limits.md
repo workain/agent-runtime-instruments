@@ -121,6 +121,48 @@ Stated so the gaps are visible rather than implied absent.
 - **It prepares data for an LLM; it does not call one.** `--json` is a digest meant to be handed
   to a model for qualitative review. No network, no model request, no judgement of its own.
 
+### `measure_token_breakdown.py` — the LOOP FLAGS section
+- **They are flags, not verdicts, and the distinction is the whole design.** A flagged span means
+  an unusual amount of work *by a threshold the caller chose*. It is not a finding that the work
+  was wasted: a long span can be a correct refactor and a short one can be a pointless loop.
+  Nothing here scores a session, and `--json` repeats that sentence to whatever model reads it.
+  Both outcomes are published against the same pair of thresholds, so neither is a claim without
+  its counterpart — `FLAGGED spans: 1 of 2` in `measure_token_breakdown.loop-flags-FLAGGED.out`
+  (the fixture built to exceed them), and in `measure_token_breakdown.loop-flags-clean.out`
+  (built not to):
+  `FLAGGED spans: 0 of 2 -- a MEASURED clean result against this threshold`.
+- **No threshold ships as a default, so by default nothing is flagged.** Four frameworks' own
+  loop ceilings were read at first hand (`docs/citations.md`) and the defaults that exist span 10
+  to 1000, each a cost backstop rather than a non-convergence detector. So an unset threshold
+  prints `threshold: NOT SET -> NOT COMPUTED` — a third state, deliberately not sharing a shape
+  with a clean result — while still reporting the distribution. Anything you pass is a starting
+  point for recalibration, and this instrument does not know a better one.
+- **Signal 1 is only as good as "which `user` entry is a person".** Most `user` entries in a real
+  transcript are the engine handing back a tool result; those, `isMeta` synthetic prompts and
+  engine-injected `promptSource` prompts are excluded structurally, and the counts are printed
+  per reason on every run. Read them: an exclusion rule that over-fires inflates every span, and
+  one that under-fires collapses them. `--survey-user-entries` prints the census for your own
+  corpus. An entry this cannot classify counts as REAL, which splits a span — wrong in the
+  direction that cannot manufacture a finding.
+- **A transcript with no real user turn is reported `UNMEASURED: not one real user turn was found`,
+  not clean.** With no boundary the whole file is one span that beats any threshold, which is the
+  most convincing wrong answer available here, so nothing is flagged at all.
+- **Both boundaries are strictly greater-than**, in both signals: a span of exactly the threshold
+  is not flagged. A threshold below 1 is refused outright (`is below 1`) — 0 would flag every
+  span including the empty ones, and a detector that fires on everything discriminates nothing.
+- **Signal 3 counts streaks per thread, not in file order.** A subagent's turns are interleaved
+  into the same transcript, so a raw scan would join a main-thread turn to a sidechain's and
+  report a streak no thread had. The sidechain figure is still a ceiling: two different
+  subagents' turns landing adjacently can merge into one apparent streak.
+- **Signal 2 does not exist yet** — repeated/near-duplicate invocations, the mode published work
+  rates most frequent of 14. It is reported as `NOT IMPLEMENTED` on every run rather than left to
+  be inferred from a gap, because matching on tool name alone would report any Bash-heavy session
+  as one long repetition.
+- **It flags structure, not semantics.** Nothing here reads what was said; there is no LLM call
+  and no notion of whether two calls achieved the same thing. "Same command run twice with no
+  state change" is the signal the literature actually names, and this instrument cannot see it
+  yet.
+
 ## Not evaluated at all
 
 No sandbox or microVM platform was measured. No hosted agent rail was called. Nothing here

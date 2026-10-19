@@ -56,6 +56,39 @@ quoted.
 
 ---
 
+## The loop-flag thresholds: four frameworks' own defaults, read at first hand
+
+`instruments/measure_token_breakdown.py`'s LOOP FLAGS section ships **no default threshold**, and
+these four readings are the reason. Each was fetched for this repository and quoted from the
+framework's own reference page or its own source file — not from a summary about it.
+
+| Quotation | Source | Used in |
+|---|---|---|
+| `max_iterations: int \| None = 15` — "The maximum number of steps to take before ending the execution loop. Setting to 'None' could lead to an infinite loop." | [`langchain_classic/agents/agent.py`](https://raw.githubusercontent.com/langchain-ai/langchain/master/libs/langchain/langchain_classic/agents/agent.py) (class attribute, read from source because the hosted API reference no longer renders it) | `measure_token_breakdown.py` docstring |
+| "Starting in version 1.0.6, the default recursion limit is set to 1000 steps." | [docs.langchain.com/oss/python/langgraph/graph-api](https://docs.langchain.com/oss/python/langgraph/graph-api) | same |
+| `DEFAULT_MAX_TURNS = 10` | [`openai-agents-python/src/agents/run_config.py`](https://raw.githubusercontent.com/openai/openai-agents-python/main/src/agents/run_config.py) — the docs page names the constant but not its value, so the value was read from source | same |
+| `max_turns` \| `int \| None` \| default `None` \| "Maximum agentic turns (tool-use round trips)" | [code.claude.com/docs/en/agent-sdk/python](https://code.claude.com/docs/en/agent-sdk/python), `ClaudeAgentOptions` reference table | same |
+| "1600+ annotated traces collected across 7 popular MAS frameworks"; "This process identifies 14 unique modes, clustered into 3 categories"; "step repetitions (FM-1.3, 15.7%)" | MAST, [arXiv:2503.13657](https://arxiv.org/abs/2503.13657) v3 — first two from the abstract, the third from §4 of the PDF | same (signal 2's deferral rationale) |
+
+**Rule 4 fired here, on a summary written by another agent.** These numbers reached this
+repository through a research brief, and re-fetching the four framework pages changed two of
+them: the brief gave the OpenAI default as a "5-10" range where the source assigns a single
+`DEFAULT_MAX_TURNS = 10`, and cited LangGraph's superseded pre-1.0.6 value of 25 alongside the
+current one. Neither error changed the conclusion — the defaults still span two orders of
+magnitude, which is the whole point — but both would have been published as page-verbatim
+facts. **This is the same defect as the seven corrections above, arriving by a new route:**
+previously from search-result summaries, now from an agent's research summary. The remedy is
+identical and does not care which.
+
+**One claim was checked and is NOT supported by the abstract.** The brief stated that MAST finds
+step repetition "the single highest-frequency failure mode of all 14 categories". The *abstract*
+does not rank the modes at all, so that sentence cannot be cited to it. It is supported by the
+paper's §4 body text, where all fourteen per-mode percentages appear: FM-1.3 at 15.7% is the
+largest, ahead of FM-2.6 (reasoning-action mismatch) at 13.2%. Cited to the body, with the
+comparison named, rather than to the abstract where a reader would not find it.
+
+---
+
 ## Quoted-from versus reported-by
 
 A page with a commercial interest in the claim is still usable, but the interest has to be
@@ -104,7 +137,10 @@ OpenCode mutual-restart issue; and the upstream Claude Code memory-growth issue 
 
 The source study's own honest denominator was **6 of ~40 verified**. This file brings the count
 of *first-hand verified* quotations to 13 — but only across the quotations this repository
-actually uses. The remaining ~27 from the study were not re-checked, because nothing here
+actually uses. (The five loop-flag readings above are **outside** that denominator: they are not
+the study's quotations and were never part of the 13 re-checked, so they neither raise nor lower
+the "7 of 13" figure. Counting them in would quietly improve a ratio by adding work that was
+never in question.) The remaining ~27 from the study were not re-checked, because nothing here
 depends on them.
 
 ### The "7 of 13" denominator, enumerated

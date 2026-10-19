@@ -20,7 +20,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 
-MIN_PAIRS=24
+MIN_PAIRS=30
 
 # figure-string | sample file it must appear in
 PAIRS=(
@@ -48,6 +48,16 @@ PAIRS=(
   'SELF-TEST FAILED -- do NOT believe the counts above.|samples/census_background_work.selftest-FAILED.out'
   'REFUSING this rep|samples/bench_mcp_connect.broken-server.out'
   'SKIPPED|samples/bench_cold_start.no-binaries.out'
+  # measure_token_breakdown.py's loop flags: every state the two signals can end in is
+  # pinned to a published run, because the dangerous output here is not a zero but a
+  # reassuring "nothing flagged" -- so "flagged", "measured clean", "not computed" and
+  # "unmeasured" each need an artefact a reader can tell apart from the others.
+  'FLAGGED spans: 1 of 2|samples/measure_token_breakdown.loop-flags-FLAGGED.out'
+  'FLAGGED spans: 0 of 2 -- a MEASURED clean result against this threshold|samples/measure_token_breakdown.loop-flags-clean.out'
+  'threshold: NOT SET -> NOT COMPUTED|samples/measure_token_breakdown.loop-flags-no-threshold.out'
+  'UNMEASURED: not one real user turn was found|samples/measure_token_breakdown.loop-flags-no-user-turn.out'
+  'is below 1|samples/measure_token_breakdown.loop-flags-threshold-zero-REFUSED.out'
+  'NOT IMPLEMENTED|samples/measure_token_breakdown.loop-flags-FLAGGED.out'
 )
 
 # docs/limits.md is in this list deliberately. A review round found four stale figures in

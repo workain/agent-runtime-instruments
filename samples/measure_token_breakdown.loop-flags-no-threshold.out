@@ -1,0 +1,72 @@
+sources read:
+  samples/fixtures/loop_flags.flagged.jsonl
+
+attribution coverage: 12 of 12 assistant turns were usage-bearing; 0 carried no recognised usage field
+usage-field presence across usage-bearing turns (a field missing here is a silent 0, not a measured one):
+  input_tokens: 12/12
+  output_tokens: 12/12
+  cache_creation_input_tokens: 12/12
+  cache_read_input_tokens: 12/12
+sidechain (subagent) turns: 0
+
+TOTAL over 12 usage-bearing turns: in=12 out=120 cache_create=1200 cache_read=12000
+cache_read : output overhead = 100.00
+
+BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called, not split per call):
+  turns      out  cache_read cache_create  tools
+      8       80        8000          800  Bash
+      4       40        4000          400  (no tool call)
+
+BY AGENT (same-session Task subagents separated from the main thread):
+  turns      out  cache_read cache_create  agent
+     12      120       12000         1200  main thread
+
+TOP 5 TURNS BY cache_read (the turns re-reading the most cached context):
+   cache_read      out  agent / tools
+         1000       10  main thread / Bash
+         1000       10  main thread / Bash
+         1000       10  main thread / Bash
+         1000       10  main thread / Bash
+         1000       10  main thread / Bash
+
+LOOP FLAGS
+  Mechanical signals, computed from transcript STRUCTURE only -- turn boundaries and
+  tool_use block counts -- never from judging what was said. THESE ARE FLAGS, NOT
+  VERDICTS: a flagged span means an unusual amount of work by the threshold YOU set,
+  which is a pointer to look. It is not a finding that the work was wasted, and no
+  threshold here is a validated constant.
+
+  real user turns (span boundaries): 2
+  user entries NOT counted as operator input, by reason:
+    isMeta: 1
+      isMeta:true -- a prompt the engine synthesised, e.g. the relaunch stub "Continue
+      from where you left off."
+    tool_result: 8
+      carries tool_result blocks only -- the engine handing a tool's output back, which
+      is the overwhelming majority of user entries in a real transcript
+
+  SIGNAL 1 -- tool calls per span between consecutive real user turns
+    spans: 2  tool calls per span: p50=1 p90=7 max=7  (assistant turns per span: p50=1 max=11)
+    threshold: NOT SET -> NOT COMPUTED
+      Not a clean result and not a dirty one: no span was tested. No default ships
+      because no published threshold is grounded -- the frameworks' own ceilings span 5
+      to 1000 and exist as cost backstops, not as non-convergence detectors. Pick one
+      from the distribution above via --flag-span-tool-calls N or
+      ARI_FLAG_SPAN_TOOL_CALLS, and treat it as a starting point for recalibration.
+
+  SIGNAL 2 -- repeated / near-duplicate invocations: NOT IMPLEMENTED
+      NOT IMPLEMENTED -- repeated/near-duplicate invocations. Published work rates this
+      the most frequent of 14 multi-agent failure modes (MAST FM-1.3, step repetition,
+      15.7% over 1600+ annotated traces), so it is the next signal to add, not one that
+      was judged unimportant. It is deferred rather than approximated: matching on tool
+      NAME alone would report a Bash-heavy session as one long repetition, and the
+      command-level clustering that makes it meaningful is being built separately.
+      Nothing partial is reported under its name.
+
+  SIGNAL 3 -- consecutive assistant turns that called no tool
+    longest streak anywhere: 4 turn(s)
+    main thread: 12 turns, 4 with no tool call, in 1 streak(s), longest=4
+    sidechains: 0 turns, 0 with no tool call, in 0 streak(s), longest=0
+    threshold: NOT SET -> NOT COMPUTED
+      No streak was tested. Same reason as signal 1 for shipping no default; set one
+      with --flag-no-tool-streak N or ARI_FLAG_NO_TOOL_STREAK.

@@ -18,5 +18,71 @@ SELF-TEST [negative control B: rename ONE field (output_tokens) -- the case the 
 SELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]
   duplicate-label refused=True; dangling-parent refused=True
 
-SELF-TEST PASSED -- positive control exact; both negative controls and both manifest guards fired.
+SELF-TEST [loop flags, POSITIVE control: a fixture built to exceed both thresholds (span > 5 calls, streak > 3 turns)]
+  real user turns                  got=2                  expected=2                  OK
+  spans                            got=2                  expected=2                  OK
+  span 1 calls                     got=7                  expected=7                  OK
+  span 2 calls                     got=1                  expected=1                  OK
+  calls p50 / p90                  got=(1, 7)             expected=(1, 7)             OK
+  excluded tool_result             got=8                  expected=8                  OK
+  excluded isMeta                  got=1                  expected=1                  OK
+  signal 1 state                   got=measured           expected=measured           OK
+  spans FLAGGED                    got=[7]                expected=[7]                OK
+  signal 3 longest streak          got=4                  expected=4                  OK
+  streaks FLAGGED (main)           got=[4]                expected=[4]                OK
+  signal 2 state                   got=not_implemented    expected=not_implemented    OK
+
+SELF-TEST [loop flags, NEGATIVE control: a fixture under BOTH thresholds must report a MEASURED clean result, not 'not computed']
+  max span=3 (threshold 5), longest streak=1 (threshold 3); flagged spans=0 streaks=0; both states measured=True OK
+
+SELF-TEST [loop flags, NEAR-MISS boundary: EXACTLY the threshold must not flag, and exactly one more must -- both signals, both directions]
+  span calls       at=5 -> flagged 0 (must be 0);  at=6 -> flagged 1 (must be 1)  OK
+  no-tool streak   at=3 -> flagged 0 (must be 0);  at=4 -> flagged 1 (must be 1)  OK
+
+SELF-TEST [loop flags, the exclusion rule is LOAD-BEARING: read the engine's own tool_result entries as operator input and the positive control goes clean]
+  with the exclusion: spans=2 max=7 flagged=1  |  without it: spans=10 max=1 flagged=0  OK -- the control can fail
+
+SELF-TEST [loop flags: a transcript with NO real user turn must read UNMEASURED, and must flag NOTHING]
+  real user turns=0, state=unmeasured, flagged=0 (the single implicit span holds 8 calls, which would have exceeded the threshold)  OK
+
+SELF-TEST [loop flags: a turn that calls ONE tool SEVERAL times is that many calls, and a split turn's repeated block ids are counted once]
+  turn 1: tool names=['Bash'] calls=3 (expected 3 -- name-counting would say 1); turn 2: one block id across two entries -> calls=1 (expected 1)  OK
+
+SELF-TEST [loop flags: a no-tool streak must NOT run across the main thread and a sidechain, which are interleaved in one file]
+  main=2 sidechains=2 longest anywhere=2 (expected 2/2/2; a raw-order scan would say 4 and flag it against a threshold of 3)  OK
+
+SELF-TEST [loop flags: a user turn answered with NO tool call is a span of 0 and must stay in the distribution]
+  spans=2 calls per span=[0, 1] p50=0 flagged=0 (expected 2 spans, [0, 1], p50=0, none flagged)  OK
+
+SELF-TEST [loop flags: the user-entry classifier, entry by entry, including the engine-injected case no fixture above contains]
+  real user turn   expected=real user turn   OK  typed prompt, string content
+  real user turn   expected=real user turn   OK  SDK prompt, list of text blocks
+  tool_result      expected=tool_result      OK  engine's tool output coming back
+  isMeta           expected=isMeta           OK  relaunch stub
+  engine_injected  expected=engine_injected  OK  engine-injected task notification
+  isMeta           expected=isMeta           OK  isMeta AND tool_result -> counted once, under isMeta
+  real user turn   expected=real user turn   OK  unclassifiable (empty content) -> treated as REAL, which SPLITS a span and so lowers every count rather than inventing work
+
+SELF-TEST [loop flags: spans are computed PER SOURCE -- pooling two transcripts' turns first would report a span neither session had]
+  per source: spans=4 calls=[7, 1, 7, 1] max=7  |  pooled first: calls=[14, 2, 0, 0] -- a 14-call span that never happened  OK
+
+SELF-TEST [loop flags: --anonymise must leave NO raw source path anywhere in the digest -- the mode whose only job is that the path is not there]
+  raw path present=False (must be False), hashed form present=True (must be True)  OK
+
+SELF-TEST [loop flags: an unusable threshold must REFUSE -- 0, negative, and an env var that is set but unparseable]
+  --flag 0         -> threshold=None refused=True (expected threshold=None refused=True) OK
+  --flag -1        -> threshold=None refused=True (expected threshold=None refused=True) OK
+  flag 1 (valid)   -> threshold=1 refused=False (expected threshold=1 refused=False) OK
+  nothing set      -> threshold=None refused=False (expected threshold=None refused=False) OK
+  env='twenty'     -> threshold=None refused=True (expected threshold=None refused=True) OK
+  env='0'          -> threshold=None refused=True (expected threshold=None refused=True) OK
+  env='-4'         -> threshold=None refused=True (expected threshold=None refused=True) OK
+  env='7'          -> threshold=7 refused=False (expected threshold=7 refused=False) OK
+
+SELF-TEST [loop flags: with NO threshold set, both signals must say NOT COMPUTED -- never 'clean' -- while still reporting the distribution]
+  states=not_computed/not_computed, distribution still reported (max=7, longest streak=4) OK
+
+SELF-TEST PASSED -- positive controls exact; both usage negative controls, both manifest guards, and
+every loop-flag control fired (including the counterfactual that makes the flags' exclusion
+rule falsifiable).
 exit=0
