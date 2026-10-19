@@ -53,10 +53,11 @@ LOOP FLAGS
     spans: 2  tool calls per span: p50=1 p90=6 max=6  (assistant turns per span: p50=1 max=6)
     threshold: NOT SET -> NOT COMPUTED
       Not a clean result and not a dirty one: no span was tested. No default ships
-      because no published threshold is grounded -- the frameworks' own ceilings span 5
-      to 1000 and exist as cost backstops, not as non-convergence detectors. Pick one
-      from the distribution above via --flag-span-tool-calls N or
-      ARI_FLAG_SPAN_TOOL_CALLS, and treat it as a starting point for recalibration.
+      because no published threshold is grounded -- the frameworks' own ceilings span 10
+      to 1000 (each read at first hand; see docs/citations.md) and exist as cost
+      backstops, not as non-convergence detectors. Pick one from the distribution above
+      via --flag-span-tool-calls N or ARI_FLAG_SPAN_TOOL_CALLS, and treat it as a
+      starting point for recalibration.
 
   SIGNAL 2 -- repeated / near-duplicate invocations: NOT IMPLEMENTED
       NOT IMPLEMENTED -- repeated/near-duplicate invocations. Published work rates this
