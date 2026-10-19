@@ -81,8 +81,9 @@ so output is safe to publish and **never alters a token count or a timing**.
 `measure_token_breakdown.py` also carries two **mechanical loop flags** — tool calls per span
 between consecutive real user turns, and runs of assistant turns that called no tool — computed
 from transcript structure, never from judging what was said. They are **flags, not verdicts**,
-and they ship **no default threshold**: the agent frameworks' own loop ceilings span 10 to 1000
-(`docs/citations.md`), so an unset threshold prints `threshold: NOT SET -> NOT COMPUTED` rather
+and they ship **no default threshold**, because no published one is grounded — the agent
+frameworks' own loop ceilings span 10 to 1000, each read at first hand and sourced in
+`docs/citations.md`. So an unset threshold prints `threshold: NOT SET -> NOT COMPUTED` rather
 than a reassuring clean result. Set one with `--flag-span-tool-calls N` /
 `--flag-no-tool-streak N`, or the matching `ARI_FLAG_*` env vars; a value below 1 is refused.
 See `samples/measure_token_breakdown.loop-flags-FLAGGED.out` for a flagged run.
