@@ -24,6 +24,9 @@ SELF-TEST [Bash clustering positive control: known commands must cluster exactly
 SELF-TEST [PRIVACY control: no fragment of a quoted secret value may reach any printed output -- cluster keys are NOT anonymised, so they must be safe by derivation]
   6 commands with quoted multi-word secret values, text report + --json digest + loop-flags section, with and without --anonymise: OK -- no value fragment printed
 
+SELF-TEST [PUBLISHED-VOCABULARY control (ARI#11): a well-formed LOCAL name -- branch, worktree, script -- must never reach a cluster key, and the public case must still keep its own key]
+  4 internal-name commands bucketed to `(other)` and absent from both output modes; 3 public commands kept their own key; 4 distinct counted; every key inside the closed vocabulary: OK
+
 SELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]
   duplicate-label refused=True; dangling-parent refused=True
 

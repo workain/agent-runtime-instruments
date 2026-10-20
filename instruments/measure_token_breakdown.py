@@ -15,9 +15,14 @@ splits that spend three ways:
                    additionally clustered BY COMMAND (the command's first token, after
                    stripping `cd ...&&` chains and `VAR=` prefixes) so a lumped `Bash`
                    bucket splits into `git`, `pytest`, `curl`, ... -- a heuristic, not a
-                   semantic parse, with an explicit `(unparsed)` bucket. The peel is
-                   quote-aware and runs to a fixed point, because a cluster key is
-                   PUBLISHED and is not anonymised: see `bash_cluster`.
+                   semantic parse, with an explicit `(unparsed)` bucket. The published key
+                   vocabulary is CLOSED: a word from a public-command allowlist, `(other)`,
+                   or `(unparsed)`, and nothing else -- so a local script, branch or
+                   worktree name cannot become a key, which it could while the test was
+                   only the SHAPE of a word. `(other)`'s distinct-command COUNT is reported
+                   so the bucket stays readable without naming anything. The peel is
+                   quote-aware and runs to a fixed point. All of this is because a cluster
+                   key is PUBLISHED and is not anonymised: see `bash_cluster`.
   BY AGENT      -- separate same-session Task-tool subagent turns (`isSidechain: true`)
                    from the main thread, grouped by subagent type (`attributionAgent`)
                    where the transcript records one. These are sidechains WITHIN one
@@ -161,11 +166,19 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
          They are still counted as sidechain spend, under "(subagent type not recorded)",
          never merged into the main thread -- the by-agent split would otherwise under-
          report subagent cost whenever the label happened to be absent.
-      5. A BASH TURN WITH NO READABLE COMMAND. The by-command clustering reads
-         `tool_use.input.command`; when it is missing or does not reduce to a plain
-         command word, that Bash turn clusters into `(unparsed)` -- never silently merged
-         into a real command's bucket and never dropped, so the `(unparsed)` count is the
-         honest measure of how much the heuristic could not classify.
+      5. A BASH TURN WHOSE COMMAND IS UNREADABLE OR NOT PUBLIC. The by-command
+         clustering reads `tool_use.input.command`, and two separate things can stop it
+         naming a command -- kept as two buckets, because collapsing them would hide
+         which one happened. When the command is missing or does not reduce to a plain
+         command word, the turn clusters into `(unparsed)`. When it IS a well-formed word
+         but not on the public-command allowlist -- a local script, a branch or worktree
+         name -- it clusters into `(other)`, counted and never named, because a published
+         key is not anonymised and must not carry an internal name. Neither bucket is
+         ever silently merged into a real command's, and neither is dropped, so the two
+         counts together are the honest measure of what the heuristic did not name. The
+         reassuring-looking failure here is a `(other)` that quietly swallows a command
+         you cared about: its DISTINCT COUNT is printed next to it for exactly that
+         reason, and the allowlist is a short, auditable list you are meant to read.
 
     Three more ways to be blind belong to the LOOP FLAGS specifically, because the flags'
     dangerous output is the opposite of a zero -- it is a reassuring "nothing flagged":
@@ -196,7 +209,17 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
     computed numbers match EXACTLY, and a second fixture of known Bash commands
     (`git`x2, `pytest`, one unparseable, one with a QUOTED multi-word env value, and one
     with an env prefix BEFORE a `cd ...&&` chain) asserts the clustering matches exactly.
-    A PRIVACY control runs five commands whose env value is a quoted multi-word secret
+    A PUBLISHED-VOCABULARY control (ARI#11) runs commands whose first word is a
+    plausible internal name -- `./roast-hc9999-fake-example`, a `poll_ci*.sh` shape, a
+    worktree path -- and asserts each one clusters to `(other)`, never to the literal
+    name, that the name appears nowhere in either output mode, that every key emitted is
+    inside the closed vocabulary, and that `git`/`pytest`/`npm` STILL keep their own keys,
+    so the gate cannot pass by bucketing everything. It is a separate control from the one
+    below rather than an extension of it, because the secret-value control passed
+    throughout the period the name leak was live: a script name is not a quoted value, and
+    a guard aimed at values cannot see it.
+
+    A PRIVACY control runs six commands whose env value is a quoted multi-word secret
     through the text report AND the `--json` digest, with and without `--anonymise`, and
     fails if any WORD of any value appears anywhere in either -- the leak it exists to
     catch shipped once, as a cluster key `efgh` derived from
@@ -244,10 +267,80 @@ NO_TOOL = "(no tool call)"
 NO_AGENT_TYPE = "(subagent type not recorded)"
 MAIN = "main thread"
 UNPARSED = "(unparsed)"
+# A well-formed command word that is not a PUBLIC one. Parenthesised like the other
+# sentinels so it can never collide with a real command (`_CMD_WORD` admits no parens).
+OTHER = "(other)"
 
 _ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")  # a `VAR=value` token, value already unquoted
 _CHAIN_OPS = ("&&", "||", "|", ";", "&")
 _CMD_WORD = re.compile(r"^[A-Za-z0-9._-]+$")
+
+# The PUBLISHED cluster-key vocabulary is CLOSED: a key is a word from this set, `(other)`,
+# or `(unparsed)`, and nothing else can ever appear. That closure IS the privacy property.
+#
+# `_CMD_WORD` alone was not enough, and the gap was measured rather than theorised. It is a
+# SHAPE test -- it admits any basename -- so a locally-named script or a worktree/branch name
+# passed it and was published verbatim. Found on real data while re-vendoring this file into a
+# downstream consumer (ARI#11, which records the observed keys; they are internal names and
+# are deliberately not copied into this repo, which stays harness-agnostic). None were
+# credentials -- they were branch, worktree and local-script names that a published digest has
+# no business carrying, and `--anonymise` does not touch a cluster key by design.
+#
+# WHY AN ALLOWLIST AND NOT A HASH. The other candidate fix was to publish `cmd-<8hex>` for an
+# unrecognized word. That obscures the name without removing it: a command/branch name is
+# low-entropy and the candidate space is enumerable, so `cmd-<hash>` is confirmable by anyone
+# willing to guess, which does not meet "structurally impossible to reach the digest". A
+# closed vocabulary does, and it is auditable by reading this list.
+#
+# HOW THIS LIST WAS BUILT, and the asymmetry that governs it. Omitting a public command costs
+# a little SIGNAL (its turns land in `(other)`); admitting a non-public one costs the
+# GUARANTEE. So the bias is toward omission, and the bar for adding a word is that it names a
+# tool published to the world rather than something a repo or a machine happens to call its
+# own. Three sources, kept distinct so the boundary can be reviewed:
+#
+#   1. MEASURED. Every public command word observed in a survey of 102 real transcripts
+#      (5517 Bash turn-attributions, 67 distinct keys). With this list, `(other)` absorbs
+#      11 of 5517 turns -- 0.20% -- and 7 of the 67 distinct keys; those 7 are exactly two
+#      worktree/branch-shaped names and three local `.sh` scripts, i.e. the leak itself.
+#      The public commands are the HEAD of that distribution and the internal names its
+#      TAIL, which is why gating costs almost no signal.
+#   2. THIS REPO'S OWN FIXTURES, so existing controls keep meaning what they say: aws,
+#      mysql, npm, pytest.
+#   3. STANDARD UTILITIES AND WIDELY-PUBLISHED DEV CLIs not present in either survey but
+#      whose absence would over-bucket another corpus. This tier is a judgement call, not a
+#      measurement, and is labelled as such rather than presented as data. The second survey
+#      below independently makes the case for it: `make`, `docker`, `jq`, `ssh`, `go` and
+#      `cargo` appear in NEITHER corpus, which is one fleet's usage pattern rather than a
+#      statement that they are not public commands.
+#   4. A SECOND, INDEPENDENT SURVEY, relayed from the downstream consumer's own re-vendor
+#      probe (a real 70-child dev tree, 34 measurable sessions, unioned with 5 separate
+#      probe transcripts -- 57 public words; its artefact is cited in ARI#11).
+#      It contributed `free`, `pgrep`, `setsid`, `type`, `uptime`. Its own caveats are worth
+#      keeping: the two halves of it disagreed on five tail words, and 13 of its 57 occurred
+#      in exactly ONE session -- so this list is a seed that should widen with evidence, and
+#      must NOT be frequency-thresholded, or real-but-rare public commands would be bucketed.
+#
+# ONE WORD DECLINED, recorded rather than quietly dropped: that survey lists `run` as public
+# and this list omits it. There is no standard `run` executable; it is `cargo run`/`uv run`
+# as a subword, a shell alias, or -- the case that matters -- a local `./run` script. It was
+# also one of the ambiguous bare words the first survey bucketed. Under the asymmetry above
+# an ambiguous word belongs in `(other)`, so it stays out until something names it as a
+# published tool.
+_PUBLIC_COMMANDS = frozenset("""
+apt awk bash cat cd claude command cp curl date df diff echo env export find for gh git
+grep head hostname id if journalctl jq ls mkdir mv pip pkill printenv printf ps pwd python
+python3 read rm rmdir sed set sh sha256sum sleep ss sqlite3 sudo systemctl tail test time
+timeout tmux touch until uv wc which whoami
+free pgrep setsid type uptime
+
+aws mysql npm pytest
+
+basename chmod chown cut dirname du gunzip gzip kill ln md5sum mktemp nc nohup realpath
+rsync scp seq sort ssh stat tar tee tr uniq unzip wait wget xargs zip
+cargo cmake docker go gradle java make mvn node npx perl pnpm ruby rustc yarn
+case do done elif else esac eval exec fi function local return shift source then trap
+unset while
+""".split())
 
 
 def _tokenise(cmd):
@@ -270,31 +363,33 @@ def _tokenise(cmd):
         return None
 
 
-def bash_cluster(cmd):
-    """Cluster a Bash command by its first real token -- a cheap, MECHANICAL heuristic,
-    not a parse of what the command means.
+def _bash_first_word(cmd):
+    """The command's OWN first word -- basename, after peeling leading `cd ...&&` chains and
+    `VAR=` env prefixes -- or None if the string does not reduce to a plain command word.
 
-    `git commit` and `git push` both cluster under `git`; that is deliberate (the baseline
-    is first-token-after-cd-chains-and-env-prefixes). Anything missing or that does not
-    reduce to a plain command word goes to `(unparsed)`, never into a real cluster.
+    Split out of `bash_cluster` so the allowlist gate and the `(other)` fingerprint derive
+    from the SAME word. Two separate derivations of "the first word" could disagree, and a
+    gate that passed a word the fingerprint never saw (or vice versa) would make the
+    distinct-count a statement about a different string than the one being judged.
 
-    The returned key is PUBLISHED (text report, `--json` digest) and `--anonymise` does
-    NOT touch it, so the key must never be able to carry a fragment of a command's
-    content. Two properties keep that true, and both are positive-controlled in
+    Two properties make the word itself safe to derive, both positive-controlled in
     `--self-test`:
 
       * the leading `cd ... &&` chains and `VAR=value` env prefixes are peeled in ONE
         loop that retries BOTH shapes until neither matches, so they compose in either
-        order (`CI=1 cd /repo && npm test` clusters as `npm`, not as `cd`). Two separate
+        order (`CI=1 cd /repo && npm test` reduces to `npm`, not to `cd`). Two separate
         single-pass loops could only ever strip them in one fixed order.
       * peeling happens over quote-aware TOKENS (`_tokenise`), so a quoted value is one
         token -- consumed whole or left whole. If the string does not tokenise at all we
         peel NOTHING and fall back to the first whitespace word of the ORIGINAL string,
         which is by construction the command's own first word rather than anything from
         inside a value.
+
+    Returning the word is NOT the same as publishing it -- that is `bash_cluster`'s job and
+    it gates this through `_PUBLIC_COMMANDS`. Nothing may print this function's return value.
     """
     if not isinstance(cmd, str) or not cmd.strip():
-        return UNPARSED
+        return None
     toks = _tokenise(cmd)
     if toks is None:
         # Unbalanced quoting: classify the original's first word WITHOUT peeling. Peeling
@@ -317,9 +412,73 @@ def bash_cluster(cmd):
             break
         toks = toks[i:]
     if not toks:
-        return UNPARSED
+        return None
     first = toks[0].split("/")[-1]              # /usr/bin/python3 -> python3
-    return first if _CMD_WORD.match(first) else UNPARSED
+    return first if _CMD_WORD.match(first) else None
+
+
+def bash_cluster(cmd):
+    """Cluster a Bash command by its first real token -- a cheap, MECHANICAL heuristic,
+    not a parse of what the command means.
+
+    `git commit` and `git push` both cluster under `git`; that is deliberate (the baseline
+    is first-token-after-cd-chains-and-env-prefixes).
+
+    THE RETURN VALUE IS A CLOSED VOCABULARY: a word from `_PUBLIC_COMMANDS`, `(other)`, or
+    `(unparsed)`. Nothing else can come out of here, whatever goes in. That is the whole
+    privacy property, because the key is PUBLISHED (text report, `--json` digest) and
+    `--anonymise` deliberately does NOT touch it -- it hashes transcript paths and manifest
+    labels, not evidence. There is no filter downstream; safety has to be a property of the
+    derivation, and the derivation ends here.
+
+    Three gates, in order, each positive-controlled in `--self-test`:
+
+      1. the word is derived quote-awarely and to a fixed point (`_bash_first_word`), so it
+         cannot be a fragment of a quoted VALUE -- the bug that published `efgh` out of
+         `AWS_SECRET_ACCESS_KEY="abcd efgh ijkl"`.
+      2. it must be a plain command word at all (`_CMD_WORD`), else `(unparsed)`. On the
+         unbalanced-quote path this is the only thing standing between the output and a
+         fragment of a value, so there declining to classify IS the control.
+      3. it must be a PUBLIC command (`_PUBLIC_COMMANDS`), else `(other)`. Gates 1 and 2 are
+         shape tests and a local name can satisfy both: a `poll_ci.sh`-shaped script name
+         and a `<verb>-<ticket>-<slug>`-shaped worktree name are well-formed words that
+         were published verbatim before this gate existed (ARI#11).
+
+    `(other)` is deliberately one bucket and carries no identity. How MANY distinct
+    unrecognized commands it covers is reported separately (`bash_other_distinct`), which
+    keeps the aggregate-cost signal readable -- one dominant unknown versus twenty scattered
+    ones -- without naming any of them.
+    """
+    w = _bash_first_word(cmd)
+    if w is None:
+        return UNPARSED
+    return w if w in _PUBLIC_COMMANDS else OTHER
+
+
+def bash_other_fingerprint(cmd):
+    """A stable, non-reversible id for a command that bucketed into `(other)`, so distinct
+    ones can be COUNTED -- or None when the command did not bucket.
+
+    NEVER PUBLISHED. Only `len()` of a set of these is (see `bash_other_distinct`). It is a
+    full-strength digest and not `anonymise`'s truncation precisely so that it is useless as
+    a lookup even if some future change does print it: the point is to count, and counting
+    needs only that two different words differ.
+    """
+    w = _bash_first_word(cmd)
+    if w is None or w in _PUBLIC_COMMANDS:
+        return None
+    return hashlib.sha256(w.encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def bash_other_distinct(turns):
+    """How many DISTINCT unrecognized commands these turns ran -- cardinality WITHOUT
+    identity. This is what keeps `(other)` honest: a single bucket holding 400 turns reads
+    very differently depending on whether it is one script run 400 times or 40 scripts run
+    ten times each, and that difference is reportable without naming one of them."""
+    fps = set()
+    for t in turns:
+        fps |= t.get("bash_other_fp") or set()
+    return len(fps)
 
 
 def anonymise(tag):
@@ -390,7 +549,7 @@ def collect_turns(lines):
             or ("_noid", stats["assistant_entries"])
 
         names, call_ids, idless = set(), set(), 0
-        bash = set()
+        bash, bash_other = set(), set()
         content = msg.get("content")
         if isinstance(content, list):
             for b in content:
@@ -402,8 +561,13 @@ def collect_turns(lines):
                     # Bash is the only tool whose `input.command` we read: cluster by it.
                     if nm == "Bash":
                         inp = b.get("input")
-                        bash.add(bash_cluster(inp.get("command")
-                                              if isinstance(inp, dict) else None))
+                        cmdline = inp.get("command") if isinstance(inp, dict) else None
+                        bash.add(bash_cluster(cmdline))
+                        # fingerprint, not the word: this is how `(other)` stays countable
+                        # without the run holding on to a single local name anywhere.
+                        fp = bash_other_fingerprint(cmdline)
+                        if fp:
+                            bash_other.add(fp)
                     # a call is counted even when its NAME is missing: it happened, and
                     # counting only named calls would let a missing label manufacture a
                     # "no tool call" streak (see no_tool_streaks).
@@ -417,13 +581,15 @@ def collect_turns(lines):
 
         t = turns.get(mid)
         if t is None:
-            t = dict(tools=set(), bash=set(), usage=None, has_usage=False,
+            t = dict(tools=set(), bash=set(), bash_other_fp=set(),
+                     usage=None, has_usage=False,
                      sidechain=False, agent=None,
                      call_ids=set(), calls_idless=0, span=span)
             turns[mid] = t
             order.append(mid)
         t["tools"] |= names
         t["bash"] |= bash
+        t["bash_other_fp"] |= bash_other
         t["call_ids"] |= call_ids
         t["calls_idless"] += idless
         if d.get("isSidechain"):
@@ -1115,8 +1281,15 @@ def print_report(sources_read, sources_na, turns, args, flags=None):
     if bybash:
         print("\nBY BASH COMMAND (Bash turns clustered by command's first token after "
               "stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- "
-              "`git commit`/`git push` both cluster as `git`):")
+              "`git commit`/`git push` both cluster as `git`. Keys are a CLOSED vocabulary: "
+              f"a public command word, `{OTHER}`, or `{UNPARSED}`):")
         group_table(bybash, "bash command cluster")
+        if OTHER in bybash:
+            n = bash_other_distinct(turns)
+            print(f"    `{OTHER}` holds {n} distinct command(s) that are not on the public "
+                  f"allowlist. They are counted, never named: a local script, branch or "
+                  f"worktree name must not reach a published key, and `--anonymise` does "
+                  f"not scrub cluster keys.")
 
     print("\nBY AGENT (same-session Task subagents separated from the main thread):")
     group_table(group(turns, agent_key), "agent")
@@ -1283,6 +1456,8 @@ def build_digest(sources_read, sources_na, turns, per_path_turns, manifest_nodes
         cache_read_to_output=ratio(tot),
         by_tool=_glist(group(turns, tool_key)),
         by_bash_command=_glist(group_bash(turns)),
+        # cardinality of `(other)` WITHOUT identity -- see bash_other_distinct
+        bash_other_distinct=bash_other_distinct(turns),
         by_agent=_glist(group(turns, agent_key)),
         top_by_cache_read=[dict(cache_read=num(t["usage"].get("cache_read_input_tokens")),
                                 output=num(t["usage"].get("output_tokens")),
@@ -1500,7 +1675,11 @@ _SECRET_CMDS = [
     ('AWS_SECRET_ACCESS_KEY="abcd efgh ijkl" aws s3 ls', "aws"),
     ('TOKEN="swordfish hunter2" curl https://example.invalid', "curl"),
     ("API_KEY='alpha beta' python3 run.py", "python3"),
-    ('SECRET="zulu quebec" ./deploy.sh', "deploy.sh"),
+    # `deploy.sh` is a LOCAL script name. Before ARI#11 this line expected the key to be
+    # the literal `deploy.sh` -- i.e. this control asserted the very publication that issue
+    # is about, because its subject was the secret VALUE and the command NAME was treated as
+    # harmless by assumption. It now expects `(other)`.
+    ('SECRET="zulu quebec" ./deploy.sh', OTHER),
     ('PASSWORD="xyzzy plugh" mysql -u root', "mysql"),
     # UNBALANCED quote -- the shape that reaches the `toks is None` fallback, where no
     # peeling happens and the key comes from the ORIGINAL string's first whitespace word.
@@ -1556,6 +1735,42 @@ def _bash_fixture_lines():
         _bash_asst("msg-b-5", _SECRET_CMDS[0][0], _u(1, 50, 500, 5000)),   # quoted value
         _bash_asst("msg-b-6", "CI=1 cd /repo && npm test", _u(1, 60, 600, 6000)),  # env+cd
     ]
+
+
+# Commands whose first WORD is a plausible internal name -- a worktree/branch name or a
+# local script. Deliberately NOT secrets: the point of ARI#11 is that the previous round's
+# controls were all about a secret VALUE, so a well-formed local NAME sailed through every
+# one of them and was published verbatim as a cluster key. The shapes observed on real data
+# were release/roast worktree names carrying a ticket id and a slug, and numbered local
+# `poll_ci*.sh`-style scripts (ARI#11 has the actual strings; this repo does not repeat them).
+# These fixtures are those shapes with an obviously-fake `hc9999` marker, so nobody mistakes
+# a fixture for a real branch. Entry 3 is BOTH secret-shaped and internal-name-shaped, because
+# the two guards must compose rather than each assume the other ran.
+_INTERNAL_NAME_CMDS = [
+    "./roast-hc9999-fake-example 2>&1",
+    "./poll_ci9_hc9999fake.sh --once",
+    'SECRET="zulu quebec" ./release-hc9999-fake-wire deploy',
+    "cd /wt/hc9999-fake-worktree && ./hc9999-fake-runner --all",
+]
+# The literal strings that must never appear in any output, plus the marker they share.
+# `hc9999` is the cheap one to grep for and cannot collide with the report's own prose.
+_INTERNAL_NAME_WORDS = ["hc9999", "roast-hc9999-fake-example", "poll_ci9_hc9999fake.sh",
+                        "release-hc9999-fake-wire", "hc9999-fake-runner",
+                        "hc9999-fake-worktree"]
+# Public commands that MUST keep their own key through the same fixture. Without these the
+# leg would pass just as well against a "bucket everything" fix, which would close the leak
+# by destroying the feature.
+_PUBLIC_CONTROL_CMDS = [("git status", "git"), ("pytest -q tests/", "pytest"),
+                        ("cd /repo && npm test", "npm")]
+
+
+def _internal_name_fixture_lines():
+    """One Bash turn per internal-name command, then one per public control."""
+    out = [_bash_asst(f"msg-i-{n}", cmd, _u(1, 10, 100, 1000))
+           for n, cmd in enumerate(_INTERNAL_NAME_CMDS)]
+    out += [_bash_asst(f"msg-p-{n}", cmd, _u(1, 10, 100, 1000))
+            for n, (cmd, _) in enumerate(_PUBLIC_CONTROL_CMDS)]
+    return out
 
 
 def _secret_fixture_lines():
@@ -1719,6 +1934,72 @@ def self_test():
     print(f"  {len(_SECRET_CMDS)} commands with quoted multi-word secret values, text "
           f"report + --json digest + loop-flags section, with and without --anonymise: "
           f"{'OK -- no value fragment printed' if leak_ok else 'LEAKED'}")
+
+    print("\nSELF-TEST [PUBLISHED-VOCABULARY control (ARI#11): a well-formed LOCAL name -- "
+          "branch, worktree, script -- must never reach a cluster key, and the public case "
+          "must still keep its own key]")
+    # This is a DIFFERENT gap from the secret-value control above, which already passed
+    # while the leak was live: that one asks "did a fragment of a quoted VALUE escape",
+    # and a local script NAME is not a value. The guard here is the allowlist, so this leg
+    # has to show three things at once -- the names are bucketed, the names are absent from
+    # every rendered surface, and the public commands are NOT collateral damage.
+    vocab_ok = True
+    for cmd in _INTERNAL_NAME_CMDS:
+        key = bash_cluster(cmd)
+        if key != OTHER:
+            vocab_ok = False
+            print(f"  NOT BUCKETED {cmd!r} -> {key!r} (expected {OTHER!r})")
+    for cmd, want in _PUBLIC_CONTROL_CMDS:
+        key = bash_cluster(cmd)
+        if key != want:
+            vocab_ok = False
+            print(f"  PUBLIC COMMAND LOST {cmd!r} -> {key!r} (expected {want!r}) -- the fix "
+                  f"must not buy safety by bucketing everything")
+    it, it_stats = collect_turns(_internal_name_fixture_lines())
+    # baseline first: these sentinels must not occur in a render that had no internal name
+    # in it, or the leg could pass by matching the instrument's own prose.
+    nbase, nbase_stats = collect_turns(
+        [json.dumps(dict(type="user", message=dict(role="user", content="go")))]
+        + [_bash_asst(f"msg-pc-{n}", c, _u(1, 10, 100, 1000))
+           for n, (c, _) in enumerate(_PUBLIC_CONTROL_CMDS)])
+
+    def _nhits(text):
+        return [w for w in _INTERNAL_NAME_WORDS if w.lower() in text]
+
+    ncollisions = _nhits(_render(nbase, nbase_stats, False))
+    if ncollisions:
+        vocab_ok = False
+        print(f"  CONTROL INVALID: sentinel(s) {ncollisions} appear in a render containing "
+              f"no internal name -- choose more distinctive fixtures")
+    for anon_flag in (False, True):
+        rendered = _render(it, it_stats, anon_flag)
+        for w in _nhits(rendered):
+            vocab_ok = False
+            print(f"  LOCAL NAME LEAKED (anonymise={anon_flag}): {w!r}")
+        # the invariant, not just the sample: EVERY key on every published surface has to be
+        # a member of the closed vocabulary. A future gate that admits a fourth kind of key
+        # fails here even if none of the fixtures above happens to exercise it.
+        for key in group_bash(it):
+            if not (key in _PUBLIC_COMMANDS or key in (OTHER, UNPARSED)):
+                vocab_ok = False
+                print(f"  KEY OUTSIDE CLOSED VOCABULARY (anonymise={anon_flag}): {key!r}")
+    # `(other)` must stay countable, or the bucket silently merges distinct unknowns
+    n_distinct = bash_other_distinct(it)
+    if n_distinct != len(_INTERNAL_NAME_CMDS):
+        vocab_ok = False
+        print(f"  DISTINCT COUNT WRONG: got {n_distinct}, expected "
+              f"{len(_INTERNAL_NAME_CMDS)} -- `{OTHER}` must not merge distinct commands")
+    # the sentinels are not commands and must never be allowlisted (they would then be
+    # publishable as if they were real command words)
+    if UNPARSED in _PUBLIC_COMMANDS or OTHER in _PUBLIC_COMMANDS:
+        vocab_ok = False
+        print(f"  SENTINEL IN ALLOWLIST: {UNPARSED!r}/{OTHER!r} must not be public commands")
+    if not vocab_ok:
+        ok = False
+    print(f"  {len(_INTERNAL_NAME_CMDS)} internal-name commands bucketed to `{OTHER}` and "
+          f"absent from both output modes; {len(_PUBLIC_CONTROL_CMDS)} public commands kept "
+          f"their own key; {n_distinct} distinct counted; every key inside the closed "
+          f"vocabulary: {'OK' if vocab_ok else 'FAILED'}")
 
     print("\nSELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]")
     dup_ok = validate_manifest(
