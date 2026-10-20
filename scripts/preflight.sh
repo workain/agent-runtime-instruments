@@ -13,6 +13,8 @@ echo "preflight: figures"   && bash scripts/check_figures.sh    >/dev/null
 echo "preflight: scrub"     && bash scripts/scrub_check.sh --all >/dev/null
 echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null
 echo "preflight: identity"  && bash scripts/test_identity_allowlist.sh >/dev/null
+echo "preflight: fixtures"  && bash scripts/check_fixtures_fresh.sh >/dev/null
+echo "preflight: fixtures-gate" && bash scripts/test_fixture_freshness.sh >/dev/null
 # An instrument's own positive/negative controls are a gate, not documentation: they are
 # the only thing standing between a silently-wrong number and a published one. Every
 # instrument that ships a --self-test runs here. Add the flag to an instrument and it is

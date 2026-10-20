@@ -23,6 +23,17 @@ Stated so the gaps are visible rather than implied absent.
   low active mean against a much larger resident count — the integers do not.
 - **Codex was unauthenticated** (HTTP 401), so its boot figure is boot-to-first-event, and its
   capability set was read from `--help`, not exercised.
+- **Only some samples can be machine-verified against the code, and the rest are named.**
+  `scripts/check_fixtures_fresh.sh` re-runs the instrument behind every sample whose content is a
+  pure function of (code + a committed fixture) and requires a byte-for-byte match, which is the
+  only check here that compares an artefact to the code rather than to another artefact. It cannot
+  cover a sample that captures the machine or the moment — a pid, an RSS figure, a wall-clock
+  timing, a CLI version string, a paid API response, or a historical run the published code did
+  not produce. Those are declared unreproducible WITH the specific reason, the gate fails if a
+  tracked sample is in neither list, and it PRINTS the unverified ones on every run: an
+  unverified file nobody mentions reads exactly like a verified one. So for the benchmark
+  samples, the published capture is still the only evidence, and it is a reading from one box on
+  one day like every other figure above.
 - **The caching result is n=1 per arm.** Arm 5 ran in three of the four published runs and the
   relation held in all three. That is three data points, not a distribution.
 - **Arm 4 of the caching instrument has an unverified premise.** It perturbs the prefix by

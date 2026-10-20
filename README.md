@@ -159,6 +159,7 @@ was gone.** For a pooling decision, that removes the objection that looks most e
 ```bash
 bash scripts/preflight.sh                      # every local gate, under set -e
 bash scripts/check_remote_identities.sh        # asks the REMOTE what it still serves
+bash scripts/regen_samples.sh --write          # re-capture every reproducible sample
 ln -sf ../../scripts/preflight.sh      .git/hooks/pre-commit
 ln -sf ../../scripts/pre-push-hook.sh  .git/hooks/pre-push
 ```
