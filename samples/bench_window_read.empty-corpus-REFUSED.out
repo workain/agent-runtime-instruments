@@ -1,0 +1,4 @@
+transcripts measured: 0
+ROOTS NOT FOUND: /nonexistent/ari24
+REFUSING (exit 2): a speedup averaged over no files is 1.00, and that number would look like a finding. Set ROOTS to a directory of .jsonl transcripts, lower --min-bytes, or pass paths. See --help-blind, blind mode 1.
+exit=2

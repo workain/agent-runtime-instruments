@@ -28,9 +28,13 @@ set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-I=instruments/measure_token_breakdown.py
+# ARI#24 added a second instrument with reproducible samples (instruments/flags.py), so the
+# instrument is now a COLUMN rather than this one variable. One table and one loop, not two
+# of each: a per-instrument table would have to be added to `list()`, to `regen()` and to
+# the gate's own count check every time, and the one that got forgotten would be the one
+# silently unverified -- which is the exact failure class ARI#22 built this file for.
 
-# Each entry: <basename-without-samples/> <TAB> <mode> <TAB> <argv...>
+# Each entry: <basename-without-samples/> <TAB> <instrument> <TAB> <mode> <TAB> <argv...>
 #
 # argv is LITERAL -- no variables, no globs, no shell expansion of any kind -- so
 # reproducing a sample never depends on a shell feature and this file needs no `eval`.
@@ -42,25 +46,40 @@ I=instruments/measure_token_breakdown.py
 #           appended to the capture, so a refusal that stopped refusing would drift
 #   env  -- like refu, with one leading VAR=VALUE applied to the process
 RECIPES=$(cat <<'EOF'
-measure_token_breakdown.out	run	samples/fixtures/token_breakdown.jsonl
-measure_token_breakdown.json.out	run	--json --manifest samples/fixtures/token_breakdown.manifest.json
-measure_token_breakdown.bash.out	run	samples/fixtures/token_breakdown.bash.jsonl
-measure_token_breakdown.other.out	run	samples/fixtures/token_breakdown.other.jsonl
-measure_token_breakdown.no-bash-turns.out	run	samples/fixtures/token_breakdown.no-bash-turns.jsonl
-measure_token_breakdown.batch.out	run	samples/fixtures/token_breakdown.jsonl samples/fixtures/token_breakdown.child.jsonl
-measure_token_breakdown.subsession.out	run	--manifest samples/fixtures/token_breakdown.manifest.json
-measure_token_breakdown.user-entry-census.out	run	--survey-user-entries samples/fixtures/loop_flags.flagged.jsonl samples/fixtures/loop_flags.clean.jsonl samples/fixtures/token_breakdown.jsonl
-measure_token_breakdown.loop-flags-FLAGGED.out	run	--flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.flagged.jsonl
-measure_token_breakdown.loop-flags-clean.out	run	--flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.clean.jsonl
-measure_token_breakdown.loop-flags-no-user-turn.out	run	--flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.no-user-turn.jsonl
-measure_token_breakdown.loop-flags-no-threshold.out	run	samples/fixtures/loop_flags.flagged.jsonl
-measure_token_breakdown.loop-flags.json.out	run	--json --flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.flagged.jsonl
-measure_token_breakdown.selftest.out	refu	--self-test
-measure_token_breakdown.no-transcript.out	refu	samples/fixtures/token_breakdown.missing.jsonl
-measure_token_breakdown.corrupt-fixture-REFUSED.out	refu	samples/fixtures/token_breakdown.corrupt.jsonl
-measure_token_breakdown.one-field-renamed-REFUSED.out	refu	samples/fixtures/token_breakdown.corrupt-one-field.jsonl
-measure_token_breakdown.loop-flags-bad-env-REFUSED.out	env	ARI_FLAG_SPAN_TOOL_CALLS=twenty samples/fixtures/loop_flags.flagged.jsonl
-measure_token_breakdown.loop-flags-threshold-zero-REFUSED.out	env	ARI_FLAG_SPAN_TOOL_CALLS=0 samples/fixtures/loop_flags.flagged.jsonl
+measure_token_breakdown.out	instruments/measure_token_breakdown.py	run	samples/fixtures/token_breakdown.jsonl
+measure_token_breakdown.json.out	instruments/measure_token_breakdown.py	run	--json --manifest samples/fixtures/token_breakdown.manifest.json
+measure_token_breakdown.bash.out	instruments/measure_token_breakdown.py	run	samples/fixtures/token_breakdown.bash.jsonl
+measure_token_breakdown.other.out	instruments/measure_token_breakdown.py	run	samples/fixtures/token_breakdown.other.jsonl
+measure_token_breakdown.no-bash-turns.out	instruments/measure_token_breakdown.py	run	samples/fixtures/token_breakdown.no-bash-turns.jsonl
+measure_token_breakdown.batch.out	instruments/measure_token_breakdown.py	run	samples/fixtures/token_breakdown.jsonl samples/fixtures/token_breakdown.child.jsonl
+measure_token_breakdown.subsession.out	instruments/measure_token_breakdown.py	run	--manifest samples/fixtures/token_breakdown.manifest.json
+measure_token_breakdown.user-entry-census.out	instruments/measure_token_breakdown.py	run	--survey-user-entries samples/fixtures/loop_flags.flagged.jsonl samples/fixtures/loop_flags.clean.jsonl samples/fixtures/token_breakdown.jsonl
+measure_token_breakdown.loop-flags-FLAGGED.out	instruments/measure_token_breakdown.py	run	--flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.flagged.jsonl
+measure_token_breakdown.loop-flags-clean.out	instruments/measure_token_breakdown.py	run	--flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.clean.jsonl
+measure_token_breakdown.loop-flags-no-user-turn.out	instruments/measure_token_breakdown.py	run	--flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.no-user-turn.jsonl
+measure_token_breakdown.loop-flags-no-threshold.out	instruments/measure_token_breakdown.py	run	samples/fixtures/loop_flags.flagged.jsonl
+measure_token_breakdown.loop-flags.json.out	instruments/measure_token_breakdown.py	run	--json --flag-span-tool-calls 5 --flag-no-tool-streak 3 samples/fixtures/loop_flags.flagged.jsonl
+measure_token_breakdown.selftest.out	instruments/measure_token_breakdown.py	refu	--self-test
+measure_token_breakdown.no-transcript.out	instruments/measure_token_breakdown.py	refu	samples/fixtures/token_breakdown.missing.jsonl
+measure_token_breakdown.corrupt-fixture-REFUSED.out	instruments/measure_token_breakdown.py	refu	samples/fixtures/token_breakdown.corrupt.jsonl
+measure_token_breakdown.one-field-renamed-REFUSED.out	instruments/measure_token_breakdown.py	refu	samples/fixtures/token_breakdown.corrupt-one-field.jsonl
+measure_token_breakdown.loop-flags-bad-env-REFUSED.out	instruments/measure_token_breakdown.py	env	ARI_FLAG_SPAN_TOOL_CALLS=twenty samples/fixtures/loop_flags.flagged.jsonl
+measure_token_breakdown.loop-flags-threshold-zero-REFUSED.out	instruments/measure_token_breakdown.py	env	ARI_FLAG_SPAN_TOOL_CALLS=0 samples/fixtures/loop_flags.flagged.jsonl
+flags.FIRED.out	instruments/flags.py	run	--flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.batchable.jsonl
+flags.repeats-FIRED.out	instruments/flags.py	run	--flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.repeats.jsonl
+flags.agent-gap-FIRED.out	instruments/flags.py	run	--flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.content.jsonl
+flags.clean.out	instruments/flags.py	run	--flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.dependent.jsonl
+flags.agent-gap-gated.out	instruments/flags.py	run	--flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.orchestration.jsonl
+flags.unmeasured.out	instruments/flags.py	run	--flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.no-tool.jsonl
+flags.no-threshold.out	instruments/flags.py	run	samples/fixtures/flags.batchable.jsonl
+flags.windowed.out	instruments/flags.py	run	--last-turns 4 --flag-repeated-calls 2 samples/fixtures/flags.repeats.jsonl
+flags.json.out	instruments/flags.py	run	--json --flag-batchable-bash 2 --flag-repeated-calls 4 --flag-agent-gap 5 samples/fixtures/flags.content.jsonl
+flags.selftest.out	instruments/flags.py	refu	--self-test
+flags.no-transcript.out	instruments/flags.py	refu	samples/fixtures/flags.missing.jsonl
+flags.two-windows-REFUSED.out	instruments/flags.py	refu	--last-turns 5 --from-offset 100 samples/fixtures/flags.repeats.jsonl
+flags.threshold-zero-REFUSED.out	instruments/flags.py	refu	--flag-repeated-calls 0 samples/fixtures/flags.repeats.jsonl
+bench_window_read.selftest.out	instruments/bench_window_read.py	refu	--self-test
+bench_window_read.empty-corpus-REFUSED.out	instruments/bench_window_read.py	env	ROOTS=/nonexistent/ari24 --top 3
 EOF
 )
 
@@ -82,6 +101,8 @@ census_background_work.degraded.out	live pids, under a forced degraded mode
 census_background_work.selftest-FAILED.out	live pids, and captures a self-test FAILURE the current code does not produce
 measure_active_concurrency.out	reads the running machine's own transcript roots
 measure_session_footprint.out	live RSS/PSS and pids read from /proc
+bench_window_read.out	reads the running machine's own transcript roots, and reports wall-clock; both the corpus and the timings differ on every run (the files grow while the fleet works, including this session's own)
+bench_window_read.first-chunk-sweep.out	same live corpus as bench_window_read.out -- the byte totals move as the transcripts grow
 gate-evidence/check_figures.RED.out	not output of the current code at all: it records what check_figures.sh PRINTED while RED, stale figures included. See that directory's own header -- an artefact of a FAILURE is not an artefact of a MEASUREMENT
 EOF
 )
@@ -92,16 +113,16 @@ list_unr() { printf '%s\n' "$UNREPRODUCIBLE" | awk -F'\t' 'NF{print $1 "\t" $2}'
 regen() {
   local outdir="$1" rc=0 dst mode argv kv
   mkdir -p "$outdir" || return 1
-  while IFS=$'\t' read -r dst mode argv; do
+  while IFS=$'\t' read -r dst inst mode argv; do
     [ -n "${dst:-}" ] || continue
     # Word-split the literal argv column. Unquoted on purpose: the table contains no path
     # with a space in it, and keeping it that way is cheaper than making this line clever.
     local -a args=(); read -r -a args <<<"$argv"
     case "$mode" in
-      run)  python3 "$I" "${args[@]}" >"$outdir/$dst" 2>&1 || rc=1 ;;
-      refu) { python3 "$I" "${args[@]}" 2>&1; echo "exit=$?"; } >"$outdir/$dst" ;;
+      run)  python3 "$inst" "${args[@]}" >"$outdir/$dst" 2>&1 || rc=1 ;;
+      refu) { python3 "$inst" "${args[@]}" 2>&1; echo "exit=$?"; } >"$outdir/$dst" ;;
       env)  kv="${args[0]}"
-            { env "$kv" python3 "$I" "${args[@]:1}" 2>&1; echo "exit=$?"; } >"$outdir/$dst" ;;
+            { env "$kv" python3 "$inst" "${args[@]:1}" 2>&1; echo "exit=$?"; } >"$outdir/$dst" ;;
       *)    echo "regen_samples: unknown mode '$mode' for $dst" >&2; return 1 ;;
     esac
   done < <(printf '%s\n' "$RECIPES")

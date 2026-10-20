@@ -1,0 +1,2 @@
+REFUSING: pass at most one of --last-turns / --since / --from-offset. Two windows is not a window.
+exit=2

@@ -1,0 +1,82 @@
+FLAGS SELF-TEST
+
+_read_from: no line is lost or duplicated at ANY offset
+  ok   -- every offset 0..22848 returns exactly the lines starting at or after it (0 wrong)
+  ok   -- offsets landing EXACTLY on a line boundary (80 of them) lose no line
+  ok   -- the start offset returned is the true offset of the first line returned, at every one of 22849 offsets (0 wrong) -- so a resume cursor cannot drift
+
+a window and a full read agree on the turns they share
+  ok   -- last_turns=1 -> 1 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=2 -> 2 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=5 -> 5 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=17 -> 17 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=59 -> 59 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=60 -> 60 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=61 -> 60 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=1000 -> 60 turns, call-for-call identical to the full read's tail
+  ok   -- the no-argument read is the FULL read and labels itself as one
+  ok   -- the answer is independent of first_chunk (5 reads vs 1) -- only the cost moves
+  ok   -- a small first_chunk really did force the growth loop (5 reads), a large one did not (1)
+  ok   -- a 5-turn window reads FEWER bytes than the full file (4783 < 34308) -- the cost claim, in the control rather than only in the prose
+
+the resume cursor: two windowed reads across an append == one full read
+  ok   -- an unchanged file returns grew=False and an empty window
+  ok   -- every flag on that empty window is UNMEASURED, not a clean result
+  ok   -- after appending 4 turns the resumed read sees exactly those 4 (saw 4)
+  ok   -- and it read 2263 bytes, not the whole 7922-byte file
+  ok   -- a full read of the grown file sees all 14 turns, so nothing was lost at the seam
+  ok   -- an offset past EOF sets rotated=True and falls back to a FULL read, rather than reporting an empty window for a replaced file
+
+the `since` window
+  ok   -- since=00:08 over turns stamped 00:00..00:11 keeps 4 turns (kept 4)
+  ok   -- a `since` older than the file keeps every turn (kept 12)
+
+batchable_bash: fires on mergeable pairs, silent on dependent ones
+  ok   -- POSITIVE: 8 self-contained Bash turns -> 7 mergeable pairs of 7 examined, FIRED
+  ok   -- NEGATIVE: the same chain with alm#831's witness signature -> 0 of 7 pairs mergeable, not fired
+  ok   -- BOUNDARY: measure 7 does not fire at threshold 7 and does at 6 (strictly greater, same rule as compute_flags)
+  ok   -- the independent arm's pairs are accepted on their own merits: highest command-similarity 0.00, under the 0.60 retry threshold, so they were not merely not-retries
+  ok   -- and the dependent arm is rejected by the WITNESS test, not the retry test: all 7 pairs have similarity < 0.60 AND at least one witness
+  ok   -- no threshold -> NOT COMPUTED, with the count still reported
+  ok   -- a window with no Bash pair at all -> UNMEASURED, not a clean zero
+  ok   -- control 7: no raw command text reached an evidence row (0 leaks)
+
+repeated_invocations: fires on a run, silent on distinct calls
+  ok   -- POSITIVE: 9 identical Read calls -> consecutive run of 9, measure 9, FIRED
+  ok   -- NEGATIVE: 9 all-different Bash calls -> 0 repeat rows, a MEASURED clean result
+  ok   -- BOUNDARY: a run of 9 does not fire at threshold 9 and does at 8 -- and the threshold is compared against the RUN LENGTH, which is what signal 2 means by it, not against the number of groups
+  ok   -- a 4-turn window sees a run of 4, not 9 -- the floor the note promises, measured
+  ok   -- an empty file -> UNMEASURED and fired=False, which means NOTHING
+  ok   -- a turn that called no tool -> UNMEASURED ('nothing to look at', not 'no repeats')
+
+agent_reuse_gap: fires on delegable content, silent on orchestration
+  ok   -- POSITIVE: 12 CONTENT turns, no dispatch -> gap at least 12, longest run 12, FIRED
+  ok   -- NEGATIVE (the one that matters): 12 ORCHESTRATION turns -- the SAME 12-turn gap -- not fired, because alm#833 says those turns structurally cannot move
+  ok   -- NEGATIVE: a dispatch at turn 10 of 12 -> gap of 1, not fired
+  ok   -- BOUNDARY: a gap of 12 does not fire at threshold 12 and does at 11
+  ok   -- raising min_content_run to 99 makes the same window not delegable-looking, so the long gap alone does not fire -- both halves are load-bearing
+  ok   -- no threshold -> NOT COMPUTED, with the gap still reported
+  ok   -- a FULL read reports its gap exactly (12), a WINDOWED read reports it as a floor (at least 6) -- because only the latter can be hiding an older dispatch
+
+tool_class: the generalised prefix rule vs alm#833's hard-coded one
+  ok   -- on the 41 tool names alm#833's own prefix list covered, the generalised rule gives an IDENTICAL answer (0 disagreements)
+  ok   -- and it is not identical by collapsing into one class: the same server's send_message and github_comment_on_issue are ORCHESTRATION, github_get_issue is CONTENT, and get_session_state is ORCHESTRATION despite the get_ prefix
+  ok   -- THE ONE DIVERGENCE, reproduced: 'mcp__some-other-server__get_thing' is CONTENT here and ORCHESTRATION upstream, because upstream could not strip an unknown server's prefix and so tested its get_/list_/github_ rule against the whole name
+  ok   -- an unknown server's fleet-control verb is still ORCHESTRATION, so the generalisation did not open a hole in the class that matters
+  ok   -- the verb vocabulary is a parameter: a deployment can replace it without editing this file
+
+the three states
+  ok   -- batchable_bash in state not_computed reports fired=False
+  ok   -- repeated_invocations in state not_computed reports fired=False
+  ok   -- agent_reuse_gap in state not_computed reports fired=False
+  ok   -- batchable_bash in state unmeasured reports fired=False
+  ok   -- repeated_invocations in state unmeasured reports fired=False
+  ok   -- agent_reuse_gap in state unmeasured reports fired=False
+  ok   -- all three states are reachable from real windows: ['measured', 'not_computed', 'unmeasured']
+  ok   -- every flag returns the SAME core key set, so one caller branch works for all three: ('count', 'evidence', 'fingerprint', 'fired', 'flag', 'measure', 'measure_of', 'note', 'overshoot', 'severity', 'source', 'state', 'threshold', 'window')
+
+SELF-TEST PASSED -- 57 checks: the byte arithmetic at every offset, window/full agreement,
+a positive AND a negative control for each of the three flags, both sides of each threshold
+boundary, all three states reachable, the resume cursor across an append and a rotation,
+and no raw argument in any evidence row.
+exit=0

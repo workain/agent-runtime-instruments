@@ -1,0 +1,17 @@
+BENCH_WINDOW_READ SELF-TEST
+  ok   -- the fixture (2339116 bytes) is larger than FIRST_CHUNK (1048576), so a window CAN read less than all of it
+  ok   -- a 4000-turn file windowed to 10 turns is seen as 4000 and 10
+  ok   -- control 1: the window read 1048382 of 2339116 bytes (ratio 0.448) -- a saving is MEASURABLE by this harness
+  ok   -- the resume read (1048382 bytes) costs no more than the window read (1048382)
+  ok   -- and the window AGREES with the full read on the turns they share
+  ok   -- control 2: a 5-turn file windowed to 40 turns reads ratio 1.000 -- no saving, reported as no saving
+  ok   -- control 3: the agreement check REJECTS a window whose turns were tampered with, so a silently-full or silently-wrong reader would be caught
+  ok   -- control 5: a file that grew mid-measurement (45598 -> 46729 bytes) reports agree=None -- no answer -- rather than MISMATCH
+  ok   -- control 6: a path is reported as an 8-hex sess- tag and never as the path itself (fixed input '/tmp/example-corpus/session.jsonl' -> sess-3aab9155)
+  ok   -- control 4: a ROOTS that does not exist yields no rows and is reported missing, which is what main() refuses on
+
+SELF-TEST PASSED -- 10 checks: a saving is measurable, no saving is reported as none,
+the agreement check can fail, a file growing mid-measurement is reported as
+no-answer rather than as a mismatch, paths are tagged not printed, and an
+absent corpus is detected.
+exit=0

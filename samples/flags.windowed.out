@@ -1,0 +1,35 @@
+FLAGS -- samples/fixtures/flags.repeats.jsonl
+
+WINDOW
+  mode: last_turns   turns: 4   lines kept: 8 of 18
+  bytes read: 5093 of 5093 (100.00% of the file) in 1 read(s)
+  offsets: start=0  next_offset=5093   (pass next_offset back as --from-offset)
+  SPANS ARE LOCAL to this window, and every count below is a FLOOR. A run
+  that began before the window is seen only from the window's start.
+
+BATCHABLE BASH
+  UNMEASURED: not one clean consecutive single-Bash-call pair in the window; zero mergeable pairs out of zero pairs is not a clean result
+  measure: 0 (safely-mergeable consecutive single-Bash-call pairs in the window)
+  evidence rows: 0   fingerprint: (none)
+  clean consecutive single-Bash pairs examined: 0  (0 had no recorded output)
+  source: alm#831 Tasks/20261020_alm831_bash_batching/{dep_check.py,analyze_batching.py} @ 1b7e486a89164599ec651902282b99f9d95eb287
+
+REPEATED INVOCATIONS
+  FIRED -- the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span = 4, over the threshold of 2 (2.0x)
+  measure: 4 (the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span)
+  evidence rows: 2   fingerprint: 47709ab0a40dd2fa
+  calls: 4  distinct signatures: 1  longest consecutive run: 4  max within one span: 4
+    {"count": 4, "fingerprint": "d1650b40", "label": "Read", "span": null, "thread": "main thread", "window": "consecutive"}
+    {"count": 4, "fingerprint": "d1650b40", "label": "Read", "span": 0, "thread": null, "window": "span"}
+  source: this repository, instruments/measure_token_breakdown.py (ARI#17 signal 2)
+
+AGENT REUSE GAP
+  NOT_COMPUTED: no threshold given, so the gap is reported and nothing is judged
+  measure: 4 (main-thread turns since the last Agent/Task dispatch)
+  evidence rows: 0   fingerprint: (none)
+  main-thread turns: 4  turns since dispatch: at least 4  longest CONTENT run: 4 (break-even 3)
+  turn classes: {'CONTENT': 4}
+  source: alm#833 Tasks/20261020_alm833_subagent_economy/census_c_delegability.py @ 5b8915ed1589f0ac2d17f1660ff24f76c23eb487
+
+FIRED: repeated_invocations
+UNMEASURED (NOT a clean result): batchable_bash

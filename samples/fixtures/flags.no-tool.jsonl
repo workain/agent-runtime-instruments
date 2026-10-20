@@ -1,0 +1,1 @@
+{"type": "assistant", "uuid": "u-t1", "parentUuid": null, "timestamp": "2026-10-20T00:00:00Z", "isSidechain": false, "message": {"id": "t1", "content": [{"type": "text", "text": "thinking out loud"}], "usage": {"input_tokens": 1, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 10}}}

@@ -67,6 +67,43 @@ PAIRS=(
   'most occurrences of one signature within a single span: 7|samples/measure_token_breakdown.loop-flags-FLAGGED.out'
   # and its own 'nothing to measure' state, the one that must not read as a clean result
   'UNMEASURED: no tool call was seen at all|samples/measure_token_breakdown.no-bash-turns.out'
+  # ARI#24, flags.py. Same reasoning as the loop-flag block above, for the same reason: the
+  # dangerous output of a flag library is not a zero, it is a reassuring "nothing flagged".
+  # So each of the FOUR outcomes a caller must be able to tell apart is pinned to a run --
+  # fired, measured-clean, not-computed, unmeasured -- plus the gated case, which is the
+  # one a reviewer is most likely to assume cannot happen (a measure OVER its threshold
+  # that still does not fire).
+  'FIRED -- safely-mergeable consecutive single-Bash-call pairs|samples/flags.FIRED.out'
+  'a MEASURED clean result|samples/flags.clean.out'
+  'NOT_COMPUTED: no threshold given|samples/flags.no-threshold.out'
+  'UNMEASURED: no tool call was seen at all in the window|samples/flags.unmeasured.out'
+  'below the 3-turn break-even|samples/flags.agent-gap-gated.out'
+  # and that a window really does narrow what is seen, rather than reading the whole file
+  # and calling it a window
+  'SPANS ARE LOCAL to this window|samples/flags.windowed.out'
+  # ARI#24, the cost claim. Every figure the README states about the windowed read is
+  # pinned here, because "cheap" was the one thing the issue said must be a number.
+  # Each of these three carries its own median AND its best AND its worst on one line, so
+  # one pinned string covers all three claims the prose makes about that cost. Quoting the
+  # artefact's own line rather than reformatting it is deliberate: a gloss ("1.00 MB against
+  # 41.90 MB") is a figure this gate's extractor cannot match to anything, which is how the
+  # first draft of this section failed it in eight places at once.
+  'WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.455|samples/bench_window_read.out'
+  'WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475|samples/bench_window_read.out'
+  'WINDOW / FULL, wall-clock    median 0.149   best 0.019   worst 0.550|samples/bench_window_read.out'
+  'RESUME / FULL, bytes read    median 0.237   best 0.024   worst 0.455|samples/bench_window_read.out'
+  'bytes:                FULL 87.3 MB, WINDOW 9.9 MB, RESUME 9.9 MB|samples/bench_window_read.out'
+  'lines fed to json.loads: FULL 30266, WINDOW 3897, RESUME 3897|samples/bench_window_read.out'
+  'corpus: 10 transcripts >= 524288 bytes, largest first|samples/bench_window_read.out'
+  # The live-growth outcome, which must stay distinguishable from a real MISMATCH. Pinned
+  # to the SELF-TEST, not to bench_window_read.out: whether a live run happens to catch a
+  # session mid-turn is luck, so an artefact of the real corpus cannot be relied on to
+  # contain it, while the control forces the case deterministically.
+  'a file that grew mid-measurement|samples/bench_window_read.selftest.out'
+  # and the tuning sweep the default was taken from -- both rows, since the claim is a
+  # COMPARISON between them and pinning only the winner would not check it
+  '       1024K         9.93      10            0 of 10|samples/bench_window_read.first-chunk-sweep.out'
+  '        256K        12.34      20           10 of 10|samples/bench_window_read.first-chunk-sweep.out'
 )
 
 # docs/limits.md is in this list deliberately. A review round found four stale figures in
@@ -186,6 +223,17 @@ EXEMPT=(
   # --- extractor artefact: prose containing "404'd" matches the label:N shape ---
   "blob the GitHub API 404'd was still served by"
   'returns 0 bytes, so'
+  # --- ARI#24. Prose glosses of a figure pinned in its artefact's own spelling: the sweep
+  # --- table says `256K` and `1024K`, and the pinned rows above are what guard these. ---
+  '256 KB'
+  # --- API surface, not measurements: a parameter name, a command line, and an example
+  # --- ISO-8601 instant in a code block showing how to call read_window(). None of these
+  # --- is a reading of anything, and none could appear in an artefact. ---
+  'last_turns=40' 'T12:00' 'python3 instruments/flags.py --help-blind'
+  # --- extractor artefacts: markdown TABLE ROWS from the flags table, which the
+  # --- `label: N`-shaped matcher picks up because a row contains `|` and a `#NNN` ---
+  "| consecutive single-Bash turns that could have been **one** call | alm#831's"
+  "| one identical tool+arguments signature, over and over | this repo's own signal 2 in"
   'v1 | "0 of 16 sessions own background work" | Its filter discarded'
   'v3 | "15 live session cgroups" | Discovery used the broad "is this agent-internal?" pattern, which matches a bare'
 )

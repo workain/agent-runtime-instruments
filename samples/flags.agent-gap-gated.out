@@ -1,0 +1,31 @@
+FLAGS -- samples/fixtures/flags.orchestration.jsonl
+
+WINDOW
+  mode: full   turns: 12   lines kept: 24 of 24
+  bytes read: 7058 of 7058 (100.00% of the file) in 1 read(s)
+  offsets: start=0  next_offset=7058   (pass next_offset back as --from-offset)
+
+BATCHABLE BASH
+  UNMEASURED: not one clean consecutive single-Bash-call pair in the window; zero mergeable pairs out of zero pairs is not a clean result
+  measure: 0 (safely-mergeable consecutive single-Bash-call pairs in the window)
+  evidence rows: 0   fingerprint: (none)
+  clean consecutive single-Bash pairs examined: 0  (0 had no recorded output)
+  source: alm#831 Tasks/20261020_alm831_bash_batching/{dep_check.py,analyze_batching.py} @ 1b7e486a89164599ec651902282b99f9d95eb287
+
+REPEATED INVOCATIONS
+  not flagged: the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span = 0, threshold 4 -- a MEASURED clean result
+  measure: 0 (the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span)
+  evidence rows: 0   fingerprint: (none)
+  calls: 12  distinct signatures: 12  longest consecutive run: 0  max within one span: 0
+  source: this repository, instruments/measure_token_breakdown.py (ARI#17 signal 2)
+
+AGENT REUSE GAP
+  not flagged -- the gap exceeds the threshold, but the window's longest contiguous CONTENT run is 0 turns, below the 3-turn break-even alm#833 derived -- so there is no delegable-looking work for the gap to be a gap IN
+  measure: 12 (main-thread turns since the last Agent/Task dispatch)
+  evidence rows: 0   fingerprint: (none)
+  main-thread turns: 12  turns since dispatch: 12  longest CONTENT run: 0 (break-even 3)
+  turn classes: {'ORCHESTRATION': 12}
+  source: alm#833 Tasks/20261020_alm833_subagent_economy/census_c_delegability.py @ 5b8915ed1589f0ac2d17f1660ff24f76c23eb487
+
+FIRED: (none)
+UNMEASURED (NOT a clean result): batchable_bash

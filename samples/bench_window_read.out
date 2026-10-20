@@ -1,0 +1,40 @@
+WINDOWED vs FULL TRANSCRIPT READ -- the cost of flags.py's read path
+
+corpus: 10 transcripts >= 524288 bytes, largest first (59 smaller skipped)
+window: the newest 40 logical assistant turns      reps: 5 (median reported)
+
+Each row: one real transcript. FULL reads byte 0 to EOF and parses every line.
+WINDOW tail-seeks to the newest 40 turns. RESUME reads from the cursor a polling
+caller would have kept -- i.e. what it costs to notice those 40 turns arrived.
+
+size      turns  lines |   full MB   win MB   res MB | full ms  win ms |   byte   time
+        in file        |      read     read     read |  median  median |  ratio  ratio
+--------------------------------------------------------------------------------------
+42MB       1166  13655 |     41.90     1.00     1.00 |  1618.3    31.4 |  0.024  0.019
+13MB        963   4925 |     13.27     0.99     0.99 |   956.2    41.1 |  0.075  0.043
+7MB         411   2585 |      7.28     0.94     0.94 |   538.0    30.5 |  0.129  0.057
+5MB         310   1603 |      5.13     1.00     1.00 |   239.4    27.3 |  0.195  0.114
+4MB         357   1585 |      4.27     1.00     1.00 |   200.8    21.0 |  0.234  0.104
+4MB         354   1750 |      4.16     1.00     1.00 |    97.6    20.9 |  0.240  0.214
+3MB         336   1278 |      3.44     1.00     1.00 |   484.2    89.5 |  0.291  0.185
+3MB         365   1432 |      3.25     1.00     1.00 |   400.8    74.0 |  0.307  0.185
+2MB         194    814 |      2.35     1.00     1.00 |    83.4    23.7 |  0.424  0.284
+2MB         103    639 |      2.20     1.00     1.00 |   241.4   132.7 |  0.455  0.550
+
+WHERE A SAVING IS POSSIBLE AT ALL -- the 10 file(s) with MORE than 40 turns:
+   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.455
+   WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475
+   WINDOW / FULL, wall-clock    median 0.149   best 0.019   worst 0.550
+   RESUME / FULL, bytes read    median 0.237   best 0.024   worst 0.455
+   RESUME / FULL, wall-clock    median 0.212   best 0.028   worst 0.738
+
+   over those 10 files: FULL 4860 ms, WINDOW 492 ms, RESUME 715 ms total
+   bytes:                FULL 87.3 MB, WINDOW 9.9 MB, RESUME 9.9 MB
+   lines fed to json.loads: FULL 30266, WINDOW 3897, RESUME 3897
+
+WHERE IT IS NOT -- the 0 file(s) with 40 turns or fewer:
+   none in this corpus.
+
+READ THE BYTES, NOT THE CLOCK, if the two disagree: every file was warmed before
+timing, but wall-clock still carries this box's load and page cache, while the
+byte and line counts are properties of the files and the code. See blind mode 2.
