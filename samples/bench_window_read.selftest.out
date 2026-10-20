@@ -2,7 +2,7 @@ BENCH_WINDOW_READ SELF-TEST
   ok   -- the fixture (2339116 bytes) is larger than FIRST_CHUNK (1048576), so a window CAN read less than all of it
   ok   -- a 4000-turn file windowed to 10 turns is seen as 4000 and 10
   ok   -- control 1: the window read 1048382 of 2339116 bytes (ratio 0.448) -- a saving is MEASURABLE by this harness
-  ok   -- the resume read (1048382 bytes) costs no more than the window read (1048382)
+  ok   -- the resume read (5870 bytes) costs no more than the window read (1048382)
   ok   -- and the window AGREES with the full read on the turns they share
   ok   -- control 2: a 5-turn file windowed to 40 turns reads ratio 1.000 -- no saving, reported as no saving
   ok   -- control 3: the agreement check REJECTS a window whose turns were tampered with, so a silently-full or silently-wrong reader would be caught

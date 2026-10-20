@@ -10,27 +10,27 @@ caller would have kept -- i.e. what it costs to notice those 40 turns arrived.
 size      turns  lines |   full MB   win MB   res MB | full ms  win ms |   byte   time
         in file        |      read     read     read |  median  median |  ratio  ratio
 --------------------------------------------------------------------------------------
-42MB       1166  13655 |     41.90     1.00     1.00 |  1618.3    31.4 |  0.024  0.019
-13MB        963   4925 |     13.27     0.99     0.99 |   956.2    41.1 |  0.075  0.043
-7MB         411   2585 |      7.28     0.94     0.94 |   538.0    30.5 |  0.129  0.057
-5MB         310   1603 |      5.13     1.00     1.00 |   239.4    27.3 |  0.195  0.114
-4MB         357   1585 |      4.27     1.00     1.00 |   200.8    21.0 |  0.234  0.104
-4MB         354   1750 |      4.16     1.00     1.00 |    97.6    20.9 |  0.240  0.214
-3MB         336   1278 |      3.44     1.00     1.00 |   484.2    89.5 |  0.291  0.185
-3MB         365   1432 |      3.25     1.00     1.00 |   400.8    74.0 |  0.307  0.185
-2MB         194    814 |      2.35     1.00     1.00 |    83.4    23.7 |  0.424  0.284
-2MB         103    639 |      2.20     1.00     1.00 |   241.4   132.7 |  0.455  0.550
+42MB       1168  13668 |     41.93     0.99     0.65 |  1622.6    19.0 |  0.024  0.012
+13MB        963   4925 |     13.27     0.99     0.61 |   984.3    47.4 |  0.075  0.048
+8MB         434   2704 |      7.54     1.00     0.46 |   733.1    78.7 |  0.133  0.107
+5MB         310   1603 |      5.13     1.00     0.75 |   339.7    53.6 |  0.195  0.158
+4MB         357   1585 |      4.27     1.00     0.45 |   354.5    35.0 |  0.234  0.099
+4MB         354   1750 |      4.16     1.00     0.35 |   151.5    20.5 |  0.240  0.135
+3MB         336   1278 |      3.44     1.00     0.30 |   546.4    91.6 |  0.291  0.168
+3MB         365   1432 |      3.25     1.00     0.38 |   542.2   113.0 |  0.307  0.208
+2MB         194    814 |      2.35     1.00     0.42 |   105.6    33.4 |  0.424  0.317
+2MB         240    880 |      2.32     0.99     0.43 |   325.8    50.8 |  0.427  0.156
 
 WHERE A SAVING IS POSSIBLE AT ALL -- the 10 file(s) with MORE than 40 turns:
-   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.455
+   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.427
    WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475
-   WINDOW / FULL, wall-clock    median 0.149   best 0.019   worst 0.550
-   RESUME / FULL, bytes read    median 0.237   best 0.024   worst 0.455
-   RESUME / FULL, wall-clock    median 0.212   best 0.028   worst 0.738
+   WINDOW / FULL, wall-clock    median 0.146   best 0.012   worst 0.317
+   RESUME / FULL, bytes read    median 0.097   best 0.015   worst 0.186
+   RESUME / FULL, wall-clock    median 0.090   best 0.007   worst 0.156
 
-   over those 10 files: FULL 4860 ms, WINDOW 492 ms, RESUME 715 ms total
-   bytes:                FULL 87.3 MB, WINDOW 9.9 MB, RESUME 9.9 MB
-   lines fed to json.loads: FULL 30266, WINDOW 3897, RESUME 3897
+   over those 10 files: FULL 5706 ms, WINDOW 543 ms, RESUME 361 ms total
+   bytes:                FULL 87.7 MB, WINDOW 10.0 MB, RESUME 4.8 MB
+   lines fed to json.loads: FULL 30639, WINDOW 4075, RESUME 1892
 
 WHERE IT IS NOT -- the 0 file(s) with 40 turns or fewer:
    none in this corpus.

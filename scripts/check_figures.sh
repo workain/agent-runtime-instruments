@@ -88,12 +88,12 @@ PAIRS=(
   # artefact's own line rather than reformatting it is deliberate: a gloss ("1.00 MB against
   # 41.90 MB") is a figure this gate's extractor cannot match to anything, which is how the
   # first draft of this section failed it in eight places at once.
-  'WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.455|samples/bench_window_read.out'
+  'WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.427|samples/bench_window_read.out'
   'WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475|samples/bench_window_read.out'
-  'WINDOW / FULL, wall-clock    median 0.149   best 0.019   worst 0.550|samples/bench_window_read.out'
-  'RESUME / FULL, bytes read    median 0.237   best 0.024   worst 0.455|samples/bench_window_read.out'
-  'bytes:                FULL 87.3 MB, WINDOW 9.9 MB, RESUME 9.9 MB|samples/bench_window_read.out'
-  'lines fed to json.loads: FULL 30266, WINDOW 3897, RESUME 3897|samples/bench_window_read.out'
+  'WINDOW / FULL, wall-clock    median 0.146   best 0.012   worst 0.317|samples/bench_window_read.out'
+  'RESUME / FULL, bytes read    median 0.097   best 0.015   worst 0.186|samples/bench_window_read.out'
+  'bytes:                FULL 87.7 MB, WINDOW 10.0 MB, RESUME 4.8 MB|samples/bench_window_read.out'
+  'lines fed to json.loads: FULL 30639, WINDOW 4075, RESUME 1892|samples/bench_window_read.out'
   'corpus: 10 transcripts >= 524288 bytes, largest first|samples/bench_window_read.out'
   # The live-growth outcome, which must stay distinguishable from a real MISMATCH. Pinned
   # to the SELF-TEST, not to bench_window_read.out: whether a live run happens to catch a
@@ -102,8 +102,8 @@ PAIRS=(
   'a file that grew mid-measurement|samples/bench_window_read.selftest.out'
   # and the tuning sweep the default was taken from -- both rows, since the claim is a
   # COMPARISON between them and pinning only the winner would not check it
-  '       1024K         9.93      10            0 of 10|samples/bench_window_read.first-chunk-sweep.out'
-  '        256K        12.34      20           10 of 10|samples/bench_window_read.first-chunk-sweep.out'
+  '       1024K         9.97      10            0 of 10|samples/bench_window_read.first-chunk-sweep.out'
+  '        256K        12.41      20           10 of 10|samples/bench_window_read.first-chunk-sweep.out'
 )
 
 # docs/limits.md is in this list deliberately. A review round found four stale figures in

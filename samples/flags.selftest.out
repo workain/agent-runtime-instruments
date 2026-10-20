@@ -15,6 +15,10 @@ a window and a full read agree on the turns they share
   ok   -- last_turns=61 -> 60 turns, call-for-call identical to the full read's tail
   ok   -- last_turns=1000 -> 60 turns, call-for-call identical to the full read's tail
   ok   -- the no-argument read is the FULL read and labels itself as one
+  ok   -- the fixture really does repeat exactly one message.id far from its first use
+  ok   -- RESIDUAL PINNED: on a transcript that replays a message.id, the window and the full read disagree -- the full read merged the two occurrences into one turn at the earlier position. A property of collect_turns' key, not of the window; measured at 3 of 675 comparisons over 45 real transcripts
+  ok   -- the read began at 18065 and the window's content begins at 30297 -- two different numbers, reported separately
+  ok   -- and resuming from start_offset reproduces the SAME window, call for call -- the defect this replaced disagreed on 26 of 45 real transcripts
   ok   -- the answer is independent of first_chunk (5 reads vs 1) -- only the cost moves
   ok   -- a small first_chunk really did force the growth loop (5 reads), a large one did not (1)
   ok   -- a 5-turn window reads FEWER bytes than the full file (4783 < 34308) -- the cost claim, in the control rather than only in the prose
@@ -30,6 +34,10 @@ the resume cursor: two windowed reads across an append == one full read
 the `since` window
   ok   -- since=00:08 over turns stamped 00:00..00:11 keeps 4 turns (kept 4)
   ok   -- a `since` older than the file keeps every turn (kept 12)
+  ok   -- and it is NOT reported as a local-span window, because it threw nothing away
+  ok   -- a `since` in the future keeps no turn (kept 0), rather than defaulting to all
+  ok   -- all three of these READS start at byte 0 (the file is smaller than the chunk), so only the TRIM can set the floor flag
+  ok   -- and it is set for BOTH windowing modes and not for the full read -- the floor warning cannot be suppressed by a file being small
 
 batchable_bash: fires on mergeable pairs, silent on dependent ones
   ok   -- POSITIVE: 8 self-contained Bash turns -> 7 mergeable pairs of 7 examined, FIRED
@@ -58,6 +66,13 @@ agent_reuse_gap: fires on delegable content, silent on orchestration
   ok   -- no threshold -> NOT COMPUTED, with the gap still reported
   ok   -- a FULL read reports its gap exactly (12), a WINDOWED read reports it as a floor (at least 6) -- because only the latter can be hiding an older dispatch
 
+a threshold below 1 is refused by the FUNCTION, not only by the CLI
+  ok   -- batchable_bash refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
+  ok   -- repeated_invocations refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
+  ok   -- agent_reuse_gap refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
+  ok   -- and min_content_run=0 is refused too, not silently clamped
+  ok   -- the orchestration vocabulary reaches the flag: declaring Bash orchestration turns the same window from FIRED to silent, so the override is not documentation
+
 tool_class: the generalised prefix rule vs alm#833's hard-coded one
   ok   -- on the 41 tool names alm#833's own prefix list covered, the generalised rule gives an IDENTICAL answer (0 disagreements)
   ok   -- and it is not identical by collapsing into one class: the same server's send_message and github_comment_on_issue are ORCHESTRATION, github_get_issue is CONTENT, and get_session_state is ORCHESTRATION despite the get_ prefix
@@ -75,7 +90,7 @@ the three states
   ok   -- all three states are reachable from real windows: ['measured', 'not_computed', 'unmeasured']
   ok   -- every flag returns the SAME core key set, so one caller branch works for all three: ('count', 'evidence', 'fingerprint', 'fired', 'flag', 'measure', 'measure_of', 'note', 'overshoot', 'severity', 'source', 'state', 'threshold', 'window')
 
-SELF-TEST PASSED -- 57 checks: the byte arithmetic at every offset, window/full agreement,
+SELF-TEST PASSED -- 70 checks: the byte arithmetic at every offset, window/full agreement,
 a positive AND a negative control for each of the three flags, both sides of each threshold
 boundary, all three states reachable, the resume cursor across an append and a rotation,
 and no raw argument in any evidence row.

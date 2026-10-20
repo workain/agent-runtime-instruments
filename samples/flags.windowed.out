@@ -3,7 +3,7 @@ FLAGS -- samples/fixtures/flags.repeats.jsonl
 WINDOW
   mode: last_turns   turns: 4   lines kept: 8 of 18
   bytes read: 5093 of 5093 (100.00% of the file) in 1 read(s)
-  offsets: start=0  next_offset=5093   (pass next_offset back as --from-offset)
+  offsets: start=2829  next_offset=5093   (pass next_offset back as --from-offset)
   SPANS ARE LOCAL to this window, and every count below is a FLOOR. A run
   that began before the window is seen only from the window's start.
 

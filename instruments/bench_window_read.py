@@ -15,9 +15,10 @@ WHAT IS COMPARED. Three reads of the same file, in the shape a caller would actu
               tail seek that grows until it has them.
   RESUME      `read_window(path, from_offset=K)` -- everything appended since byte K. This
               is the one the watchdog is built on: K is the cursor it kept from its last
-              poll. K is taken from the WINDOW read's own `start_offset`, so "the session
-              appended N turns since I last looked" is simulated with the real byte
-              position of those real turns rather than a guessed offset.
+              poll. K is taken from the WINDOW read's own `start_offset` -- the first line
+              that window KEPT, not where its read began -- so "the session appended N
+              turns since I last looked" is simulated with the real byte position of those
+              real turns rather than a guessed offset.
 
 THREE COSTS, NOT ONE, because they do not move together and a caller is paying all three:
 bytes off disk, lines fed to `json.loads`, and wall-clock. Wall-clock is the one that
@@ -190,6 +191,9 @@ def measure_file(path, last_turns, reps):
     t_full, lo_full, hi_full, full = time_read(lambda: FL.read_window(path), reps)
     t_win, lo_win, hi_win, win = time_read(
         lambda: FL.read_window(path, last_turns=last_turns), reps)
+    # start_offset, which is the first line the window KEPT -- not read_offset, where the
+    # read began. Resuming from read_offset would re-read the turns the window trimmed and
+    # so would measure a LARGER slice than the window it claims to be the cursor for.
     cursor = win["window"]["start_offset"]
     t_res, lo_res, hi_res, res = time_read(
         lambda: FL.read_window(path, from_offset=cursor), reps)

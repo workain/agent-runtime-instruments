@@ -165,15 +165,26 @@ that artefact — `median` across the corpus, `best` on the largest transcript i
 1166 turns), `worst` on the smallest:
 
 ```
-   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.455
+   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.427
    WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475
-   WINDOW / FULL, wall-clock    median 0.149   best 0.019   worst 0.550
+   WINDOW / FULL, wall-clock    median 0.146   best 0.012   worst 0.317
 ```
 
-The resume path — the one a polling caller uses — costs the same bytes:
-`RESUME / FULL, bytes read    median 0.237   best 0.024   worst 0.455`. In absolute terms over
-those files: `bytes:                FULL 87.3 MB, WINDOW 9.9 MB, RESUME 9.9 MB`, and
-`lines fed to json.loads: FULL 30266, WINDOW 3897, RESUME 3897`.
+The **resume** path — the one a polling caller actually uses — is cheaper again, because it
+reads only what arrived rather than a fixed window:
+`RESUME / FULL, bytes read    median 0.097   best 0.015   worst 0.186`. In absolute terms over
+those files: `bytes:                FULL 87.7 MB, WINDOW 10.0 MB, RESUME 4.8 MB`, and
+`lines fed to json.loads: FULL 30639, WINDOW 4075, RESUME 1892`.
+
+One residual, measured rather than described, because it is a property of the *shared* turn
+parser and not of the window: `collect_turns` keys a logical turn by `message.id` and merges
+every entry carrying it, which is right for the split turn it was built for. A **resumed**
+session can replay the same ids much later in the same file — on one real local transcript,
+769 entries apart — and then the full read collapses both occurrences into one turn at the
+earlier position while a window holding only the later one does not. Over 45 real transcripts
+and 675 window/full comparisons that produced **3 disagreements, all in that one file**; the
+self-test reproduces it from a deliberate fixture so the behaviour is pinned rather than merely
+admitted.
 
 Four honest limits on those figures, each of which the instrument reports rather than hides.
 **Wall-clock is the weakest of the three** — it carries one box's load and page cache, so when
@@ -186,9 +197,9 @@ disagreement the `MISMATCH` label is reserved for — a control forces the case 
 (`a file that grew mid-measurement`, in `samples/bench_window_read.selftest.out`), since whether
 a live run happens to catch a session mid-turn is luck. And **the first tail read's size is itself a
 tuned number**: at 256 KB, 10 of 10 transcripts needed a second read
-(`        256K        12.34      20           10 of 10`), so `flags.FIRST_CHUNK` is 1 MB, the
+(`        256K        12.41      20           10 of 10`), so `flags.FIRST_CHUNK` is 1 MB, the
 minimum of the sweep in `samples/bench_window_read.first-chunk-sweep.out`
-(`       1024K         9.93      10            0 of 10`). It is a per-call parameter, because
+(`       1024K         9.97      10            0 of 10`). It is a per-call parameter, because
 the optimum is a property of how many bytes a turn takes in your own corpus.
 
 ### Which engines are actually supported

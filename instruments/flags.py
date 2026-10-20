@@ -295,7 +295,12 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
         file_bytes        the file's size when it was stat()ed
         bytes_read        how many bytes were actually pulled off disk, re-reads included
         read_fraction     bytes_read / file_bytes -- the cost claim, measured per call
-        start_offset      byte offset of the first line kept
+        start_offset      byte offset of the first line KEPT -- i.e. where this window's
+                          CONTENT begins. Passing it back as `from_offset` reproduces this
+                          same window. It is NOT where the read began; see read_offset
+        read_offset       byte offset where the read actually began, which is earlier
+                          whenever the trim discarded lines. This is the number the cost
+                          figures are about, and it is the WRONG one to resume from
         next_offset       pass this back as `from_offset` next time. == file_bytes
         lines_total       lines the read pulled in
         lines_kept        lines left after trimming to the requested window
@@ -318,6 +323,23 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
     it is what a caller watching recent activity wants -- but a span index from a window must
     never be compared with one from a full read, and `spans_are_local` is in every flag's
     `window` block so that mistake is visible rather than available.
+
+    DISCLOSED RESIDUAL: A RESUMED TRANSCRIPT CAN REPEAT A `message.id`, and then a window
+    and a full read legitimately disagree. `collect_turns` keys a logical turn by
+    `message.id` and MERGES every entry carrying that id -- which is right for the split
+    turn it was built for, where the entries are adjacent. A resumed or branched session
+    can replay the same API response ids much later in the same file: measured on one real
+    local transcript, ids recurring 769 entries apart. The full read then collapses both
+    occurrences into ONE turn sitting at the earlier position, while a window containing
+    only the later occurrence sees it at the later position -- so the full read's tail is
+    not the window's content, and arguably the full read is the misleading one.
+
+    Measured rate, rather than described: over 45 real transcripts and 675 window/full
+    comparisons at five window sizes and three chunk sizes, this produced 3 disagreements,
+    all in that single resumed file. It is a property of the shared `collect_turns` key and
+    not of the windowing, so it is stated here instead of being worked around -- and
+    `self_test` reproduces it from a deliberate fixture, so the behaviour is pinned rather
+    than merely admitted.
 
     WHY `last_turns=N` READS N+1 TURNS AND THEN THROWS ONE AWAY. One logical turn is written
     as several JSONL entries (a thinking entry, then one per tool_use, all repeating the same
@@ -411,30 +433,45 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
                 kept = lines
                 win["head_complete"] = at_bof
         else:
-            cut = 0
-            for i, line in enumerate(kept_src := lines):
-                s = line.strip()
-                if not s:
+            cut = len(lines)
+            for i, line in enumerate(lines):
+                st = line.strip()
+                if not st:
                     continue
                 try:
-                    d = json.loads(s)
+                    d = json.loads(st)
                 except Exception:
                     continue
                 ts = d.get("timestamp") if isinstance(d, dict) else None
                 if isinstance(ts, str) and ts >= since:
                     cut = i
                     break
-            else:
-                cut = len(kept_src)
             kept = lines[cut:]
             # A `since` window's oldest turn can still be a fragment: the cut lands on the
             # first entry stamped at or after the instant asked for, and that entry may be
             # the second row of a turn whose first row is older. Said, not hidden.
             win["head_complete"] = at_bof and cut == 0
-        win["spans_are_local"] = win["start_offset"] > 0 or (last_turns is not None
-                                                             and len(kept) < len(lines))
+        # EITHER condition makes the window have a horizon: it began past byte 0, or it
+        # threw away lines it had read. Written as one rule for both modes deliberately --
+        # the first version tested the trim only for `last_turns`, so a `since` window over
+        # a file smaller than the first chunk trimmed turns and still reported
+        # spans_are_local=False, suppressing the floor warning in exactly the case where it
+        # was true. `self_test` now asserts it for both modes.
+        win["spans_are_local"] = win["start_offset"] > 0 or len(kept) < len(lines)
 
     win["lines_kept"] = len(kept)
+    # START_OFFSET IS THE FIRST KEPT LINE, NOT THE FIRST LINE READ. The two differ by
+    # whatever the trim discarded, and conflating them was a real defect: a caller that
+    # took `start_offset` as "where this window begins" and passed it back as
+    # `from_offset` got back the trimmed turns as well. Measured on 45 real transcripts:
+    # the resumed read disagreed with its own window on 26 of them. The raw read position
+    # is still reported, as `read_offset`, because it is what the cost figures are about.
+    win["read_offset"] = win["start_offset"]
+    dropped = win["lines_total"] - win["lines_kept"]
+    if dropped > 0:
+        win["start_offset"] += sum(len(ln.encode("utf-8", "surrogateescape")) + 1
+                                   for ln in (lines[:dropped] if win["mode"] != "full"
+                                              else []))
     win["read_fraction"] = (win["bytes_read"] / size) if size else None
     turns, stats = MTB.collect_turns(kept)
     win["turns"] = len(turns)
@@ -524,6 +561,25 @@ def _flag(name, state, rows, threshold, window, source, note, measure=0, measure
 def _empty(window):
     """Is there nothing in this window to look at at all?"""
     return window["turns"] == 0
+
+
+def _check_threshold(name, v):
+    """A threshold below 1 is refused HERE, in the library, not only in the CLI.
+
+    The CLI already refuses it, but alm#839 calls these functions directly and would never
+    pass through that check -- so the guard belonged on the function. A threshold of 0 is
+    not a strict setting, it flags the ABSENCE of the thing being looked for: every window
+    with any repeat at all fires, and the caller learns nothing. Raised rather than
+    silently clamped, because a clamped threshold is a different measurement than the one
+    asked for and nothing in the output would say so.
+    """
+    if v is None:
+        return
+    if not isinstance(v, int) or isinstance(v, bool):
+        raise TypeError("%s threshold must be an int or None, got %r" % (name, v))
+    if v < 1:
+        raise ValueError("%s threshold %d is below 1; a threshold of 0 flags the absence "
+                         "of the thing it is looking for" % (name, v))
 
 
 # ==========================================================================================
@@ -782,6 +838,7 @@ def batchable_bash(win, threshold=None):
                               carried anyway so an evidence row's shape does not change
                               between this flag and a future dependent-pair report
     """
+    _check_threshold("batchable_bash", threshold)
     if _empty(win["window"]):
         return _flag("batchable_bash", "unmeasured", [], threshold, win["window"],
                      SRC_ALM831, BATCHABLE_NOTE, measure_of=BB_MEASURE,
@@ -890,6 +947,7 @@ def repeated_invocations(win, threshold=None):
     and the count. No argument value crosses this boundary -- see `call_signature` in
     measure_token_breakdown.py for why the digest is compared in full and shown truncated.
     """
+    _check_threshold("repeated_invocations", threshold)
     w = win["window"]
     if _empty(w):
         return _flag("repeated_invocations", "unmeasured", [], threshold, w, SRC_ARI,
@@ -1071,7 +1129,8 @@ AGENT_GAP_NOTE = (
 )
 
 
-def agent_reuse_gap(win, threshold=None, min_content_run=MIN_CONTENT_RUN):
+def agent_reuse_gap(win, threshold=None, min_content_run=MIN_CONTENT_RUN,
+                    orch_tools=None):
     """FLAG: a long stretch of delegable-looking main-thread work with no subagent dispatch.
 
     Fires when BOTH hold: the main thread has gone more than `threshold` turns since its
@@ -1088,6 +1147,9 @@ def agent_reuse_gap(win, threshold=None, min_content_run=MIN_CONTENT_RUN):
     stated rather than smoothed over, because a caller reading `count > threshold` for this
     flag would be reading the wrong pair of numbers.
     """
+    _check_threshold("agent_reuse_gap", threshold)
+    if not isinstance(min_content_run, int) or min_content_run < 1:
+        raise ValueError("min_content_run must be an int >= 1, got %r" % (min_content_run,))
     w = win["window"]
     if _empty(w):
         return _flag("agent_reuse_gap", "unmeasured", [], threshold, w, SRC_ALM833,
@@ -1104,7 +1166,10 @@ def agent_reuse_gap(win, threshold=None, min_content_run=MIN_CONTENT_RUN):
                                 dispatch_seen_in_window=False, longest_content_run=0,
                                 class_counts={}))
 
-    classes = [turn_class(t["tools"]) for t in main]
+    # `orch_tools` is threaded through rather than left on tool_class only: the override
+    # is documented at MCP_PREFIX, and a documented override that the flag does not pass
+    # down is not an override.
+    classes = [turn_class(t["tools"], orch_tools) for t in main]
     counts = {}
     for c in classes:
         counts[c] = counts.get(c, 0) + 1
@@ -1166,7 +1231,8 @@ FLAGS = ("batchable_bash", "repeated_invocations", "agent_reuse_gap")
 
 
 def all_flags(win, batchable_threshold=None, repeated_threshold=None,
-              agent_gap_threshold=None, min_content_run=MIN_CONTENT_RUN):
+              agent_gap_threshold=None, min_content_run=MIN_CONTENT_RUN,
+              orch_tools=None):
     """Run every flag over one window and return them keyed by name.
 
     One parse, three detectors -- which is the other half of "cheap": a caller polling three
@@ -1176,7 +1242,8 @@ def all_flags(win, batchable_threshold=None, repeated_threshold=None,
     out = {
         "batchable_bash": batchable_bash(win, batchable_threshold),
         "repeated_invocations": repeated_invocations(win, repeated_threshold),
-        "agent_reuse_gap": agent_reuse_gap(win, agent_gap_threshold, min_content_run),
+        "agent_reuse_gap": agent_reuse_gap(win, agent_gap_threshold, min_content_run,
+                                           orch_tools),
     }
     return dict(path=win["path"], window=win["window"], flags=out,
                 fired=[k for k, v in out.items() if v["fired"]],
@@ -1696,6 +1763,40 @@ def self_test():
     check(full["window"]["windowed"] is False and full["window"]["read_fraction"] == 1.0,
           "the no-argument read is the FULL read and labels itself as one")
 
+    # The disclosed residual, reproduced deliberately rather than only admitted in prose:
+    # a transcript that REPEATS a message.id far from its first use. The full read merges
+    # the two into one turn at the earlier position; a window holding only the later one
+    # does not. Pinned so the behaviour cannot change unnoticed.
+    rep_mid = (_repeat_lines(12)
+               + _content_run_lines(6)
+               + [_mk("rm0", [_tu("zz1", "Bash", dict(command="echo resumed"))],
+                      parent="gr5", uuid="za9")])
+    p_dup = _write(tmp, "dupmid.jsonl", rep_mid)
+    f_dup = read_window(p_dup)
+    w_dup = read_window(p_dup, last_turns=2, first_chunk=256)
+    dup_mids = [m for m, c in __import__("collections").Counter(
+        m for _i, m in _assistant_mids(open(p_dup).read().splitlines())).items() if c > 1]
+    check(len(dup_mids) == 1,
+          "the fixture really does repeat exactly one message.id far from its first use")
+    check(w_dup["window"]["turns"] == 2
+          and [t["call_keys"] for t in w_dup["turns"]]
+          != [t["call_keys"] for t in f_dup["turns"]][-2:],
+          "RESIDUAL PINNED: on a transcript that replays a message.id, the window and the "
+          "full read disagree -- the full read merged the two occurrences into one turn at "
+          "the earlier position. A property of collect_turns' key, not of the window; "
+          "measured at 3 of 675 comparisons over 45 real transcripts")
+
+    # start_offset must name the first KEPT line, so passing it back reproduces the window
+    w_rt = read_window(p, last_turns=7, first_chunk=1024)
+    r_rt = read_window(p, from_offset=w_rt["window"]["start_offset"])
+    check(w_rt["window"]["read_offset"] < w_rt["window"]["start_offset"],
+          "the read began at %d and the window's content begins at %d -- two different "
+          "numbers, reported separately"
+          % (w_rt["window"]["read_offset"], w_rt["window"]["start_offset"]))
+    check([t["call_keys"] for t in r_rt["turns"]] == [t["call_keys"] for t in w_rt["turns"]],
+          "and resuming from start_offset reproduces the SAME window, call for call -- the "
+          "defect this replaced disagreed on 26 of 45 real transcripts")
+
     # a tiny first_chunk forces the growth loop; the answer must not depend on it
     w_small = read_window(p, last_turns=20, first_chunk=64)
     w_big = read_window(p, last_turns=20, first_chunk=4 * 1024 * 1024)
@@ -1757,6 +1858,32 @@ def self_test():
     check(s_all["window"]["turns"] == 12,
           "a `since` older than the file keeps every turn (kept %d)"
           % s_all["window"]["turns"])
+    check(s_all["window"]["spans_are_local"] is False,
+          "and it is NOT reported as a local-span window, because it threw nothing away")
+    s_fut = read_window(p4, since="2099-01-01T00:00:00Z", first_chunk=256)
+    check(s_fut["window"]["turns"] == 0,
+          "a `since` in the future keeps no turn (kept %d), rather than defaulting to all"
+          % s_fut["window"]["turns"])
+    # The bug this asserts against: BOTH windowing modes must report a horizon when they
+    # TRIMMED, even on a file small enough that the read started at byte 0. The first
+    # version tested the trim for last_turns only, so a `since` window silently suppressed
+    # the "every count is a floor" warning in exactly the case where it applied.
+    whole = read_window(p4)
+    small_since = read_window(p4, since="2026-10-20T00:08:00Z", first_chunk=10 ** 7)
+    small_last = read_window(p4, last_turns=4, first_chunk=10 ** 7)
+    # read_offset, not start_offset: the READ began at byte 0 in all three cases, while a
+    # trimmed window's CONTENT begins later. Asserting start_offset here was this control's
+    # own bug, caught when the two fields were separated.
+    check(whole["window"]["read_offset"] == 0
+          and small_since["window"]["read_offset"] == 0
+          and small_last["window"]["read_offset"] == 0,
+          "all three of these READS start at byte 0 (the file is smaller than the chunk), "
+          "so only the TRIM can set the floor flag")
+    check(whole["window"]["spans_are_local"] is False
+          and small_since["window"]["spans_are_local"] is True
+          and small_last["window"]["spans_are_local"] is True,
+          "and it is set for BOTH windowing modes and not for the full read -- the floor "
+          "warning cannot be suppressed by a file being small")
 
     # ---- control 3+4: every flag fires, and does not fire on its negative control --------
     print()
@@ -1869,6 +1996,38 @@ def self_test():
           "a FULL read reports its gap exactly (%d), a WINDOWED read reports it as a floor "
           "(at least %d) -- because only the latter can be hiding an older dispatch"
           % (full_gap["turns_since_dispatch"], win_gap["turns_since_dispatch"]))
+
+    # ---- control: the library refuses what the CLI refuses --------------------------------
+    print()
+    print("a threshold below 1 is refused by the FUNCTION, not only by the CLI")
+    wc = read_window(p_cont)
+    for fn, nm in ((batchable_bash, "batchable_bash"),
+                   (repeated_invocations, "repeated_invocations"),
+                   (agent_reuse_gap, "agent_reuse_gap")):
+        raised = 0
+        for bad in (0, -1):
+            try:
+                fn(wc, threshold=bad)
+            except ValueError:
+                raised += 1
+        try:
+            fn(wc, threshold=2.5)
+        except TypeError:
+            raised += 1
+        check(raised == 3,
+              "%s refuses thresholds 0, -1 and 2.5 (%d of 3) -- alm#839 calls the "
+              "function, so a guard living only in argparse would not protect it"
+              % (nm, raised))
+    try:
+        agent_reuse_gap(wc, threshold=5, min_content_run=0)
+        bad_mcr = False
+    except ValueError:
+        bad_mcr = True
+    check(bad_mcr, "and min_content_run=0 is refused too, not silently clamped")
+    check(agent_reuse_gap(wc, threshold=5, orch_tools={"Bash"})["fired"] is False
+          and agent_reuse_gap(wc, threshold=5)["fired"] is True,
+          "the orchestration vocabulary reaches the flag: declaring Bash orchestration "
+          "turns the same window from FIRED to silent, so the override is not documentation")
 
     # ---- control: the generalised MCP prefix rule agrees with alm#833 where it must ------
     print()
