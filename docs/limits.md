@@ -231,10 +231,13 @@ Stated so the gaps are visible rather than implied absent.
   into the same transcript, so a raw scan would join a main-thread turn to a sidechain's and
   report a streak no thread had. The sidechain figure is still a ceiling: two different
   subagents' turns landing adjacently can merge into one apparent streak.
-- **Signal 2 does not exist yet** — repeated/near-duplicate invocations, the mode published work
-  rates most frequent of 14. It is reported as `NOT IMPLEMENTED` on every run rather than left to
-  be inferred from a gap, because matching on tool name alone would report any Bash-heavy session
-  as one long repetition.
+- **Signal 2 measures a proxy for its target, not the target.** Repeated steps rank most
+  frequent of 14 in the MAST taxonomy (`docs/citations.md`, cited to the body text that ranks the
+  modes rather than to the abstract, which does not rank them) — that ranking is why this signal
+  was worth building rather than deferring further. But the published mode is a step repeated
+  *with no state change*, and what this counts is a call repeated with identical arguments; the
+  two coincide only where the arguments are the whole state. A high count is a reason to go read
+  the transcript, not a failure mode detected.
 - **It flags structure, not semantics.** Nothing here reads what was said; there is no LLM call
   and no notion of whether two calls achieved the same thing. "Same command run twice with no
   state change" is the signal the literature actually names, and this instrument cannot see it
