@@ -205,6 +205,23 @@ no branch protection,
 so nothing enforces this recipe up front; the gate only catches it afterwards, once the commit
 exists and the fix has become a history rewrite.
 
+**Use the script; it is this recipe with the mistakes made impossible:**
+
+```bash
+bash scripts/merge_to_main.sh <branch> <pr-number> "<commit subject>"
+bash scripts/merge_to_main.sh --dry-run <branch> <pr-number> "<subject>"   # stops before the push
+```
+
+It sets all four identity variables, **reads the resulting commit's identity back** rather than
+assuming the variables took effect, runs the full gate suite *on the merge commit while it is
+still private*, and pushes only if all of that passed — refusing and cleaning up otherwise. It
+cannot close the PR (`gh` is not installed here) and prints the exact command, with the real SHA.
+
+It also cannot stop anyone clicking **Squash and merge** on github.com. Only branch protection
+can, and that needs repo-admin access no session here has (ARI#14).
+
+The recipe it automates, for reference:
+
 ```bash
 BOT_NAME='workain'
 BOT_MAIL="${BOT_NAME}@users.noreply.github.com"   # assembled rather than written out: the
