@@ -62,6 +62,11 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
          defect look identical from then on. The size is now taken before AND after, such a
          row is marked GREW, and its agreement is reported as having NO ANSWER -- a third
          outcome, excluded from the figures, never folded into either of the other two.
+      3c. THE TRANSCRIPT WAS RESUMED AND REPLAYS A `message.id`. Then flags.py's own
+         documented residual applies: collect_turns merges the two occurrences, so the full
+         read's tail is not the window's content by design. Marked RESIDUAL, reported with
+         its own explanation, and excluded -- so MISMATCH keeps meaning "unexplained".
+         Without this split the largest transcript in the real corpus reads as a defect.
       4. THE CORPUS IS ALL ONE SHAPE. A ratio measured only on huge files overstates what
          a caller gets, so `turns in file` is printed per row and the summary splits the
          corpus at the window size: files with more turns than the window (where a saving
@@ -107,8 +112,24 @@ DEFAULT_ROOTS = (":".join(engines.transcript_roots()) if engines
 
 
 def discover(roots, min_bytes):
+    """Candidate transcripts, largest first, DEDUPED by session identity.
+
+    The dedup is not tidiness. Review re-ran this instrument and found 4 distinct
+    transcripts listed TWICE each -- the same session visible under two account roots --
+    which means the corpus median was weighted by how many account directories happen to
+    hold a copy of a session rather than by how many sessions there are. That is a real way
+    for the headline ratio to move without anything about the code or the sessions
+    changing.
+
+    Deduped on (basename, size): a Claude Code transcript's basename is its session uuid,
+    so two paths sharing one are the same session, and the size guards against the
+    pathological case of two genuinely different sessions colliding on a name. The count
+    dropped is reported by the caller rather than silently absorbed.
+    """
     out = []
     missing = []
+    seen = {}
+    dupes = 0
     for r in roots:
         if not os.path.isdir(r):
             missing.append(r)
@@ -122,10 +143,16 @@ def discover(roots, min_bytes):
                     sz = os.path.getsize(p)
                 except OSError:
                     continue
-                if sz >= min_bytes:
-                    out.append((sz, p))
+                if sz < min_bytes:
+                    continue
+                key = (fn, sz)
+                if key in seen:
+                    dupes += 1
+                    continue
+                seen[key] = p
+                out.append((sz, p))
     out.sort(reverse=True)
-    return out, missing
+    return out, missing, dupes
 
 
 def time_read(fn, reps):
@@ -201,11 +228,28 @@ def measure_file(path, last_turns, reps):
     size_after = os.path.getsize(path)
     grew_during = size_after != size
 
+    # Is this a RESUMED transcript -- one that replays a `message.id`? If so, flags.py's own
+    # disclosed residual applies and the two reads are EXPECTED not to line up, so calling
+    # it MISMATCH would put a documented, bounded residual in the slot reserved for an
+    # unexplained read-path disagreement. That is the same mistake as the GREW case one
+    # level up, and the first run after the residual was documented made it: the largest
+    # transcript in the corpus came back MISMATCH purely because it had been resumed.
+    #
+    # Detected the way flags.py defines it: a turn id that occurs in more than one maximal
+    # consecutive run of assistant entries.
+    occ = FL._turn_occurrences(full["lines"])
+    resumed = len(occ) != len({mid for _i, mid in occ})
+
     # blind mode 3: the window must AGREE with the full read on the turns they share --
     # a question that only has an answer if the file held still while both ran.
     fk, wk = turn_keys(full), turn_keys(win)
     n = win["window"]["turns"]
-    agree = None if grew_during else ((wk == fk[-n:]) if n else (len(fk) == 0))
+    if grew_during:
+        agree = None
+    elif (wk == fk[-n:]) if n else (len(fk) == 0):
+        agree = True
+    else:
+        agree = "residual" if resumed else False
 
     return dict(
         path=path, size=size, size_after=size_after, grew_during=grew_during,
@@ -214,6 +258,7 @@ def measure_file(path, last_turns, reps):
         window_turns=n,
         window_lines=win["window"]["lines_kept"],
         resume_turns=res["window"]["turns"],
+        resumed=resumed,
         full_bytes=full["window"]["bytes_read"],
         win_bytes=win["window"]["bytes_read"],
         res_bytes=res["window"]["bytes_read"],
@@ -240,11 +285,12 @@ def _mb(n):
     return n / 1048576.0
 
 
-def human(rows, last_turns, reps, roots, missing, min_bytes, skipped):
+def human(rows, last_turns, reps, roots, missing, min_bytes, skipped, dupes=0):
     print("WINDOWED vs FULL TRANSCRIPT READ -- the cost of flags.py's read path")
     print()
-    print("corpus: %d transcripts >= %d bytes, largest first (%d smaller skipped)"
-          % (len(rows), min_bytes, skipped))
+    print("corpus: %d transcripts >= %d bytes, largest first (%d smaller skipped, "
+          "%d duplicate copies of a session under another account root dropped)"
+          % (len(rows), min_bytes, skipped, dupes))
     print("window: the newest %d logical assistant turns      reps: %d (median reported)"
           % (last_turns, reps))
     if missing:
@@ -272,11 +318,13 @@ def human(rows, last_turns, reps, roots, missing, min_bytes, skipped):
                  1000 * r["t_full"], 1000 * r["t_win"],
                  ("%.3f" % r["byte_ratio"]) if r["byte_ratio"] is not None else "n/a",
                  ("%.3f" % r["time_ratio"]) if r["time_ratio"] is not None else "n/a",
-                 "" if r["agree"] else ("  GREW" if r["agree"] is None
-                                        else "  MISMATCH")))
+                 "" if r["agree"] is True
+                 else "  GREW" if r["agree"] is None
+                 else "  RESIDUAL" if r["agree"] == "residual" else "  MISMATCH"))
 
     bad = [r for r in rows if r["agree"] is False]
     grew = [r for r in rows if r["agree"] is None]
+    resid = [r for r in rows if r["agree"] == "residual"]
     good = [r for r in rows if r["agree"] is True]
     if grew:
         print()
@@ -290,12 +338,25 @@ def human(rows, last_turns, reps, roots, missing, min_bytes, skipped):
         for r in grew:
             print("   %s  (%d -> %d bytes while measuring)"
                   % (tag(r["path"]), r["size"], r["size_after"]))
+    if resid:
+        print()
+        print("RESUMED TRANSCRIPT, DISCLOSED RESIDUAL -- %d file(s): these replay a"
+              % len(resid))
+        print("`message.id`, so collect_turns merges two occurrences into one turn and the")
+        print("full read's tail is NOT the window's content. Expected, bounded, and")
+        print("documented in read_window's own contract -- NOT the unexplained read-path")
+        print("disagreement MISMATCH is reserved for. Excluded from the figures below so")
+        print("neither label can absorb the other.")
+        for r in resid:
+            print("   %s  (%d turns, %d lines)"
+                  % (tag(r["path"]), r["turns_in_file"], r["lines_in_file"]))
     if bad:
         print()
         print("MISMATCH on %d file(s): the window and the full read disagreed about the "
               "turns" % len(bad))
-        print("they share, and the file did NOT grow -- so this is a real disagreement")
-        print("between the two read paths. Excluded from every figure below -- see blind")
+        print("they share, the file did NOT grow, and it does NOT replay a message.id --")
+        print("so this is a real, unexplained disagreement between the two read paths.")
+        print("Excluded from every figure below -- see blind")
         print("mode 3. A wrong answer does not get to contribute a fast time.")
         for r in bad:
             print("   %s" % tag(r["path"]))
@@ -349,6 +410,12 @@ def human(rows, last_turns, reps, roots, missing, min_bytes, skipped):
         print("   near 1.00 here is the correct answer, not a disappointing one.")
     else:
         print("   none in this corpus.")
+    print()
+    print("THE PER-FILE RATIOS ARE THE REPRODUCIBLE FIGURE, NOT THE MEDIAN. An independent")
+    print("re-run on this box reproduced every per-file ratio to three decimals and got a")
+    print("different corpus median, because the median depends on which sessions happen to")
+    print("be the largest at the moment of the run. Quote a row, or re-run this yourself;")
+    print("do not treat the median as a constant.")
     print()
     print("READ THE BYTES, NOT THE CLOCK, if the two disagree: every file was warmed before")
     print("timing, but wall-clock still carries this box's load and page cache, while the")
@@ -497,6 +564,36 @@ def self_test():
           "control 3: the agreement check REJECTS a window whose turns were tampered "
           "with, so a silently-full or silently-wrong reader would be caught")
 
+    # control 8: a resumed transcript must be labelled RESIDUAL, not MISMATCH.
+    res_lines = (FL._repeat_lines(12) + FL._content_run_lines(6)
+                 + [FL._mk("rm0", [FL._tu("zz1", "Bash", dict(command="echo resumed"))],
+                           parent="gr5", uuid="za9")])
+    p_res = os.path.join(tmp, "resumed.jsonl")
+    with open(p_res, "w") as fh:
+        for ln in res_lines:
+            fh.write(ln + "\n")
+    rr = measure_file(p_res, last_turns=2, reps=1)
+    check(rr["resumed"] is True and rr["agree"] == "residual",
+          "a transcript replaying a message.id is labelled RESIDUAL, not MISMATCH -- the "
+          "slot reserved for an UNEXPLAINED read-path disagreement stays empty")
+    check(measure_file(big, last_turns=10, reps=1)["resumed"] is False,
+          "and a transcript that does not replay one is not labelled resumed, so the "
+          "detector is not simply always true")
+
+    # control 7: discovery must not count one session twice because two account roots hold
+    # a copy of it. Review found 4 such pairs in the real corpus, which weights the median
+    # by directory layout rather than by sessions.
+    da, db = os.path.join(tmp, "ra"), os.path.join(tmp, "rb")
+    for d in (da, db):
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "same-session.jsonl"), "w") as fh:
+            for ln in FL._repeat_lines(6):
+                fh.write(ln + "\n")
+    rows_d, _m, dupes_d = discover([da, db], 1)
+    check(len(rows_d) == 1 and dupes_d == 1,
+          "the same session under two roots is measured ONCE (%d row, %d duplicate "
+          "reported, not hidden)" % (len(rows_d), dupes_d))
+
     # control 5: a file that grows mid-measurement must come back as "no answer", not as a
     # MISMATCH. Forced deterministically by appending from inside the timed section.
     grow = os.path.join(tmp, "grow.jsonl")
@@ -535,7 +632,7 @@ def self_test():
           "control 6: a path is reported as an 8-hex sess- tag and never as the path "
           "itself (fixed input %r -> %s)" % (FIXED, tag(FIXED)))
 
-    rows, missing = discover([os.path.join(tmp, "nope")], 1)
+    rows, missing, _d = discover([os.path.join(tmp, "nope")], 1)
     check(rows == [] and missing,
           "control 4: a ROOTS that does not exist yields no rows and is reported missing, "
           "which is what main() refuses on")
@@ -606,10 +703,11 @@ def main(argv=None):
             else:
                 missing.append(p)
         roots = ["(explicit paths)"]
+        dupes = 0
     else:
         roots = [os.path.expanduser(r.strip()) for r
                  in os.environ.get("ROOTS", DEFAULT_ROOTS).split(":") if r.strip()]
-        found, missing = discover(roots, args.min_bytes)
+        found, missing, dupes = discover(roots, args.min_bytes)
         skipped = max(0, len(found) - args.top)
         paths = [p for _sz, p in found[:args.top]]
 
@@ -653,7 +751,8 @@ def main(argv=None):
                               roots=["(not shown: a root is a path)"],
                               missing=[tag(m) for m in missing], rows=safe), indent=2))
     else:
-        human(rows, args.last_turns, args.reps, roots, missing, args.min_bytes, skipped)
+        human(rows, args.last_turns, args.reps, roots, missing, args.min_bytes, skipped,
+              dupes)
     return 0
 
 

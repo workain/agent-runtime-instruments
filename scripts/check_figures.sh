@@ -88,13 +88,17 @@ PAIRS=(
   # artefact's own line rather than reformatting it is deliberate: a gloss ("1.00 MB against
   # 41.90 MB") is a figure this gate's extractor cannot match to anything, which is how the
   # first draft of this section failed it in eight places at once.
-  'WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.427|samples/bench_window_read.out'
-  'WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475|samples/bench_window_read.out'
-  'WINDOW / FULL, wall-clock    median 0.146   best 0.012   worst 0.317|samples/bench_window_read.out'
-  'RESUME / FULL, bytes read    median 0.097   best 0.015   worst 0.186|samples/bench_window_read.out'
-  'bytes:                FULL 87.7 MB, WINDOW 10.0 MB, RESUME 4.8 MB|samples/bench_window_read.out'
-  'lines fed to json.loads: FULL 30639, WINDOW 4075, RESUME 1892|samples/bench_window_read.out'
+  'WINDOW / FULL, bytes read    median 0.237   best 0.075   worst 0.387|samples/bench_window_read.out'
+  'WINDOW / FULL, lines parsed  median 0.271   best 0.080   worst 0.414|samples/bench_window_read.out'
+  'WINDOW / FULL, wall-clock    median 0.139   best 0.052   worst 0.270|samples/bench_window_read.out'
+  'RESUME / FULL, bytes read    median 0.097   best 0.046   worst 0.161|samples/bench_window_read.out'
+  'bytes:                FULL 43.7 MB, WINDOW 8.0 MB, RESUME 3.7 MB|samples/bench_window_read.out'
+  'lines fed to json.loads: FULL 16307, WINDOW 3336, RESUME 1486|samples/bench_window_read.out'
   'corpus: 10 transcripts >= 524288 bytes, largest first|samples/bench_window_read.out'
+  # The resumed-transcript outcome, which must stay distinguishable from a real MISMATCH for
+  # the same reason the live-growth one must: a documented residual occupying the slot
+  # reserved for an unexplained defect makes the two indistinguishable thereafter.
+  'RESUMED TRANSCRIPT, DISCLOSED RESIDUAL|samples/bench_window_read.out'
   # The live-growth outcome, which must stay distinguishable from a real MISMATCH. Pinned
   # to the SELF-TEST, not to bench_window_read.out: whether a live run happens to catch a
   # session mid-turn is luck, so an artefact of the real corpus cannot be relied on to
@@ -102,8 +106,8 @@ PAIRS=(
   'a file that grew mid-measurement|samples/bench_window_read.selftest.out'
   # and the tuning sweep the default was taken from -- both rows, since the claim is a
   # COMPARISON between them and pinning only the winner would not check it
-  '       1024K         9.97      10            0 of 10|samples/bench_window_read.first-chunk-sweep.out'
-  '        256K        12.41      20           10 of 10|samples/bench_window_read.first-chunk-sweep.out'
+  '       1024K        10.00      10            0 of 10|samples/bench_window_read.first-chunk-sweep.out'
+  '        256K        10.00      20           10 of 10|samples/bench_window_read.first-chunk-sweep.out'
 )
 
 # docs/limits.md is in this list deliberately. A review round found four stale figures in
@@ -225,7 +229,14 @@ EXEMPT=(
   'returns 0 bytes, so'
   # --- ARI#24. Prose glosses of a figure pinned in its artefact's own spelling: the sweep
   # --- table says `256K` and `1024K`, and the pinned rows above are what guard these. ---
-  '256 KB'
+  '256 KB' '128 KB'
+  # --- ARI#24 review findings quoted in the prose as the defects they WERE. These must not
+  # --- match an artefact: the whole point of naming them is that they no longer happen, and
+  # --- the artefact now shows the corrected behaviour. Same rule as '103 transcripts'. ---
+  'it returned 437 for N=400,' 'could **exceed 1** — up to'
+  'xtends its buffer backwards instead: 0'
+  # --- gloss of the pinned per-file row's size column (the largest transcript in the run) ---
+  '42MB'
   # --- API surface, not measurements: a parameter name, a command line, and an example
   # --- ISO-8601 instant in a code block showing how to call read_window(). None of these
   # --- is a reading of anything, and none could appear in an artefact. ---

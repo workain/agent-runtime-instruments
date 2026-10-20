@@ -21,7 +21,8 @@ a window and a full read agree on the turns they share
   ok   -- and resuming from start_offset reproduces the SAME window, call for call -- the defect this replaced disagreed on 26 of 45 real transcripts
   ok   -- the answer is independent of first_chunk (5 reads vs 1) -- only the cost moves
   ok   -- a small first_chunk really did force the growth loop (5 reads), a large one did not (1)
-  ok   -- a 5-turn window reads FEWER bytes than the full file (4783 < 34308) -- the cost claim, in the control rather than only in the prose
+  ok   -- no window reads more than the file even with a 64-byte first chunk forcing the growth loop repeatedly (max read_fraction 1.000 over 12 combinations) -- measured 1.934 before the buffer was extended rather than re-read
+  ok   -- a 5-turn window reads FEWER bytes than the full file (4097 < 34308) -- the cost claim, in the control rather than only in the prose
 
 the resume cursor: two windowed reads across an append == one full read
   ok   -- an unchanged file returns grew=False and an empty window
@@ -66,6 +67,23 @@ agent_reuse_gap: fires on delegable content, silent on orchestration
   ok   -- no threshold -> NOT COMPUTED, with the gap still reported
   ok   -- a FULL read reports its gap exactly (12), a WINDOWED read reports it as a floor (at least 6) -- because only the latter can be hiding an older dispatch
 
+F2: the ten mutants that used to survive this suite
+  ok   -- a pair of commands sitting EXACTLY on the 0.60 retry threshold exists (jaccard 0.600) -- the boundary is reachable, so it can be tested
+  ok   -- and a pair AT the threshold is treated as a retry and is NOT mergeable (examined 1, mergeable 0) -- `>=` not `>`
+  ok   -- a two-tool turn next to a single-Bash turn contributes NO pair; only the single/single pair is examined (1, not 2)
+  ok   -- a TEXT-ONLY assistant turn between two Bash turns is a barrier: 0 pairs examined, so nothing is mergeable across it (got 0)
+  ok   -- an A B A B A loop: longest CONSECUTIVE run 0, but 3 occurrences of one signature within the span -- the second window is what sees it
+  ok   -- and it FIRES on that, with `measure` taken from the in-span window (3) -- so deleting repeated_in_spans now goes red
+  ok   -- a CONTENT run of EXACTLY 3 is delegable-looking at the 3-turn break-even and fires -- `>=` not `>`
+  ok   -- 5 main + 5 sidechain turns: the gap counts the 5 MAIN turns (5) and does not fire at a threshold of 5; counting the sidechain's own turns would make it 10 and fire
+  ok   -- a turn with no tool call classifies as REPORT, not CONTENT
+  ok   -- and a REPORT turn inside a run BREAKS it: longest run 2, not the 4 CONTENT turns either side of it, so the 3-turn gate stays shut
+  ok   -- a `since` window that cut past line 0 reports head_complete=False -- its oldest turn may be a fragment, and saying True would be a promise it cannot keep
+  ok   -- while a full read of the same file reports head_complete=True
+  ok   -- every pair of windowing arguments is refused (3 of 3)
+  ok   -- an offset inside an unterminated final line returns NO bytes and an offset of EOF (got b'', 60) -- there is no complete line at or after it
+  ok   -- while an offset inside the FIRST line still returns the unterminated tail, because a complete line boundary does exist after it
+
 a threshold below 1 is refused by the FUNCTION, not only by the CLI
   ok   -- batchable_bash refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
   ok   -- repeated_invocations refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
@@ -90,7 +108,7 @@ the three states
   ok   -- all three states are reachable from real windows: ['measured', 'not_computed', 'unmeasured']
   ok   -- every flag returns the SAME core key set, so one caller branch works for all three: ('count', 'evidence', 'fingerprint', 'fired', 'flag', 'measure', 'measure_of', 'note', 'overshoot', 'severity', 'source', 'state', 'threshold', 'window')
 
-SELF-TEST PASSED -- 70 checks: the byte arithmetic at every offset, window/full agreement,
+SELF-TEST PASSED -- 86 checks: the byte arithmetic at every offset, window/full agreement,
 a positive AND a negative control for each of the three flags, both sides of each threshold
 boundary, all three states reachable, the resume cursor across an append and a rotation,
 and no raw argument in any evidence row.

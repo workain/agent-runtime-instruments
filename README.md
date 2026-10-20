@@ -161,30 +161,48 @@ these five are *not* "nothing flagged", and a caller that cannot distinguish the
 Measured, not assumed, by `instruments/bench_window_read.py`. The full capture is
 `samples/bench_window_read.out`, over a `corpus: 10 transcripts >= 524288 bytes, largest first`
 on one box. Reading the newest 40 turns instead of the whole file, each line below quoted from
-that artefact — `median` across the corpus, `best` on the largest transcript in it (42MB,
-1166 turns), `worst` on the smallest:
+that artefact. `median`, `best` and `worst` are across that corpus — deliberately not tied to
+a named file, because the corpus is whatever happens to be largest at the moment of the run
+and the largest transcript in this one is excluded from the medians anyway (see the residual
+below):
 
 ```
-   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.427
-   WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475
-   WINDOW / FULL, wall-clock    median 0.146   best 0.012   worst 0.317
+   WINDOW / FULL, bytes read    median 0.237   best 0.075   worst 0.387
+   WINDOW / FULL, lines parsed  median 0.271   best 0.080   worst 0.414
+   WINDOW / FULL, wall-clock    median 0.139   best 0.052   worst 0.270
 ```
 
 The **resume** path — the one a polling caller actually uses — is cheaper again, because it
 reads only what arrived rather than a fixed window:
-`RESUME / FULL, bytes read    median 0.097   best 0.015   worst 0.186`. In absolute terms over
-those files: `bytes:                FULL 87.7 MB, WINDOW 10.0 MB, RESUME 4.8 MB`, and
-`lines fed to json.loads: FULL 30639, WINDOW 4075, RESUME 1892`.
+`RESUME / FULL, bytes read    median 0.097   best 0.046   worst 0.161`. In absolute terms over
+those files: `bytes:                FULL 43.7 MB, WINDOW 8.0 MB, RESUME 3.7 MB`, and
+`lines fed to json.loads: FULL 16307, WINDOW 3336, RESUME 1486`.
+
+**Quote a row, not the median.** An independent re-run on the same box reproduced every
+per-file ratio to three decimals and got a different corpus median, because the median depends
+on which sessions happen to be largest at the moment of the run — the instrument says so in its
+own output. The per-file ratios are the reproducible figure.
 
 One residual, measured rather than described, because it is a property of the *shared* turn
 parser and not of the window: `collect_turns` keys a logical turn by `message.id` and merges
 every entry carrying it, which is right for the split turn it was built for. A **resumed**
 session can replay the same ids much later in the same file — on one real local transcript,
-769 entries apart — and then the full read collapses both occurrences into one turn at the
-earlier position while a window holding only the later one does not. Over 45 real transcripts
-and 675 window/full comparisons that produced **3 disagreements, all in that one file**; the
-self-test reproduces it from a deliberate fixture so the behaviour is pinned rather than merely
-admitted.
+769 entries apart — and then the full read collapses both occurrences into one turn while a
+window holding only the later one does not. **4 of 151** windowing comparisons over 45 real
+transcripts, confined to the resumed files. That is a rate for "the two reads do not line up",
+not for "the window is wrong": the window's own counts are internally consistent, and they are
+what every flag is computed from. The benchmark labels such a file `RESUMED TRANSCRIPT, DISCLOSED RESIDUAL` rather than
+`MISMATCH`, so a documented residual cannot occupy the slot reserved for an unexplained
+defect — on the current corpus that is the single largest transcript, which is why it is
+excluded from the figures above. The self-test reproduces it from a deliberate fixture.
+
+Two things that *were* contract violations, found by review and now gone — both verified over
+those 151 comparisons at eight window sizes: `last_turns=N` could **return more than N turns**
+(it returned 437 for N=400, because the cut was chosen by turn identity and a replayed id
+dragged it back to the file's start), and `read_fraction` could **exceed 1** — up to `1.934`, a
+"window" charging for nearly twice the file, partly from that and partly from the growth loop
+re-reading. The cut is positional now and the loop extends its buffer backwards instead: 0
+over-returns and a maximum `read_fraction` of exactly `1.000`.
 
 Four honest limits on those figures, each of which the instrument reports rather than hides.
 **Wall-clock is the weakest of the three** — it carries one box's load and page cache, so when
@@ -197,9 +215,11 @@ disagreement the `MISMATCH` label is reserved for — a control forces the case 
 (`a file that grew mid-measurement`, in `samples/bench_window_read.selftest.out`), since whether
 a live run happens to catch a session mid-turn is luck. And **the first tail read's size is itself a
 tuned number**: at 256 KB, 10 of 10 transcripts needed a second read
-(`        256K        12.41      20           10 of 10`), so `flags.FIRST_CHUNK` is 1 MB, the
-minimum of the sweep in `samples/bench_window_read.first-chunk-sweep.out`
-(`       1024K         9.97      10            0 of 10`). It is a per-call parameter, because
+(`        256K        10.00      20           10 of 10`), so `flags.FIRST_CHUNK` is 1 MB
+(`       1024K        10.00      10            0 of 10` — one read per file, no growth step).
+Extending the buffer rather than re-reading has since flattened that curve, so the sweep in
+`samples/bench_window_read.first-chunk-sweep.out` now makes 128 KB marginally cheaper in bytes
+and markedly more expensive in syscalls; 1 MB is kept for the property that is stable. It is a per-call parameter, because
 the optimum is a property of how many bytes a turn takes in your own corpus.
 
 ### Which engines are actually supported

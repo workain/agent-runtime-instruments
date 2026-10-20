@@ -1,6 +1,6 @@
 WINDOWED vs FULL TRANSCRIPT READ -- the cost of flags.py's read path
 
-corpus: 10 transcripts >= 524288 bytes, largest first (59 smaller skipped)
+corpus: 10 transcripts >= 524288 bytes, largest first (60 smaller skipped, 0 duplicate copies of a session under another account root dropped)
 window: the newest 40 logical assistant turns      reps: 5 (median reported)
 
 Each row: one real transcript. FULL reads byte 0 to EOF and parses every line.
@@ -10,30 +10,52 @@ caller would have kept -- i.e. what it costs to notice those 40 turns arrived.
 size      turns  lines |   full MB   win MB   res MB | full ms  win ms |   byte   time
         in file        |      read     read     read |  median  median |  ratio  ratio
 --------------------------------------------------------------------------------------
-42MB       1168  13668 |     41.93     0.99     0.65 |  1622.6    19.0 |  0.024  0.012
-13MB        963   4925 |     13.27     0.99     0.61 |   984.3    47.4 |  0.075  0.048
-8MB         434   2704 |      7.54     1.00     0.46 |   733.1    78.7 |  0.133  0.107
-5MB         310   1603 |      5.13     1.00     0.75 |   339.7    53.6 |  0.195  0.158
-4MB         357   1585 |      4.27     1.00     0.45 |   354.5    35.0 |  0.234  0.099
-4MB         354   1750 |      4.16     1.00     0.35 |   151.5    20.5 |  0.240  0.135
-3MB         336   1278 |      3.44     1.00     0.30 |   546.4    91.6 |  0.291  0.168
-3MB         365   1432 |      3.25     1.00     0.38 |   542.2   113.0 |  0.307  0.208
-2MB         194    814 |      2.35     1.00     0.42 |   105.6    33.4 |  0.424  0.317
-2MB         240    880 |      2.32     0.99     0.43 |   325.8    50.8 |  0.427  0.156
+53MB       1186  17247 |     53.37     1.00     0.51 |  1589.0    25.9 |  0.019  0.016  RESIDUAL
+13MB        963   4925 |     13.27     1.00     0.61 |   812.5    42.3 |  0.075  0.052
+8MB         443   2745 |      7.63     1.00     0.41 |   510.8    29.1 |  0.131  0.057
+5MB         310   1603 |      5.13     1.00     0.75 |   201.9    28.2 |  0.195  0.140
+4MB         357   1585 |      4.27     1.00     0.45 |   144.2    19.3 |  0.234  0.134
+4MB         354   1750 |      4.16     1.00     0.35 |    75.5    17.7 |  0.240  0.235
+3MB         336   1278 |      3.44     1.00     0.30 |   273.6    53.7 |  0.291  0.196
+3MB         365   1432 |      3.25     1.00     0.38 |   368.1    99.4 |  0.307  0.270
+3MB         200    976 |      2.76     1.00     0.44 |   391.4    75.2 |  0.362  0.192  GREW
+3MB         269    989 |      2.58     1.00     0.42 |   284.3    39.2 |  0.387  0.138
 
-WHERE A SAVING IS POSSIBLE AT ALL -- the 10 file(s) with MORE than 40 turns:
-   WINDOW / FULL, bytes read    median 0.237   best 0.024   worst 0.427
-   WINDOW / FULL, lines parsed  median 0.271   best 0.027   worst 0.475
-   WINDOW / FULL, wall-clock    median 0.146   best 0.012   worst 0.317
-   RESUME / FULL, bytes read    median 0.097   best 0.015   worst 0.186
-   RESUME / FULL, wall-clock    median 0.090   best 0.007   worst 0.156
+GREW DURING MEASUREMENT -- 1 file(s): the session appended while the three
+reads were running, so the window legitimately saw a turn the full read
+never did. This is NOT a mismatch between the two code paths -- it is a
+live session, and the agreement question has no answer on it. Reported
+separately and excluded from the figures below, so a growth artefact can
+never be mistaken for the defect blind mode 3 looks for.
+   sess-d24c66c8  (2895741 -> 2897700 bytes while measuring)
 
-   over those 10 files: FULL 5706 ms, WINDOW 543 ms, RESUME 361 ms total
-   bytes:                FULL 87.7 MB, WINDOW 10.0 MB, RESUME 4.8 MB
-   lines fed to json.loads: FULL 30639, WINDOW 4075, RESUME 1892
+RESUMED TRANSCRIPT, DISCLOSED RESIDUAL -- 1 file(s): these replay a
+`message.id`, so collect_turns merges two occurrences into one turn and the
+full read's tail is NOT the window's content. Expected, bounded, and
+documented in read_window's own contract -- NOT the unexplained read-path
+disagreement MISMATCH is reserved for. Excluded from the figures below so
+neither label can absorb the other.
+   sess-3ef66434  (1186 turns, 17247 lines)
+
+WHERE A SAVING IS POSSIBLE AT ALL -- the 8 file(s) with MORE than 40 turns:
+   WINDOW / FULL, bytes read    median 0.237   best 0.075   worst 0.387
+   WINDOW / FULL, lines parsed  median 0.271   best 0.080   worst 0.414
+   WINDOW / FULL, wall-clock    median 0.139   best 0.052   worst 0.270
+   RESUME / FULL, bytes read    median 0.097   best 0.046   worst 0.161
+   RESUME / FULL, wall-clock    median 0.097   best 0.034   worst 0.198
+
+   over those 8 files: FULL 2671 ms, WINDOW 329 ms, RESUME 230 ms total
+   bytes:                FULL 43.7 MB, WINDOW 8.0 MB, RESUME 3.7 MB
+   lines fed to json.loads: FULL 16307, WINDOW 3336, RESUME 1486
 
 WHERE IT IS NOT -- the 0 file(s) with 40 turns or fewer:
    none in this corpus.
+
+THE PER-FILE RATIOS ARE THE REPRODUCIBLE FIGURE, NOT THE MEDIAN. An independent
+re-run on this box reproduced every per-file ratio to three decimals and got a
+different corpus median, because the median depends on which sessions happen to
+be the largest at the moment of the run. Quote a row, or re-run this yourself;
+do not treat the median as a constant.
 
 READ THE BYTES, NOT THE CLOCK, if the two disagree: every file was warmed before
 timing, but wall-clock still carries this box's load and page cache, while the

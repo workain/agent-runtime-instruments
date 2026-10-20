@@ -168,26 +168,23 @@ SRC_ARI = "this repository, instruments/measure_token_breakdown.py (ARI#17 signa
 # is reported in `window.chunks` on every call so a caller can see what it actually cost
 # instead of taking this paragraph's word for it.
 #
-# FIRST_CHUNK IS MEASURED, NOT GUESSED, and the first version of this file got it wrong.
-# At 256 KB, every single transcript in the local corpus needed a growth re-read -- 10 of
-# 10 -- so the window cost 256 KB + 1 MB on all of them and the "cost of a window" was
-# really the cost of a bad first guess. `bench_window_read.py --sweep-first-chunk` is that
-# measurement; over the 10 largest local transcripts it reads:
+# FIRST_CHUNK IS MEASURED, NOT GUESSED -- and the measurement moved once under it, which is
+# the more useful thing to record. At 256 KB, every transcript in the local corpus needed a
+# growth step, so the cost of a window was really the cost of a bad first guess; the sweep
+# (`bench_window_read.py --sweep-first-chunk`) put the minimum at 1 MB, which is this value.
 #
-#       64K  12.94 MB, 30 reads, 10 of 10 files grew
-#      128K  14.03 MB, 24 reads, 10 of 10 grew
-#      256K  12.39 MB, 20 reads, 10 of 10 grew
-#      512K  12.92 MB, 14 reads,  4 of 10 grew
-#     1024K   9.97 MB, 10 reads,  0 of 10 grew      <- this value
-#     2048K  19.88 MB, 10 reads,  0 of 10 grew
-#     4096K  35.22 MB, 10 reads,  0 of 10 grew
+# Then the growth loop was changed to EXTEND its buffer backwards rather than re-read from a
+# new offset (see read_window), and that flattened the curve the choice had been made on. On
+# the current corpus 1 MB reads 10.00 MB in 10 reads -- one per file, no growth step -- while
+# 128 KB reads 9.50 MB in 23 reads. So a smaller first chunk is now marginally cheaper in
+# BYTES and markedly more expensive in SYSCALLS, and the 5% byte difference is inside the
+# run-to-run movement of the corpus itself. 1 MB is kept for the property that is stable:
+# one read per file.
 #
-# 1 MB is the minimum of that curve: large enough that a 40-turn window needs one read on
-# every file in the corpus, small enough not to over-read. It is a property of how many
-# bytes a turn takes, so a deployment with much larger or smaller turns should re-run the
-# sweep rather than inherit this -- which is why `read_window` takes `first_chunk` as a
-# parameter. The answer NEVER depends on it, only the cost, and `self_test` asserts exactly
-# that by comparing a 64-byte first chunk against a 4 MB one.
+# Re-run the sweep rather than inheriting either number. The optimum is a property of how
+# many bytes a turn takes in a given corpus, which is why `first_chunk` is a per-call
+# parameter -- and `self_test` asserts the ANSWER never depends on it, only the cost, by
+# comparing a 64-byte first chunk against a 4 MB one.
 FIRST_CHUNK = 1024 * 1024
 GROWTH = 4
 
@@ -220,6 +217,40 @@ def _read_from(path, off, size):
     return raw[nl + 1:], off + nl                # first byte after that newline
 
 
+def _split_raw(raw, base):
+    """(lines, absolute byte offset of each line) from raw bytes.
+
+    TWO DEFECTS THIS REPLACES, both found by review, both in the same mistake: deriving a
+    byte position from DECODED text.
+
+      1. The offset of the first kept line was computed as
+         `sum(len(line.encode()) + 1 for line in dropped)`. `decode(..., "replace")` is not
+         length-preserving -- one invalid byte becomes U+FFFD, which re-encodes to THREE
+         bytes -- so a single 0xff in a dropped line pushed `start_offset` two bytes past
+         the line it names, far enough that `_read_from` skipped it and the window's oldest
+         turn was silently lost on resume. The `+ 1` was wrong in the other direction on
+         CRLF, where `splitlines()` consumes two bytes: measured -197 over 200 short lines.
+         Offsets are now READ OFF the raw bytes, so there is no arithmetic to be wrong.
+
+      2. `str.splitlines()` splits on more than `\n` -- `\r`, `\v`, `\f`, U+2028, U+2029.
+         JSONL is newline-delimited and those characters occur INSIDE JSON strings, so
+         splitlines() could cut one valid line into two invalid halves. Splitting the raw
+         bytes on b"\n" is both the correct reading of the format and the only split whose
+         offsets are knowable. A trailing `\r` is left on the line and neither
+         `json.loads` nor `collect_turns`' own `.strip()` minds it.
+    """
+    lines, offsets = [], []
+    pos = 0
+    parts = raw.split(b"\n")
+    if parts and parts[-1] == b"" and raw.endswith(b"\n"):
+        parts.pop()                      # the empty tail a trailing newline leaves behind
+    for chunk in parts:
+        lines.append(chunk.decode("utf-8", "replace"))
+        offsets.append(base + pos)
+        pos += len(chunk) + 1
+    return lines, offsets
+
+
 def _assistant_mids(lines):
     """[(line index, logical turn id)] for the assistant entries among `lines`, in order.
 
@@ -249,13 +280,31 @@ def _assistant_mids(lines):
     return out
 
 
-def _distinct_in_order(pairs):
-    seen, order = set(), []
-    for _, mid in pairs:
-        if mid not in seen:
-            seen.add(mid)
-            order.append(mid)
-    return order
+def _turn_occurrences(lines):
+    """[(first line index, turn id)] -- one entry per maximal CONSECUTIVE run of assistant
+    entries sharing a `message.id`.
+
+    POSITIONAL, and that is the whole point. The previous version collected distinct ids in
+    order of FIRST appearance and then cut at the first line carrying any kept id -- which
+    on a resumed transcript, where the same `message.id` is replayed much later, jumped the
+    cut back to the file's beginning. Measured consequences, both of them contract
+    violations rather than slightly-off answers: `last_turns=400` returned 437 turns, and
+    `read_fraction` came back as 1.659 -- a "window" that read 1.66x the whole file, in the
+    very statistic the cost claim is made in -- while still reporting `head_complete: True`.
+
+    Grouping by consecutive run instead makes the cut a position near the end of what was
+    read, so `last_turns=N` can no longer return more than N turn-occurrences and
+    `read_fraction` can no longer exceed 1. It does not make a replayed id vanish: if two
+    occurrences of one id both land in the window, `collect_turns` still merges them and the
+    window holds FEWER than N turns. So the contract is "at most N", which is what
+    read_window's docstring now says, and the residual is bounded rather than unbounded.
+    """
+    occ = []
+    for i, mid in _assistant_mids(lines):
+        if occ and occ[-1][1] == mid:
+            continue
+        occ.append((i, mid))
+    return occ
 
 
 def _first_ts(lines):
@@ -325,21 +374,41 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
     `window` block so that mistake is visible rather than available.
 
     DISCLOSED RESIDUAL: A RESUMED TRANSCRIPT CAN REPEAT A `message.id`, and then a window
-    and a full read legitimately disagree. `collect_turns` keys a logical turn by
-    `message.id` and MERGES every entry carrying that id -- which is right for the split
-    turn it was built for, where the entries are adjacent. A resumed or branched session
-    can replay the same API response ids much later in the same file: measured on one real
-    local transcript, ids recurring 769 entries apart. The full read then collapses both
-    occurrences into ONE turn sitting at the earlier position, while a window containing
-    only the later occurrence sees it at the later position -- so the full read's tail is
-    not the window's content, and arguably the full read is the misleading one.
+    and a full read legitimately disagree about the turns they appear to share.
+    `collect_turns` keys a logical turn by `message.id` and MERGES every entry carrying
+    that id -- right for the split turn it was built for, where the entries are adjacent. A
+    resumed or branched session can replay the same API response ids much later in the same
+    file: measured 769 entries apart on a real local transcript. The full read then
+    collapses both occurrences into ONE turn sitting at the earlier position, so its tail is
+    not the window's content -- and in that comparison the full read is the one doing
+    something strange.
 
-    Measured rate, rather than described: over 45 real transcripts and 675 window/full
-    comparisons at five window sizes and three chunk sizes, this produced 3 disagreements,
-    all in that single resumed file. It is a property of the shared `collect_turns` key and
-    not of the windowing, so it is stated here instead of being worked around -- and
-    `self_test` reproduces it from a deliberate fixture, so the behaviour is pinned rather
-    than merely admitted.
+    WHAT THE BOUND ACTUALLY IS, which matters more than the rate -- and the rate alone was
+    how an earlier draft of this paragraph understated it. Two contract violations existed
+    and are now gone, each verified over 151 windowing comparisons on 45 real transcripts at
+    eight window sizes (1 to 400):
+
+      * `last_turns=N` RETURNED MORE THAN N TURNS. The cut was chosen by turn IDENTITY, so a
+        replayed id in the kept set also appeared near the file's start and dragged the cut
+        back there: `last_turns=400` returned 437 turns. `_turn_occurrences` makes the cut
+        POSITIONAL. Now 0 over-returns, from any window size, on any file tested.
+      * `read_fraction` EXCEEDED 1 -- up to 1.934, a "window" charging for almost twice the
+        file. Partly the same cause and partly the growth loop re-reading from each new
+        offset. The loop now extends its buffer backwards instead. Now 0 cases above 1.0,
+        maximum observed exactly 1.000.
+
+    WHAT REMAINS is bounded, and is only this: when two occurrences of one replayed id both
+    land inside the window, `collect_turns` merges them, so the window holds FEWER turns than
+    asked for and its contents are not a suffix of the full read's turn list. 4 of 151
+    comparisons, confined to the resumed files. That is a rate for "the two reads do not line
+    up", NOT for "the window is wrong": the window's own counts are internally consistent,
+    and they are what every flag is computed from. The resume cursor round-trips exactly --
+    0 disagreements over 77 round-trips on the same corpus.
+
+    Not worked around, deliberately: the key belongs to `collect_turns`, and changing it
+    there would modify the file ARI#24's backward-compatibility criterion requires to stay
+    untouched. `self_test` reproduces the disagreement from a deliberate fixture, so the
+    behaviour is pinned rather than merely admitted.
 
     WHY `last_turns=N` READS N+1 TURNS AND THEN THROWS ONE AWAY. One logical turn is written
     as several JSONL entries (a thinking entry, then one per tool_use, all repeating the same
@@ -379,35 +448,63 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
         win["start_offset"] = start
         win["grew"] = len(raw) > 0
         win["spans_are_local"] = start > 0
-        lines = raw.decode("utf-8", "replace").splitlines()
+        lines, offsets = _split_raw(raw, start)
         win["lines_total"] = len(lines)
-        kept = lines
+        kept, cut = lines, 0
     # ---- mode: full. Byte 0 to EOF -- the batch path, unchanged in behaviour. ----
     elif not any(given):
         with open(path, "rb") as fh:
             raw = fh.read()
         win["chunks"] = 1
         win["bytes_read"] = len(raw)
-        kept = raw.decode("utf-8", "replace").splitlines()
+        kept, offsets = _split_raw(raw, 0)
+        lines, cut = kept, 0
         win["lines_total"] = len(kept)
     # ---- modes: last_turns / since. Tail read, grown until the window is satisfied. ----
     else:
         win["mode"] = "last_turns" if last_turns is not None else "since"
         win["windowed"] = True
+        # THE BUFFER IS EXTENDED BACKWARDS, NOT RE-READ. The first version re-read from a
+        # new, larger offset each time the window was not yet satisfied, so the bytes it
+        # charged for could exceed the file: measured up to read_fraction 1.934 on a real
+        # transcript (1 MB first read, then the whole 1.12 MB file). Every one of those
+        # returned the right turns, so it was honest accounting of a real cost rather than a
+        # wrong answer -- but a "window" that reads 1.9x the file undercuts the entire reason
+        # this read path exists, and the fix is to keep what was already read and fetch only
+        # the part in front of it. `bytes_read` can now exceed the file only by the one-byte
+        # line-boundary probe per growth step, and `read_fraction <= 1` holds in practice.
         chunk = first_chunk or FIRST_CHUNK
         total_read = 0
         chunks = 0
+        buf = b""                # bytes from `probe` to EOF, accumulated front-to-back
+        probe = size             # where `buf` currently begins
         while True:
             chunks += 1
-            raw, start = _read_from(path, max(0, size - chunk), size)
-            total_read += len(raw)
-            lines = raw.decode("utf-8", "replace").splitlines()
+            want = max(0, size - chunk)
+            # one byte before, so the line-boundary test below has something to test
+            new_probe = max(0, want - 1) if want > 0 else 0
+            if new_probe < probe:
+                with open(path, "rb") as fh:
+                    fh.seek(new_probe)
+                    piece = fh.read(probe - new_probe)
+                buf = piece + buf
+                total_read += len(piece)
+                probe = new_probe
+            # first COMPLETE line at or after `want`, by the same rule as _read_from
+            if probe == 0:
+                start, body = 0, buf
+            elif buf[:1] == b"\n":
+                start, body = probe + 1, buf[1:]
+            else:
+                nl = buf.find(b"\n")
+                start, body = ((size, b"") if nl < 0
+                               else (probe + nl + 1, buf[nl + 1:]))
+            lines, offsets = _split_raw(body, start)
             at_bof = start == 0
             if last_turns is not None:
-                pairs = _assistant_mids(lines)
-                mids = _distinct_in_order(pairs)
+                occ = _turn_occurrences(lines)
                 # N+1, so the Nth-newest turn is provably whole. See the docstring.
-                enough = len(mids) >= last_turns + 1
+                enough = len(occ) >= last_turns + 1
             else:
                 ft = _first_ts(lines)
                 enough = ft is not None and ft < since
@@ -420,17 +517,18 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
         win["lines_total"] = len(lines)
 
         if last_turns is not None:
-            pairs = _assistant_mids(lines)
-            mids = _distinct_in_order(pairs)
-            if len(mids) > last_turns:
-                keep = set(mids[-last_turns:])
-                cut = next(i for i, mid in pairs if mid in keep)
+            occ = _turn_occurrences(lines)
+            if len(occ) > last_turns:
+                # The FIRST LINE of the Nth-from-last turn OCCURRENCE -- a position, not the
+                # first line carrying a kept id. See _turn_occurrences for what the identity
+                # form did on a resumed transcript.
+                cut = occ[-last_turns][0]
                 kept = lines[cut:]
                 win["head_complete"] = True
             else:
                 # The whole file has <= N turns. start is 0 here (the loop only stops early
                 # when `enough`), so nothing was cut and nothing can be partial.
-                kept = lines
+                kept, cut = lines, 0
                 win["head_complete"] = at_bof
         else:
             cut = len(lines)
@@ -462,16 +560,17 @@ def read_window(path, last_turns=None, since=None, from_offset=None, first_chunk
     win["lines_kept"] = len(kept)
     # START_OFFSET IS THE FIRST KEPT LINE, NOT THE FIRST LINE READ. The two differ by
     # whatever the trim discarded, and conflating them was a real defect: a caller that
-    # took `start_offset` as "where this window begins" and passed it back as
-    # `from_offset` got back the trimmed turns as well. Measured on 45 real transcripts:
-    # the resumed read disagreed with its own window on 26 of them. The raw read position
-    # is still reported, as `read_offset`, because it is what the cost figures are about.
+    # took `start_offset` as "where this window begins" and passed it back as `from_offset`
+    # got back the trimmed turns as well -- it disagreed with its own window on 26 of 45
+    # real transcripts. The raw read position is still reported, as `read_offset`, because
+    # it is what the cost figures are about.
+    #
+    # LOOKED UP, NOT COMPUTED. The first version of this fix added up the re-encoded
+    # lengths of the dropped lines, which is wrong on any byte that does not survive a
+    # decode/encode round trip and wrong again on CRLF -- see _split_raw. `offsets` is read
+    # off the raw bytes, so the right answer is an index rather than a sum.
     win["read_offset"] = win["start_offset"]
-    dropped = win["lines_total"] - win["lines_kept"]
-    if dropped > 0:
-        win["start_offset"] += sum(len(ln.encode("utf-8", "surrogateescape")) + 1
-                                   for ln in (lines[:dropped] if win["mode"] != "full"
-                                              else []))
+    win["start_offset"] = offsets[cut] if cut < len(offsets) else size
     win["read_fraction"] = (win["bytes_read"] / size) if size else None
     turns, stats = MTB.collect_turns(kept)
     win["turns"] = len(turns)
@@ -556,6 +655,36 @@ def _flag(name, state, rows, threshold, window, source, note, measure=0, measure
     if extra:
         out.update(extra)
     return out
+
+
+def public_label(label):
+    """A tool label safe to PUBLISH, with any MCP server segment removed.
+
+    `measure_token_breakdown.call_signature` returns the tool's own name as the label for
+    everything except Bash, and justifies publishing it in a specific way: "which this file
+    already publishes in BY TOOL, so no new surface is opened." That justification is sound
+    THERE and does not transfer HERE -- this module prints no BY TOOL table, and its whole
+    premise is that its output is shipped to a monitoring process that may log it.
+
+    Review found the consequence on a real transcript, unprompted: a full
+    `mcp__<fleet-control-server>__<verb>` name sitting in an evidence row -- and
+    `scripts/scrub_check.sh` reports such a string as `FINDING [internal MCP servers]`,
+    which was confirmed by planting one. So this module was publishing the private service
+    names that the comment above MCP_PREFIX says it refuses to publish, two hundred lines
+    apart. (The real name is not written out here either, for the same reason -- writing it
+    into this docstring as the example tripped the scrubber on the very fix for it.)
+
+    `mcp__<server>__<verb>` therefore becomes `mcp:<verb>`: the verb is what the signal is
+    about ("which call repeated"), the server is the site-specific part, and nothing about
+    the DETECTION changes -- matching still happens over the full digest of the untouched
+    arguments, and `call_keys` are not rewritten. Only what crosses the boundary is
+    narrowed. A non-MCP name is a closed public vocabulary (Bash:<cluster>, Read, Edit, ...)
+    and is passed through.
+    """
+    if not isinstance(label, str):
+        return label
+    short = _strip_mcp(label)
+    return ("mcp:" + short) if short != label else label
 
 
 def _empty(window):
@@ -714,7 +843,16 @@ def is_pure_tool_result(row):
 def load_lines(lines):
     """alm#831 analyze_batching.py::load, taking LINES instead of a path.
 
-    The only change is the input: the body is the original. This is the windowing adaptation
+    THREE changes, not one, and review was right that the previous docstring claimed only
+    the first. (a) It takes LINES instead of a path -- the windowing adaptation. (b) An
+    `isinstance(d, dict)` guard, because a window can legitimately contain a line holding a
+    bare JSON scalar where the upstream census, reading whole files it had already filtered,
+    never met one. (c) `b.get('input', {}).get('command','')` became the `isinstance(inp,
+    dict)` form: upstream raises AttributeError when `input` is a bare string, which is
+    correct for a census that wants to know, and wrong for a library a watchdog calls, so
+    this returns `''` instead. Both (b) and (c) are HARDENINGS that change behaviour only on
+    input upstream would have crashed on, and both are now named here rather than described
+    as "no change". This is the windowing adaptation
     -- the parentUuid graph is rebuilt over the window's rows, which is sound because a pair
     both of whose members are in the window has its whole chain in the window too. The one
     thing lost is a pair anchored at a turn OLDER than the window, and that pair is outside
@@ -873,7 +1011,10 @@ def batchable_bash(win, threshold=None):
         if barrier:
             continue
         for nx in nxts:
-            if (m, nx) in seen_pair or nx not in turns:
+            # `nx not in turns` was dead -- next_tool_turn only ever appends a mid it
+            # looked up in `turns`. Removed rather than left as a guard that reads like a
+            # real possibility.
+            if (m, nx) in seen_pair:
                 continue
             seen_pair.add((m, nx))
             a, b = turns[m], turns[nx]
@@ -957,13 +1098,15 @@ def repeated_invocations(win, threshold=None):
     turns = win["turns"]
     calls = sum(len(t["call_keys"]) for t in turns)
     rows = []
+    # `public_label` on the way OUT only: detection still compares the full digest of the
+    # untouched arguments, and `call_keys` are not rewritten. See public_label.
     for thread, rec in MTB.repeated_runs(turns).items():
         for lab, sig, n in rec["runs"]:
             rows.append(dict(window="consecutive", thread=thread, span=None,
-                             label=lab, fingerprint=sig[:8], count=n))
+                             label=public_label(lab), fingerprint=sig[:8], count=n))
     for idx, lab, sig, n in MTB.repeated_in_spans(turns, win["stats"]["real_user_turns"]):
         rows.append(dict(window="span", thread=None, span=idx,
-                         label=lab, fingerprint=sig[:8], count=n))
+                         label=public_label(lab), fingerprint=sig[:8], count=n))
 
     if calls == 0:
         # The same distinction measure_token_breakdown.py draws: zero tool calls is not "no
@@ -1185,8 +1328,23 @@ def agent_reuse_gap(win, threshold=None, min_content_run=MIN_CONTENT_RUN,
     # there would hedge a number that is exact.
     gap_is_floor = (not dispatch_seen) and w["spans_are_local"]
 
-    longest, cur = 0, 0
-    for c in classes:
+    # alm#833's run is "a CONTIGUOUS RUN OF CONTENT TURNS INSIDE A SPAN", and the "inside a
+    # span" is load-bearing, not decoration: its census_c2_runs.py builds runs with
+    # `for s in spans:` and resets the accumulator at every span boundary, because the unit
+    # being priced is one brief handed off once -- and an operator prompt arriving mid-run
+    # means the parent was addressed again, so what follows is a new brief rather than more
+    # of the same one.
+    #
+    # This ran the accumulator over the whole window with no reset, which merged runs across
+    # an operator prompt into one. The direction mattered: it made runs LONGER, so
+    # `delegable_looking` was true more often and the gate opened more readily than the
+    # definition being cited warranted. Found by review; the turn records already carried
+    # `span`, so the correct unit was available the whole time.
+    longest, cur, prev_span = 0, 0, None
+    for t, c in zip(main, classes):
+        if t["span"] != prev_span:
+            cur = 0                     # a real user turn intervened: new brief, new run
+            prev_span = t["span"]
         cur = cur + 1 if c == 'CONTENT' else 0
         longest = max(longest, cur)
 
@@ -1807,6 +1965,15 @@ def self_test():
     check(w_small["window"]["chunks"] > 1 and w_big["window"]["chunks"] == 1,
           "a small first_chunk really did force the growth loop (%d reads), a large one "
           "did not (%d)" % (w_small["window"]["chunks"], w_big["window"]["chunks"]))
+    # read_fraction <= 1: the growth loop must EXTEND its buffer, not re-read from a new
+    # offset. A tiny first_chunk forces many growth steps, which is the shape that used to
+    # charge for the file several times over.
+    fr = [read_window(p, last_turns=n, first_chunk=fc)["window"]["read_fraction"]
+          for n in (1, 5, 20, 60) for fc in (64, 512, 8192)]
+    check(max(fr) <= 1.0,
+          "no window reads more than the file even with a 64-byte first chunk forcing the "
+          "growth loop repeatedly (max read_fraction %.3f over %d combinations) -- measured "
+          "1.934 before the buffer was extended rather than re-read" % (max(fr), len(fr)))
     check(read_window(p, last_turns=5, first_chunk=1024)["window"]["bytes_read"]
           < full["window"]["bytes_read"],
           "a 5-turn window reads FEWER bytes than the full file (%d < %d) -- the cost "
@@ -1996,6 +2163,170 @@ def self_test():
           "a FULL read reports its gap exactly (%d), a WINDOWED read reports it as a floor "
           "(at least %d) -- because only the latter can be hiding an older dispatch"
           % (full_gap["turns_since_dispatch"], win_gap["turns_since_dispatch"]))
+
+    # ---- F2: the ten mutants that used to survive -----------------------------------------
+    #
+    # An independent review mutated this file 36 ways and found 10 defects that left this
+    # suite GREEN. Each control below is the distinguishing input for one of them, and each
+    # asserts the ORIGINAL behaviour -- so the mutant it was written for now goes red. This
+    # block exists because a suite that cannot fail is decoration, and these ten were the
+    # part of it that could not.
+    print()
+    print("F2: the ten mutants that used to survive this suite")
+
+    # 1. alm#831's retry rule is `jc >= RETRY_JACCARD`, not `>`. Jaccard exactly 3/5 = 0.60.
+    jc_a, jc_b = "zzz1 zzz2 zzz3 zzz4", "zzz1 zzz2 zzz3 zzz5"
+    check(abs(jaccard(jc_a, jc_b) - RETRY_JACCARD) < 1e-9,
+          "a pair of commands sitting EXACTLY on the %.2f retry threshold exists (jaccard "
+          "%.3f) -- the boundary is reachable, so it can be tested"
+          % (RETRY_JACCARD, jaccard(jc_a, jc_b)))
+    p_eq = _write(tmp, "jc_eq.jsonl", [
+        _mk("e0", [_tu("ec0", "Bash", dict(command=jc_a))], uuid="ea0"),
+        _res("er0", "ea0", "ec0", "nothing specific"),
+        _mk("e1", [_tu("ec1", "Bash", dict(command=jc_b))], parent="er0", uuid="ea1"),
+        _res("er1", "ea1", "ec1", "nothing specific")])
+    f_eq = batchable_bash(read_window(p_eq), threshold=1)
+    check(f_eq["pairs_examined"] == 1 and f_eq["measure"] == 0,
+          "and a pair AT the threshold is treated as a retry and is NOT mergeable "
+          "(examined %d, mergeable %d) -- `>=` not `>`"
+          % (f_eq["pairs_examined"], f_eq["measure"]))
+
+    # 2. BOTH turns of a pair must be a single tool call AND a single Bash call.
+    p_two = _write(tmp, "twotool.jsonl", [
+        _mk("t0", [_tu("tc0", "Bash", dict(command="wc -l /srv/a.txt")),
+                   _tu("tc0b", "Read", dict(file_path="/srv/b.txt"))], uuid="ta0"),
+        _res("tr0", "ta0", "tc0", "7"),
+        _mk("t1", [_tu("tc1", "Bash", dict(command="wc -l /srv/c.txt"))],
+            parent="tr0", uuid="ta1"),
+        _res("tr1", "ta1", "tc1", "9"),
+        _mk("t2", [_tu("tc2", "Bash", dict(command="wc -l /srv/d.txt"))],
+            parent="tr1", uuid="ta2"),
+        _res("tr2", "ta2", "tc2", "11")])
+    f_two = batchable_bash(read_window(p_two), threshold=1)
+    check(f_two["pairs_examined"] == 1,
+          "a two-tool turn next to a single-Bash turn contributes NO pair; only the "
+          "single/single pair is examined (%d, not 2)" % f_two["pairs_examined"])
+
+    # 3. alm#831's BARRIER: a text-only assistant turn between two Bash turns kills the pair.
+    #    Review established this is the only barrier that is load-bearing -- the `user_turn`
+    #    barrier cannot remove a pair in either implementation, because next_tool_turn stops
+    #    descending at a real user turn and so returns an empty `found` anyway. The
+    #    load-bearing one was the untested one.
+    p_bar = _write(tmp, "barrier.jsonl", [
+        _mk("b0", [_tu("bc0", "Bash", dict(command="wc -l /srv/a.txt"))], uuid="ba0"),
+        _res("br0", "ba0", "bc0", "7"),
+        _mk("b1", [dict(type="text", text="let me think about that")],
+            parent="br0", uuid="ba1"),
+        _mk("b2", [_tu("bc2", "Bash", dict(command="wc -l /srv/z.txt"))],
+            parent="ba1", uuid="ba2"),
+        _res("br2", "ba2", "bc2", "9")])
+    f_bar = batchable_bash(read_window(p_bar), threshold=1)
+    check(f_bar["state"] == "unmeasured" and f_bar["pairs_examined"] == 0,
+          "a TEXT-ONLY assistant turn between two Bash turns is a barrier: 0 pairs "
+          "examined, so nothing is mergeable across it (got %d)" % f_bar["pairs_examined"])
+
+    # 4. signal 2's SECOND window. `A B A B A` has no consecutive run longer than 1 and
+    #    still ran A three times inside one span -- the case repeated_invocations' own
+    #    docstring cites and the suite had no positive control for. The 9-identical-Read
+    #    fixture reports 9 by either window, so deleting repeated_in_spans left it green.
+    ab, parent = [], None
+    for i in range(5):
+        nm = "Read" if i % 2 == 0 else "Grep"
+        inp = dict(file_path="/srv/loop") if i % 2 == 0 else dict(pattern="loop")
+        ab.append(_mk("ab%d" % i, [_tu("abc%d" % i, nm, inp)], parent=parent,
+                      uuid="aba%d" % i))
+        ab.append(_res("abr%d" % i, "aba%d" % i, "abc%d" % i, "ok"))
+        parent = "abr%d" % i
+    p_ab = _write(tmp, "alternating.jsonl", ab)
+    f_ab = repeated_invocations(read_window(p_ab), threshold=2)
+    check(f_ab["consecutive_longest"] <= 1 and f_ab["in_span_max"] >= 3,
+          "an A B A B A loop: longest CONSECUTIVE run %d, but %d occurrences of one "
+          "signature within the span -- the second window is what sees it"
+          % (f_ab["consecutive_longest"], f_ab["in_span_max"]))
+    check(f_ab["fired"] and f_ab["measure"] == f_ab["in_span_max"],
+          "and it FIRES on that, with `measure` taken from the in-span window (%d) -- so "
+          "deleting repeated_in_spans now goes red" % f_ab["measure"])
+
+    # 5. alm#833's break-even is `>= min_content_run`, not `>`. A run of EXACTLY 3 counts.
+    p_e3 = _write(tmp, "exactly3.jsonl", _content_run_lines(3))
+    g_e3 = agent_reuse_gap(read_window(p_e3), threshold=1, min_content_run=3)
+    check(g_e3["longest_content_run"] == 3 and g_e3["delegable_looking"] is True
+          and g_e3["fired"] is True,
+          "a CONTENT run of EXACTLY 3 is delegable-looking at the 3-turn break-even and "
+          "fires -- `>=` not `>`")
+
+    # 6. SIDECHAIN turns are excluded from the gap: a sidechain IS a subagent doing work,
+    #    so counting its turns as turns-without-a-subagent inverts the signal.
+    side, parent = list(_content_run_lines(5)), "gr4"
+    for i in range(5):
+        side.append(_mk("sm%d" % i, [_tu("sc%d" % i, "Bash",
+                                         dict(command="grep -rn side%d ." % i))],
+                        parent=parent, uuid="sa%d" % i, sidechain=True))
+        side.append(_res("sr%d" % i, "sa%d" % i, "sc%d" % i, "ok"))
+        parent = "sr%d" % i
+    p_side = _write(tmp, "sidechain.jsonl", side)
+    g_side = agent_reuse_gap(read_window(p_side), threshold=5)
+    check(g_side["main_turns"] == 5 and g_side["turns_since_dispatch"] == 5
+          and g_side["fired"] is False,
+          "5 main + 5 sidechain turns: the gap counts the 5 MAIN turns (%d) and does not "
+          "fire at a threshold of 5; counting the sidechain's own turns would make it 10 "
+          "and fire" % g_side["turns_since_dispatch"])
+
+    # 7. alm#833's REPORT class: a turn with no tool call is the agent talking to its
+    #    operator, is non-delegable by construction, and BREAKS a content run.
+    check(turn_class(set()) == 'REPORT' and turn_class({"Bash"}) == 'CONTENT',
+          "a turn with no tool call classifies as REPORT, not CONTENT")
+    rep = list(_content_run_lines(2))
+    rep.append(_mk("rep1", [dict(type="text", text="here is what I found")],
+                   parent="gr1", uuid="repa1"))
+    rep += [ln.replace('"gm', '"hm').replace('"ga', '"ha').replace('"gc', '"hc')
+              .replace('"gr', '"hr') for ln in _content_run_lines(2)]
+    p_rep = _write(tmp, "report.jsonl", rep)
+    g_rep = agent_reuse_gap(read_window(p_rep), threshold=1, min_content_run=3)
+    check(g_rep["longest_content_run"] == 2 and g_rep["fired"] is False,
+          "and a REPORT turn inside a run BREAKS it: longest run %d, not the 4 CONTENT "
+          "turns either side of it, so the 3-turn gate stays shut"
+          % g_rep["longest_content_run"])
+
+    # 8. a `since` window whose cut lands past line 0 cannot promise a whole oldest turn.
+    #    head_complete=False was asserted nowhere.
+    s_hc = read_window(p4, since="2026-10-20T00:08:00Z", first_chunk=10 ** 7)
+    check(s_hc["window"]["head_complete"] is False,
+          "a `since` window that cut past line 0 reports head_complete=False -- its oldest "
+          "turn may be a fragment, and saying True would be a promise it cannot keep")
+    check(read_window(p4)["window"]["head_complete"] is True,
+          "while a full read of the same file reports head_complete=True")
+
+    # 9. two windowing arguments is not a window, and is refused rather than silently
+    #    resolved in favour of whichever the code tests first.
+    two_refused = 0
+    for kw in (dict(last_turns=2, since="2026-10-20T00:00:00Z"),
+               dict(last_turns=2, from_offset=0),
+               dict(since="2026-10-20T00:00:00Z", from_offset=0)):
+        try:
+            read_window(p4, **kw)
+        except ValueError:
+            two_refused += 1
+    check(two_refused == 3,
+          "every pair of windowing arguments is refused (%d of 3)" % two_refused)
+
+    # 10. _read_from's `nl < 0` branch: an offset landing inside an UNTERMINATED final line
+    #     has no complete line at or after it, so the answer is "nothing", not "that
+    #     fragment". The offset sweep above runs on a file ending in a newline, so this
+    #     branch was never entered.
+    p_unterm = _write(tmp, "unterm.jsonl", [])
+    with open(p_unterm, "w") as fh:
+        fh.write('{"type":"assistant","uuid":"u1"}\n{"type":"assistant","trunca')
+    sz = os.path.getsize(p_unterm)
+    raw_in, start_in = _read_from(p_unterm, sz - 3, sz)
+    check(raw_in == b"" and start_in == sz,
+          "an offset inside an unterminated final line returns NO bytes and an offset of "
+          "EOF (got %r, %d) -- there is no complete line at or after it"
+          % (raw_in[:12], start_in))
+    raw_ok, start_ok = _read_from(p_unterm, 5, sz)
+    check(raw_ok.startswith(b'{"type":"assistant","trunca'),
+          "while an offset inside the FIRST line still returns the unterminated tail, "
+          "because a complete line boundary does exist after it")
 
     # ---- control: the library refuses what the CLI refuses --------------------------------
     print()
