@@ -687,6 +687,35 @@ def public_label(label):
     return ("mcp:" + short) if short != label else label
 
 
+def public_thread(thread):
+    """A thread label safe to PUBLISH: the main thread by name, a sidechain by TAG.
+
+    The second half of F4, found while answering the reviewer's own follow-up question and
+    very nearly missed. `repeated_invocations` takes its `thread` from
+    `measure_token_breakdown.repeated_runs`, which keys sidechain threads by `agent_key()` --
+    the transcript's `attributionAgent`, i.e. the SUBAGENT PROFILE NAME. Two profile names
+    in this box's own corpus match `scripts/scrub_check.sh`'s `internal fleet-control
+    product` pattern, 912 occurrences between them, so a sidechain repeat from such a thread
+    published a string this repository refuses -- exactly the F4 defect, in a field the F4
+    fix did not touch. A 2665-row sweep missed it because it needs a sidechain thread AND a
+    repeat AND that profile; the leak is rare, not absent, and rare is worse because it
+    survives a sweep.
+
+    A sidechain therefore becomes `sidechain:<8 hex>` of its profile name -- the same scheme
+    `anonymise()` and `bash_cluster()`'s `(other)` fingerprint already use here, and it keeps
+    what the signal actually needs ("which thread was looping", stably, across calls and
+    runs) while naming no profile. The main thread and the "type not recorded" placeholder
+    are closed literals from measure_token_breakdown.py and pass through.
+
+    Grouping is NOT affected: `repeated_runs` buckets by the real key internally and this
+    renames only what crosses the boundary.
+    """
+    if not isinstance(thread, str) or thread in (MTB.MAIN, MTB.NO_AGENT_TYPE):
+        return thread
+    return "sidechain:" + hashlib.sha256(
+        thread.encode("utf-8", "surrogateescape")).hexdigest()[:8]
+
+
 def _empty(window):
     """Is there nothing in this window to look at at all?"""
     return window["turns"] == 0
@@ -1102,8 +1131,9 @@ def repeated_invocations(win, threshold=None):
     # untouched arguments, and `call_keys` are not rewritten. See public_label.
     for thread, rec in MTB.repeated_runs(turns).items():
         for lab, sig, n in rec["runs"]:
-            rows.append(dict(window="consecutive", thread=thread, span=None,
-                             label=public_label(lab), fingerprint=sig[:8], count=n))
+            rows.append(dict(window="consecutive", thread=public_thread(thread),
+                             span=None, label=public_label(lab),
+                             fingerprint=sig[:8], count=n))
     for idx, lab, sig, n in MTB.repeated_in_spans(turns, win["stats"]["real_user_turns"]):
         rows.append(dict(window="span", thread=None, span=idx,
                          label=public_label(lab), fingerprint=sig[:8], count=n))
@@ -2327,6 +2357,38 @@ def self_test():
     check(raw_ok.startswith(b'{"type":"assistant","trunca'),
           "while an offset inside the FIRST line still returns the unterminated tail, "
           "because a complete line boundary does exist after it")
+
+    # ---- F4, second half: a SUBAGENT PROFILE NAME must not be published either -----------
+    print()
+    print("a sidechain's thread label is a tag, not its profile name")
+    side_lines, sparent = [], None
+    PROFILE = "some_local_developer__model_opus"
+    for i in range(4):
+        side_lines.append(json.dumps(dict(
+            type="assistant", uuid="pa%d" % i, parentUuid=sparent, isSidechain=True,
+            attributionAgent=PROFILE, timestamp="2026-10-20T00:00:00Z",
+            message=dict(id="pm%d" % i, usage=dict(input_tokens=1),
+                         content=[_tu("pc%d" % i, "Read", dict(file_path="/x"))]))))
+        side_lines.append(_res("pr%d" % i, "pa%d" % i, "pc%d" % i, "ok"))
+        sparent = "pr%d" % i
+    p_prof = _write(tmp, "profile.jsonl", side_lines)
+    f_prof = repeated_invocations(read_window(p_prof), threshold=1)
+    blob = json.dumps(f_prof["evidence"])
+    check(f_prof["fired"] and PROFILE not in blob,
+          "a sidechain repeat FIRES (so the row exists) and its evidence does not contain "
+          "the profile name")
+    threads = {r["thread"] for r in f_prof["evidence"] if r["thread"]}
+    check(threads == {public_thread(PROFILE)} and public_thread(PROFILE).startswith(
+              "sidechain:"),
+          "it is published as %s -- stable, distinguishing, and naming no profile"
+          % public_thread(PROFILE))
+    check(public_thread(MTB.MAIN) == MTB.MAIN
+          and public_thread(MTB.NO_AGENT_TYPE) == MTB.NO_AGENT_TYPE,
+          "while the main thread and the 'type not recorded' placeholder pass through, "
+          "being closed literals rather than site-specific names")
+    check(public_thread("profile_a") != public_thread("profile_b"),
+          "and two different profiles get two different tags, so the label still "
+          "distinguishes threads")
 
     # ---- control: the library refuses what the CLI refuses --------------------------------
     print()

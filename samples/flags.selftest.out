@@ -84,6 +84,12 @@ F2: the ten mutants that used to survive this suite
   ok   -- an offset inside an unterminated final line returns NO bytes and an offset of EOF (got b'', 60) -- there is no complete line at or after it
   ok   -- while an offset inside the FIRST line still returns the unterminated tail, because a complete line boundary does exist after it
 
+a sidechain's thread label is a tag, not its profile name
+  ok   -- a sidechain repeat FIRES (so the row exists) and its evidence does not contain the profile name
+  ok   -- it is published as sidechain:152a74aa -- stable, distinguishing, and naming no profile
+  ok   -- while the main thread and the 'type not recorded' placeholder pass through, being closed literals rather than site-specific names
+  ok   -- and two different profiles get two different tags, so the label still distinguishes threads
+
 a threshold below 1 is refused by the FUNCTION, not only by the CLI
   ok   -- batchable_bash refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
   ok   -- repeated_invocations refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
@@ -108,7 +114,7 @@ the three states
   ok   -- all three states are reachable from real windows: ['measured', 'not_computed', 'unmeasured']
   ok   -- every flag returns the SAME core key set, so one caller branch works for all three: ('count', 'evidence', 'fingerprint', 'fired', 'flag', 'measure', 'measure_of', 'note', 'overshoot', 'severity', 'source', 'state', 'threshold', 'window')
 
-SELF-TEST PASSED -- 86 checks: the byte arithmetic at every offset, window/full agreement,
+SELF-TEST PASSED -- 90 checks: the byte arithmetic at every offset, window/full agreement,
 a positive AND a negative control for each of the three flags, both sides of each threshold
 boundary, all three states reachable, the resume cursor across an append and a rotation,
 and no raw argument in any evidence row.
