@@ -8,6 +8,8 @@ usage-field presence across usage-bearing turns (a field missing here is a silen
   cache_creation_input_tokens: 4/4
   cache_read_input_tokens: 4/4
 sidechain (subagent) turns: 0
+  (0 means no sidechain turns in the transcripts PASSED, not that no subagent ran: some
+   layouts write a subagent's turns to a separate transcript file. See --help-blind, mode 4b.)
 
 TOTAL over 4 usage-bearing turns: in=4 out=100 cache_create=1000 cache_read=10000
 cache_read : output overhead = 100.00

@@ -114,6 +114,20 @@ Stated so the gaps are visible rather than implied absent.
 - **"By agent" means same-session sidechains**, separated by `isSidechain` and labelled by
   `attributionAgent`. It is not cross-session linkage: a child session launched as a separate
   process is invisible here unless the caller names it in a `--manifest`.
+- **A `sidechain (subagent) turns: 0` line is a statement about the FILES YOU PASSED, not about
+  delegation.** The
+  split counts sidechain turns in the transcripts it is given, and at least one real on-disk
+  layout writes each subagent's turns to a SEPARATE transcript file beside the parent's instead
+  of inline. Measured across 109 real transcripts: the separate per-subagent files were 100%
+  sidechain turns, and the session transcripts were 0%. Both figures are correct, and together
+  they mean a caller who enumerates only session transcripts sees that zero (`"sidechain_turns": 0`
+  in the digest) no matter how much work was delegated, with `by_agent` degenerating to a single
+  `main thread` bucket.
+  That zero is structural, not substantive. Pass the per-subagent files too (positionally, or
+  named in a `--manifest`) if you want that spend attributed; the run prints this caveat next to
+  the zero rather than leaving it to be inferred. Delegation to separate SESSIONS is a different
+  mechanism again and belongs to the subsession rollup, not to this split -- so "0 sidechains
+  but a large subsession tree" is a coherent, common reading, not a contradiction.
 - **The subsession rollup is only as true as the manifest.** The caller asserts the parent/child
   tree; the instrument does not verify it. A node whose transcript is unreadable is reported as
   `n/a` and contributes nothing to its parent, never a zero -- but a WRONG parent edge sums
