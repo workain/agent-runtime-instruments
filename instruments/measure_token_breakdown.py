@@ -11,17 +11,28 @@ splits that spend three ways:
                    attribution, not a per-call split: a turn that calls N tools has ONE
                    `usage` entry that cannot be divided exactly among them, and this
                    instrument does not pretend it can. A turn that calls Read and Edit is
-                   reported under the pair `Edit+Read`, not half to each.
+                   reported under the pair `Edit+Read`, not half to each. Bash turns are
+                   additionally clustered BY COMMAND (the command's first token, after
+                   stripping `cd ...&&` chains and `VAR=` prefixes) so a lumped `Bash`
+                   bucket splits into `git`, `pytest`, `curl`, ... -- a heuristic, not a
+                   semantic parse, with an explicit `(unparsed)` bucket. The peel is
+                   quote-aware and runs to a fixed point, because a cluster key is
+                   PUBLISHED and is not anonymised: see `bash_cluster`.
   BY AGENT      -- separate same-session Task-tool subagent turns (`isSidechain: true`)
                    from the main thread, grouped by subagent type (`attributionAgent`)
                    where the transcript records one. These are sidechains WITHIN one
                    session's transcript, NOT separate child sessions -- those are the
                    subsession rollup below.
   BY SUBSESSION -- an optional caller-supplied manifest (plain JSON) describing a tree of
-                   SEPARATE sessions/transcripts, summed bottom-up to each parent. Cross-
-                   session parent/child linkage is harness-specific, so this instrument
-                   does not infer it; the caller states it, and this repo stays harness-
-                   agnostic.
+                   SEPARATE sessions/transcripts, summed bottom-up to each parent, plus
+                   agent-level cross-tabs: each node's own total, each node's own by-tool
+                   breakdown, and the grand by-tool profile both WITH every node summed in
+                   and root-only (so delegated vs orchestrator-own cost is comparable).
+                   Cross-session parent/child linkage is harness-specific, so this
+                   instrument does not infer it; the caller states it, and this repo stays
+                   harness-agnostic. Passing 2+ transcripts positionally WITHOUT a manifest
+                   prints a flat PER-SOURCE table instead -- a batch of sessions, no
+                   hierarchy claimed.
 
   LOOP FLAGS   -- two mechanical (non-LLM) signals correlated with excessive work cycles,
                    computed from transcript STRUCTURE alone -- turn boundaries and
@@ -100,11 +111,12 @@ highest is reasoning-action mismatch at 13.2% -- and that is identical-action-wi
 state-change, which needs no LLM to detect. It is exactly what this instrument should
 flag next. It is deferred rather
 than approximated because a tool-NAME-only match ("Bash called 9 times") is noise in a
-Bash-heavy session, and the command-level clustering that makes it meaningful is being
-built separately. `--help-blind` says so, the run prints it as NOT IMPLEMENTED, and no
+Bash-heavy session, and the command-level clustering that makes it meaningful is the BY
+BASH COMMAND view above (see `bash_cluster`), which landed only now -- signal 2 is the
+next thing to build ON it, and is still not approximated under its own name here. `--help-blind` says so, the run prints it as NOT IMPLEMENTED, and no
 partial version of it is reported under its name.
 
-`--json` emits a compact digest (totals, the two breakdowns, the loop flags, the N
+`--json` emits a compact digest (totals, the breakdowns above, the loop flags, the N
 costliest turns by cache-read, a cache_read:output ratio per node) sized to hand to an LLM
 for qualitative review. It is deliberately NOT the raw transcript, which runs to tens of MB.
 
@@ -125,7 +137,7 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
     Its most dangerous blind output is `total=0`, which looks exactly like a free
     session. So a zero is never printed as a measurement: the run REFUSES (exit 2) in
     every case where it measured nothing, and prints an attribution-coverage line on
-    every run so a partial blindness is visible rather than averaged away. Four ways to
+    every run so a partial blindness is visible rather than averaged away. Five ways to
     be blind, and the guard for each:
 
       1. NO TRANSCRIPT. A path that does not exist or cannot be read yields no turns. If
@@ -149,11 +161,16 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
          They are still counted as sidechain spend, under "(subagent type not recorded)",
          never merged into the main thread -- the by-agent split would otherwise under-
          report subagent cost whenever the label happened to be absent.
+      5. A BASH TURN WITH NO READABLE COMMAND. The by-command clustering reads
+         `tool_use.input.command`; when it is missing or does not reduce to a plain
+         command word, that Bash turn clusters into `(unparsed)` -- never silently merged
+         into a real command's bucket and never dropped, so the `(unparsed)` count is the
+         honest measure of how much the heuristic could not classify.
 
     Three more ways to be blind belong to the LOOP FLAGS specifically, because the flags'
     dangerous output is the opposite of a zero -- it is a reassuring "nothing flagged":
 
-      5. NO IDENTIFIABLE USER TURNS AT ALL. A transcript whose `user` entries are all
+      6. NO IDENTIFIABLE USER TURNS AT ALL. A transcript whose `user` entries are all
          `tool_result` carriers or all `isMeta` -- a sidechain-only export, a format whose
          user entries are shaped differently, a mid-session fragment -- has no span
          boundaries, so signal 1 cannot be computed. The whole file would collapse into
@@ -161,26 +178,36 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
          finding about a session nobody can see the turns of. So zero real user turns is
          reported as UNMEASURED and NO span is flagged -- the one case where this
          instrument declines to flag precisely because flagging would be easy.
-      6. A THRESHOLD OF 0 OR LESS. `0` flags every span including the empty ones (a user
+      7. A THRESHOLD OF 0 OR LESS. `0` flags every span including the empty ones (a user
          turn answered with no tool call at all is a span of 0), and a negative threshold
          flags all of them unconditionally. A detector that fires on everything
          discriminates nothing, so a threshold below 1 is REFUSED (exit 2) rather than
          honoured -- in the CLI flag and in the env var alike, since an env var you
          believe you set is not an env var you got. An unparseable env value is refused
          the same way, never silently ignored back to "no threshold".
-      7. NO THRESHOLD SET AT ALL -- the default. "0 spans flagged" would then be a
+      8. NO THRESHOLD SET AT ALL -- the default. "0 spans flagged" would then be a
          statement about the absent threshold, not about the session, and it would look
          exactly like a clean run. So the unset case prints NOT COMPUTED, a THIRD state
          distinct from both "flagged" and "clean", and the distribution is printed anyway
          so the run is still worth something without one.
 
-    The positive control: `--self-test` builds a synthetic transcript with hand-computed
+    The positive controls: `--self-test` builds a synthetic transcript with hand-computed
     totals (including a split turn, a sidechain, and a no-tool turn) and asserts the
-    computed numbers match EXACTLY. TWO negative controls run in the same pass, because a
-    control defeated by a one-field change is no control: (a) rename ALL usage fields and
-    assert every turn reads as unmeasured and the run refuses; (b) rename a SINGLE field
-    and assert the per-field diagnostic flags that one dimension as absent and the run
-    still refuses -- the weaker all-or-nothing check passed (b) silently.
+    computed numbers match EXACTLY, and a second fixture of known Bash commands
+    (`git`x2, `pytest`, one unparseable, one with a QUOTED multi-word env value, and one
+    with an env prefix BEFORE a `cd ...&&` chain) asserts the clustering matches exactly.
+    A PRIVACY control runs five commands whose env value is a quoted multi-word secret
+    through the text report AND the `--json` digest, with and without `--anonymise`, and
+    fails if any WORD of any value appears anywhere in either -- the leak it exists to
+    catch shipped once, as a cluster key `efgh` derived from
+    `AWS_SECRET_ACCESS_KEY="abcd efgh ijkl"`. That control validates itself first: it
+    renders a secret-free fixture and fails if a sentinel word turns up there, so it
+    cannot pass by matching the report's own prose. TWO
+    negative controls run in the same pass, because a control defeated by a one-field
+    change is no control: (a) rename ALL usage fields and assert every turn reads as
+    unmeasured and the run refuses; (b) rename a SINGLE field and assert the per-field
+    diagnostic flags that one dimension as absent and the run still refuses -- the weaker
+    all-or-nothing check passed (b) silently.
 
     The flags carry their own controls in the same pass, built so each can fail on a
     change the others survive: a POSITIVE fixture that exceeds both thresholds and must be
@@ -197,9 +224,13 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
     it. That leg now asserts over the whole serialised digest.
 """
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import os
+import re
+import shlex
 import sys
 import textwrap
 
@@ -212,6 +243,83 @@ USAGE_FIELDS = ("input_tokens", "output_tokens",
 NO_TOOL = "(no tool call)"
 NO_AGENT_TYPE = "(subagent type not recorded)"
 MAIN = "main thread"
+UNPARSED = "(unparsed)"
+
+_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")  # a `VAR=value` token, value already unquoted
+_CHAIN_OPS = ("&&", "||", "|", ";", "&")
+_CMD_WORD = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _tokenise(cmd):
+    """Split a command into shell words, QUOTE-AWARE, with `&&`/`;`/`|` as their own
+    tokens even when unspaced (`cd /x&&make`). Returns None if the string does not
+    tokenise (an unbalanced quote) -- the caller must then not peel anything.
+
+    Quote-awareness is the whole point and is load-bearing for PRIVACY, not tidiness: a
+    peel step that does not know where a quoted value ENDS can stop in the middle of one
+    and hand the REMAINDER of a secret to the classifier, which then publishes a word of
+    it as a cluster key. Tokenising the WHOLE string once, before any peeling, makes
+    `VAR="abcd efgh"` a single token that is either consumed entirely or not at all.
+    """
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    try:
+        return list(lex)
+    except ValueError:
+        return None
+
+
+def bash_cluster(cmd):
+    """Cluster a Bash command by its first real token -- a cheap, MECHANICAL heuristic,
+    not a parse of what the command means.
+
+    `git commit` and `git push` both cluster under `git`; that is deliberate (the baseline
+    is first-token-after-cd-chains-and-env-prefixes). Anything missing or that does not
+    reduce to a plain command word goes to `(unparsed)`, never into a real cluster.
+
+    The returned key is PUBLISHED (text report, `--json` digest) and `--anonymise` does
+    NOT touch it, so the key must never be able to carry a fragment of a command's
+    content. Two properties keep that true, and both are positive-controlled in
+    `--self-test`:
+
+      * the leading `cd ... &&` chains and `VAR=value` env prefixes are peeled in ONE
+        loop that retries BOTH shapes until neither matches, so they compose in either
+        order (`CI=1 cd /repo && npm test` clusters as `npm`, not as `cd`). Two separate
+        single-pass loops could only ever strip them in one fixed order.
+      * peeling happens over quote-aware TOKENS (`_tokenise`), so a quoted value is one
+        token -- consumed whole or left whole. If the string does not tokenise at all we
+        peel NOTHING and fall back to the first whitespace word of the ORIGINAL string,
+        which is by construction the command's own first word rather than anything from
+        inside a value.
+    """
+    if not isinstance(cmd, str) or not cmd.strip():
+        return UNPARSED
+    toks = _tokenise(cmd)
+    if toks is None:
+        # Unbalanced quoting: classify the original's first word WITHOUT peeling. Peeling
+        # here is what used to truncate a quoted value mid-way and leak the rest.
+        head = cmd.strip().split()
+        toks = head[:1]
+    else:
+        i = 0
+        while i < len(toks):                    # peel BOTH shapes, in any order, to a fixed point
+            if _ENV_ASSIGN.match(toks[i]):      # `VAR=value` -- one whole token
+                i += 1
+                continue
+            if toks[i] == "cd":                 # `cd <dir> && ` -- up to the chaining `&&`
+                j = i + 1
+                while j < len(toks) and toks[j] not in _CHAIN_OPS:
+                    j += 1
+                if j > i + 1 and j < len(toks) and toks[j] == "&&":
+                    i = j + 1
+                    continue
+            break
+        toks = toks[i:]
+    if not toks:
+        return UNPARSED
+    first = toks[0].split("/")[-1]              # /usr/bin/python3 -> python3
+    return first if _CMD_WORD.match(first) else UNPARSED
 
 
 def anonymise(tag):
@@ -282,6 +390,7 @@ def collect_turns(lines):
             or ("_noid", stats["assistant_entries"])
 
         names, call_ids, idless = set(), set(), 0
+        bash = set()
         content = msg.get("content")
         if isinstance(content, list):
             for b in content:
@@ -290,6 +399,11 @@ def collect_turns(lines):
                     nm = b.get("name")
                     if isinstance(nm, str) and nm:
                         names.add(nm)
+                    # Bash is the only tool whose `input.command` we read: cluster by it.
+                    if nm == "Bash":
+                        inp = b.get("input")
+                        bash.add(bash_cluster(inp.get("command")
+                                              if isinstance(inp, dict) else None))
                     # a call is counted even when its NAME is missing: it happened, and
                     # counting only named calls would let a missing label manufacture a
                     # "no tool call" streak (see no_tool_streaks).
@@ -303,12 +417,13 @@ def collect_turns(lines):
 
         t = turns.get(mid)
         if t is None:
-            t = dict(tools=set(), usage=None, has_usage=False,
+            t = dict(tools=set(), bash=set(), usage=None, has_usage=False,
                      sidechain=False, agent=None,
                      call_ids=set(), calls_idless=0, span=span)
             turns[mid] = t
             order.append(mid)
         t["tools"] |= names
+        t["bash"] |= bash
         t["call_ids"] |= call_ids
         t["calls_idless"] += idless
         if d.get("isSidechain"):
@@ -363,6 +478,17 @@ def agent_key(t):
     if not t["sidechain"]:
         return MAIN
     return t["agent"] or NO_AGENT_TYPE
+
+
+def bash_key(t):
+    """The set of Bash command-clusters a turn ran (turn-grain, like tool_key). Only
+    meaningful for turns that called Bash at all."""
+    return "+".join(sorted(t["bash"])) if t["bash"] else None
+
+
+def group_bash(turns):
+    """Group the Bash-invoking turns by their command-cluster set."""
+    return group([t for t in turns if t["bash"]], bash_key)
 
 
 def _is_num(v):
@@ -693,7 +819,7 @@ def print_flags(flags):
                     "no span boundaries at all. The whole file would read as ONE span and "
                     "would exceed any threshold, so NOTHING is flagged here: a dramatic "
                     "number about a session whose turns cannot be seen is worse than no "
-                    "number. See --help-blind, blind mode 5."))
+                    "number. See --help-blind, blind mode 6."))
     else:
         print(f"    spans: {s1['spans']}  tool calls per span: "
               f"p50={s1['calls_p50']} p90={s1['calls_p90']} max={s1['calls_max']}"
@@ -795,7 +921,7 @@ def print_user_entry_survey(sources_read, sources_na, per_source, args):
 
     if tot_real == 0:
         print("\nNOT ONE REAL USER TURN in this corpus. Signal 1 is UNMEASURABLE here -- "
-              "see\n--help-blind, blind mode 5. This is the case where the whole "
+              "see\n--help-blind, blind mode 6. This is the case where the whole "
               "transcript would\ncollapse into one span and exceed any threshold, so "
               "nothing is flagged instead.")
 
@@ -931,6 +1057,21 @@ def fmt(acc):
             f"cache_read={acc['cache_read_input_tokens']}")
 
 
+def group_table(gdict, colhead, indent="  "):
+    """Print a breakdown table (turns/out/cache_read/cache_create + a key column), ranked
+    by cache_read descending. Shared by every BY-X view so they read identically."""
+    print(f"{indent}{'turns':>5} {'out':>8} {'cache_read':>11} {'cache_create':>12}  "
+          f"{colhead}")
+    if not gdict:
+        print(f"{indent}(no usage-bearing turns)")
+        return
+    for key, acc in sorted(gdict.items(),
+                           key=lambda kv: -kv[1]["cache_read_input_tokens"]):
+        print(f"{indent}{acc['turns']:>5} {acc['output_tokens']:>8} "
+              f"{acc['cache_read_input_tokens']:>11} "
+              f"{acc['cache_creation_input_tokens']:>12}  {key}")
+
+
 def print_report(sources_read, sources_na, turns, args, flags=None):
     tot = totals_of(turns)
     cov = coverage(turns)
@@ -968,20 +1109,17 @@ def print_report(sources_read, sources_na, turns, args, flags=None):
 
     print("\nBY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it "
           "called, not split per call):")
-    bytool = group(turns, tool_key)
-    print(f"  {'turns':>5} {'out':>8} {'cache_read':>11} {'cache_create':>12}  tools")
-    for key, acc in sorted(bytool.items(), key=lambda kv: -kv[1]["cache_read_input_tokens"]):
-        print(f"  {acc['turns']:>5} {acc['output_tokens']:>8} "
-              f"{acc['cache_read_input_tokens']:>11} "
-              f"{acc['cache_creation_input_tokens']:>12}  {key}")
+    group_table(group(turns, tool_key), "tools")
+
+    bybash = group_bash(turns)
+    if bybash:
+        print("\nBY BASH COMMAND (Bash turns clustered by command's first token after "
+              "stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- "
+              "`git commit`/`git push` both cluster as `git`):")
+        group_table(bybash, "bash command cluster")
 
     print("\nBY AGENT (same-session Task subagents separated from the main thread):")
-    byagent = group(turns, agent_key)
-    print(f"  {'turns':>5} {'out':>8} {'cache_read':>11} {'cache_create':>12}  agent")
-    for key, acc in sorted(byagent.items(), key=lambda kv: -kv[1]["cache_read_input_tokens"]):
-        print(f"  {acc['turns']:>5} {acc['output_tokens']:>8} "
-              f"{acc['cache_read_input_tokens']:>11} "
-              f"{acc['cache_creation_input_tokens']:>12}  {key}")
+    group_table(group(turns, agent_key), "agent")
 
     print(f"\nTOP {args.top} TURNS BY cache_read (the turns re-reading the most cached "
           f"context):")
@@ -1039,35 +1177,143 @@ def _anonymise_sources(obj):
             _anonymise_sources(v)
 
 
-def build_digest(sources_read, sources_na, turns, rollup_rows, args,
-                 flags=None):
+def _totals_row(label, turns, args):
+    """One aligned totals row (turns/out/cache_read/cache_create/ratio/label), or an
+    n/a row when the source was unreadable (turns is None)."""
+    lab = anonymise(label) if args.anonymise else label
+    if turns is None:
+        return (f"  {'n/a':>5} {'n/a':>8} {'n/a':>11} {'n/a':>12} {'n/a':>7}  "
+                f"{lab} (unreadable)")
+    acc = totals_of(turns)
+    r = ratio(acc)
+    return (f"  {acc['turns']:>5} {acc['output_tokens']:>8} "
+            f"{acc['cache_read_input_tokens']:>11} {acc['cache_creation_input_tokens']:>12} "
+            f"{(f'{r:.1f}' if r is not None else 'n/a'):>7}  {lab}")
+
+
+def print_per_source(sources_read, sources_na, per_path_turns, args):
+    """Flat per-source table for a batch of positional transcripts -- which source cost
+    what, with NO hierarchy (use --manifest for parent/child rollup)."""
+    print("\nPER-SOURCE (flat batch -- each positional transcript on its own; no parent/"
+          "child hierarchy was declared. Use --manifest to roll a real tree up):")
+    print(f"  {'turns':>5} {'out':>8} {'cache_read':>11} {'cache_create':>12} {'cr/out':>7}"
+          f"  source")
+    for p in sources_read:
+        print(_totals_row(p, per_path_turns.get(p, []), args))
+    for p in sources_na:
+        print(_totals_row(p, None, args))
+
+
+def print_crosstabs(nodes, per_path_turns, args):
+    """Agent-level cross-tabs for manifest mode: each node is one session/agent."""
+    lab = lambda x: anonymise(x) if args.anonymise else x
+
+    print("\nBY AGENT / SUBSESSION -- each manifest node's OWN total (its transcript only, "
+          "not its subtree; one node = one session/agent):")
+    print(f"  {'turns':>5} {'out':>8} {'cache_read':>11} {'cache_create':>12} {'cr/out':>7}"
+          f"  node")
+    for nd in nodes:
+        print(_totals_row(nd["label"], per_path_turns.get(nd["path"]), args))
+
+    print("\nBY AGENT x TOOL -- each node's OWN by-tool breakdown:")
+    for nd in nodes:
+        t = per_path_turns.get(nd["path"])
+        if t is None:
+            print(f"  {lab(nd['label'])}: n/a (transcript unreadable)")
+            continue
+        print(f"  {lab(nd['label'])}:")
+        group_table(group(t, tool_key), "tools", indent="    ")
+
+    # Same split again by Bash command cluster, so manifest mode is not blind to a
+    # dimension the no-manifest report already prints. Nodes with no Bash turn are listed
+    # as `none` rather than omitted: an absent row and a node that ran no Bash command
+    # must not look the same.
+    print("\nBY AGENT x BASH COMMAND -- each node's OWN Bash turns, clustered by "
+          "command (same heuristic as the single-source report):")
+    for nd in nodes:
+        t = per_path_turns.get(nd["path"])
+        if t is None:
+            print(f"  {lab(nd['label'])}: n/a (transcript unreadable)")
+            continue
+        bb = group_bash(t)
+        if not bb:
+            print(f"  {lab(nd['label'])}: none (no Bash turns)")
+            continue
+        print(f"  {lab(nd['label'])}:")
+        group_table(bb, "bash command cluster", indent="    ")
+
+    # the whole group's tool profile, WITH every subsession summed in vs the root(s) alone
+    all_nodes_turns = [x for nd in nodes
+                       for x in (per_path_turns.get(nd["path"]) or [])]
+    root_turns = [x for nd in nodes if nd["parent"] is None
+                  for x in (per_path_turns.get(nd["path"]) or [])]
+    print("\nGRAND TOTAL BY TOOL -- WITH agents (every node summed in: orchestrator + all "
+          "subsessions):")
+    group_table(group(all_nodes_turns, tool_key), "tools")
+    print("\nGRAND TOTAL BY TOOL -- root node(s) ONLY (the orchestrator's own work, no "
+          "delegated subsessions) -- compare to see how much of each tool is delegated:")
+    group_table(group(root_turns, tool_key), "tools")
+
+
+def _glist(gdict):
+    """A group dict -> a JSON list ranked by cache_read descending."""
+    return [dict(key=k, **{f: acc[f] for f in USAGE_FIELDS}, turns=acc["turns"])
+            for k, acc in sorted(gdict.items(),
+                                 key=lambda kv: -kv[1]["cache_read_input_tokens"])]
+
+
+def _tdict(acc):
+    return {**{f: acc[f] for f in USAGE_FIELDS}, "turns": acc["turns"]}
+
+
+def build_digest(sources_read, sources_na, turns, per_path_turns, manifest_nodes,
+                 rollup_rows, args, flags=None):
     tot = totals_of(turns)
     cov = coverage(turns)
-
-    def anon_list(xs):
-        return [anonymise(x) if args.anonymise else x for x in xs]
-
-    def grp(gfn):
-        return [dict(key=k, **{f: acc[f] for f in USAGE_FIELDS}, turns=acc["turns"])
-                for k, acc in sorted(group(turns, gfn).items(),
-                                     key=lambda kv: -kv[1]["cache_read_input_tokens"])]
+    anon = lambda x: anonymise(x) if args.anonymise else x
 
     ranked = sorted((t for t in turns if t["has_usage"]),
                     key=lambda t: -num(t["usage"].get("cache_read_input_tokens")))[:args.top]
     digest = dict(
         measured=bool(tot["turns"]),
-        sources_read=anon_list(sources_read),
-        sources_unreadable=anon_list(sources_na),
+        sources_read=[anon(x) for x in sources_read],
+        sources_unreadable=[anon(x) for x in sources_na],
         coverage=cov,
-        totals={**{f: tot[f] for f in USAGE_FIELDS}, "turns": tot["turns"]},
+        totals=_tdict(tot),
         cache_read_to_output=ratio(tot),
-        by_tool=grp(tool_key),
-        by_agent=grp(agent_key),
+        by_tool=_glist(group(turns, tool_key)),
+        by_bash_command=_glist(group_bash(turns)),
+        by_agent=_glist(group(turns, agent_key)),
         top_by_cache_read=[dict(cache_read=num(t["usage"].get("cache_read_input_tokens")),
                                 output=num(t["usage"].get("output_tokens")),
-                                agent=agent_key(t), tools=sorted(t["tools"]))
+                                agent=agent_key(t), tools=sorted(t["tools"]),
+                                bash=sorted(t["bash"]))
                            for t in ranked],
     )
+    if manifest_nodes is not None:
+        # agent-level cross-tabs: per-node totals, per-node by-tool, and grand by-tool
+        # both WITH every node summed in and root-only.
+        digest["by_agent_node"] = [
+            dict(label=anon(nd["label"]), parent=anon(nd["parent"]) if nd["parent"] else None,
+                 own=(None if per_path_turns.get(nd["path"]) is None
+                      else _tdict(totals_of(per_path_turns[nd["path"]]))))
+            for nd in manifest_nodes]
+        digest["by_agent_tool"] = [
+            dict(label=anon(nd["label"]),
+                 by_tool=(None if per_path_turns.get(nd["path"]) is None
+                          else _glist(group(per_path_turns[nd["path"]], tool_key))))
+            for nd in manifest_nodes]
+        all_nt = [x for nd in manifest_nodes
+                  for x in (per_path_turns.get(nd["path"]) or [])]
+        root_nt = [x for nd in manifest_nodes if nd["parent"] is None
+                   for x in (per_path_turns.get(nd["path"]) or [])]
+        digest["by_agent_bash"] = [
+            dict(label=anon(nd["label"]),
+                 by_bash_command=(None if per_path_turns.get(nd["path"]) is None
+                                  else _glist(group_bash(per_path_turns[nd["path"]]))))
+            for nd in manifest_nodes]
+        digest["grand_by_tool_with_agents"] = _glist(group(all_nt, tool_key))
+        digest["grand_by_tool_root_only"] = _glist(group(root_nt, tool_key))
     if flags is not None:
         # The span rows name their source, so they are anonymised with the same rule the
         # source list follows -- a span row is as identifying as the path it came from.
@@ -1081,12 +1327,16 @@ def build_digest(sources_read, sources_na, turns, rollup_rows, args,
             "was wasted, and no threshold here is a validated constant.")
     if rollup_rows is not None:
         digest["subsessions"] = [
-            dict(label=(anonymise(nd["label"]) if args.anonymise else nd["label"]),
-                 parent=((anonymise(nd["parent"]) if (nd["parent"] and args.anonymise)
-                          else nd["parent"])),
+            dict(label=anon(nd["label"]),
+                 parent=anon(nd["parent"]) if nd["parent"] else None,
                  own=(None if is_na else {f: own[f] for f in USAGE_FIELDS}),
                  subtree={f: sub[f] for f in USAGE_FIELDS})
             for nd, own, sub, is_na in rollup_rows]
+    elif len(sources_read) >= 2:
+        # flat batch: per-source totals (no hierarchy declared)
+        digest["per_source"] = [
+            dict(source=anon(p), **_tdict(totals_of(per_path_turns.get(p, []))))
+            for p in sources_read]
     return digest
 
 
@@ -1113,6 +1363,7 @@ def _fixture_lines():
                 "cache_creation_input_tokens": cc, "cache_read_input_tokens": cr}
 
     tu = lambda name: {"type": "tool_use", "name": name, "input": {}}
+    tb = lambda cmd: {"type": "tool_use", "name": "Bash", "input": {"command": cmd}}
     th = {"type": "thinking", "thinking": "..."}
     tx = {"type": "text", "text": "ok"}
 
@@ -1122,8 +1373,9 @@ def _fixture_lines():
         asst("msg-main-0001", [th], u(10, 100, 1000, 5000)),
         asst("msg-main-0001", [tu("Read")], u(10, 100, 1000, 5000)),
         asst("msg-main-0001", [tu("Read")], u(10, 100, 1000, 5000)),
-        # M2: multi-tool turn
-        asst("msg-main-0002", [tx, tu("Bash"), tu("Grep")], u(20, 200, 2000, 8000)),
+        # M2: multi-tool turn; the Bash call carries a command (cd-chain stripped -> `git`)
+        asst("msg-main-0002", [tx, tb("cd repo && git status"), tu("Grep")],
+             u(20, 200, 2000, 8000)),
         # M3: no tool call
         asst("msg-main-0003", [tx], u(5, 50, 500, 1000)),
         # M4: launches a subagent
@@ -1239,6 +1491,87 @@ def _corrupt_one(lines, field):
     return [l.replace(f'"{field}"', f'"{field}_RENAMED"') for l in lines]
 
 
+# Commands whose ENV-PREFIX VALUE is a multi-word secret. The value's words are the thing
+# that must never reach a cluster key or any printed line; `_SECRET_WORDS` is every word
+# of every value below, and the leak control asserts none of them appears ANYWHERE in the
+# text report or the `--json` digest -- with and without `--anonymise`, which by design
+# hashes transcript paths and manifest labels and does NOT touch cluster keys.
+_SECRET_CMDS = [
+    ('AWS_SECRET_ACCESS_KEY="abcd efgh ijkl" aws s3 ls', "aws"),
+    ('TOKEN="swordfish hunter2" curl https://example.invalid', "curl"),
+    ("API_KEY='alpha beta' python3 run.py", "python3"),
+    ('SECRET="zulu quebec" ./deploy.sh', "deploy.sh"),
+    ('PASSWORD="xyzzy plugh" mysql -u root', "mysql"),
+    # UNBALANCED quote -- the shape that reaches the `toks is None` fallback, where no
+    # peeling happens and the key comes from the ORIGINAL string's first whitespace word.
+    # That word is `VAULT_KEY="grommet` here, which is a secret fragment, and the ONLY
+    # thing that stops it being published is the `_CMD_WORD` test at the end of
+    # `bash_cluster`. Every other entry above reduces to a real command word and so
+    # exercises the peel but never that test; deleting the test left the self-test green.
+    # Expected `(unparsed)`: on this path refusing to classify IS the privacy control.
+    ('VAULT_KEY="grommet flange aws s3 ls', UNPARSED),
+]
+# Deliberately distinctive: a sentinel that is also ordinary English ("one", "two") would
+# match the report's OWN prose and fail for a reason that has nothing to do with a leak.
+# The baseline check below enforces that choice instead of trusting it.
+_SECRET_WORDS = ["abcd", "efgh", "ijkl", "swordfish", "hunter2", "alpha", "beta",
+                 "zulu", "quebec", "xyzzy", "plugh", "grommet", "flange"]
+
+
+def _bash_asst(mid, cmd, usage):
+    blk = ({"type": "tool_use", "name": "Bash", "input": {}} if cmd is None
+           else {"type": "tool_use", "name": "Bash", "input": {"command": cmd}})
+    return json.dumps(dict(type="assistant", isSidechain=False,
+                           message=dict(id=mid, role="assistant", content=[blk],
+                                        usage=usage)))
+
+
+def _u(i, o, cc, cr):
+    return {"input_tokens": i, "output_tokens": o,
+            "cache_creation_input_tokens": cc, "cache_read_input_tokens": cr}
+
+
+def _bash_fixture_lines():
+    """Known Bash commands for the clustering positive control: 2x git (one behind a
+    `cd ...&&` chain), 1x pytest (behind a `VAR=` prefix), one with no command -- plus the
+    two shapes whose ABSENCE here is how a privacy leak and a misclustering shipped:
+
+      * a QUOTED, multi-word env value (`AWS_SECRET_ACCESS_KEY="abcd efgh ijkl" aws ...`).
+        A peel step that is blind to quoting stops at the first space INSIDE the value and
+        hands `efgh ijkl" aws s3 ls` to the classifier, publishing `efgh` -- a literal word
+        of the secret -- as the cluster key. Must cluster as `aws`.
+      * an env prefix BEFORE a `cd ...&&` chain (`CI=1 cd /repo && npm test`), the ordinary
+        ordering. Peeling the two shapes in two separate fixed passes can only strip them
+        in one order, so the `cd` chain survives and the turn clusters as `cd`. Must
+        cluster as `npm`.
+
+    Both are ordinary commands, not exotic ones; the old fixture simply never wrote one
+    down, which is precisely why nothing failed when the heuristic was wrong about them.
+    """
+    return [
+        _bash_asst("msg-b-1", "git status", _u(1, 10, 100, 1000)),
+        _bash_asst("msg-b-2", "cd /repo && git push origin main", _u(1, 20, 200, 2000)),
+        _bash_asst("msg-b-3", "VAR=1 pytest -q tests/", _u(1, 30, 300, 3000)),
+        _bash_asst("msg-b-4", None, _u(1, 40, 400, 4000)),       # no command -> (unparsed)
+        _bash_asst("msg-b-5", _SECRET_CMDS[0][0], _u(1, 50, 500, 5000)),   # quoted value
+        _bash_asst("msg-b-6", "CI=1 cd /repo && npm test", _u(1, 60, 600, 6000)),  # env+cd
+    ]
+
+
+def _secret_fixture_lines():
+    """One Bash turn per `_SECRET_CMDS` entry -- the leak control's own transcript.
+
+    Opens with a REAL user turn so the transcript is loop-flag-shaped as well as
+    secret-bearing: the span/streak rows are then computed over, and printed alongside,
+    the very turns that carry the secrets. Without that turn signal 1 reads UNMEASURED and
+    the leak control would be asserting over a loop_flags block with no rows in it -- that
+    is, over none of the printed surface the loop flags added to this file.
+    """
+    user = json.dumps(dict(type="user", message=dict(role="user", content="go")))
+    return [user] + [_bash_asst(f"msg-s-{n}", cmd, _u(1, 10, 100, 1000))
+                     for n, (cmd, _) in enumerate(_SECRET_CMDS)]
+
+
 def self_test():
     print("SELF-TEST [positive control: exact totals over a synthetic fixture]")
     turns, _ = collect_turns(_fixture_lines())
@@ -1305,6 +1638,87 @@ def self_test():
           f"refusal={'FIRED' if b_ok else 'DID NOT FIRE'}")
     if not b_ok:
         ok = False
+
+    print("\nSELF-TEST [Bash clustering positive control: known commands must cluster "
+          "exactly]")
+    bt, _ = collect_turns(_bash_fixture_lines())
+    bg = group_bash(bt)
+    got = {k: v["turns"] for k, v in bg.items()}
+    exp = {"git": 2, "pytest": 1, UNPARSED: 1, "aws": 1, "npm": 1}
+    bash_ok = got == exp
+    if not bash_ok:
+        ok = False
+    print(f"  clusters: got={got} expected={exp} {'OK' if bash_ok else 'MISMATCH'}")
+    # Named separately from the dict compare above, because these two are the shapes the
+    # fixture used to omit, and a reader should see them pass or fail BY NAME.
+    quoted_ok = bash_cluster(_SECRET_CMDS[0][0]) == "aws"
+    envcd_ok = bash_cluster("CI=1 cd /repo && npm test") == "npm"
+    unbal_ok = bash_cluster('VAULT_KEY="grommet flange aws s3 ls') == UNPARSED
+    if not (quoted_ok and envcd_ok and unbal_ok):
+        ok = False
+    print(f"  quoted multi-word env value -> real command (not a word of the value): "
+          f"{'OK' if quoted_ok else 'MISMATCH'}")
+    print(f"  env prefix BEFORE a `cd ...&&` chain -> real command (not `cd`): "
+          f"{'OK' if envcd_ok else 'MISMATCH'}")
+    print(f"  UNBALANCED quote -> (unparsed), never the raw first word of the original "
+          f"(which holds a secret fragment): {'OK' if unbal_ok else 'MISMATCH'}")
+
+    print("\nSELF-TEST [PRIVACY control: no fragment of a quoted secret value may reach "
+          "any printed output -- cluster keys are NOT anonymised, so they must be safe "
+          "by derivation]")
+    leak_ok = True
+    for cmd, want in _SECRET_CMDS:
+        key = bash_cluster(cmd)
+        if key != want:
+            leak_ok = False
+            print(f"  MISCLUSTERED {cmd!r} -> {key!r} (expected {want!r})")
+    st, st_stats = collect_turns(_secret_fixture_lines())
+    # same report shape, no secrets -- and a real user turn, so its flags populate too
+    base, base_stats = collect_turns(
+        [json.dumps(dict(type="user", message=dict(role="user", content="go")))]
+        + _bash_fixture_lines()[:4])
+
+    def _render(trns, stats, anon_flag):
+        """Render EVERY printed surface this instrument has, so the assertion below covers
+        all of it: text report + `--json` digest, each with the LOOP FLAGS section
+        populated. The flags are included because they are a printed surface too -- they
+        carry no cluster key and no command string, and this control is what keeps that
+        true rather than something a reader has to re-derive from the flag code."""
+        a = argparse.Namespace(top=5, anonymise=anon_flag, json=False)
+        src = ["/tmp/secret-fixture.jsonl"]
+        flg = compute_flags([(src[0], trns, stats)], 1, 1)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_report(src, [], trns, a, flg)
+        return (buf.getvalue() + json.dumps(
+            build_digest(src, [], trns, {src[0]: trns}, None, None, a, flg))).lower()
+
+    def _hits(text):
+        return [w for w in _SECRET_WORDS
+                if re.search(r"(?<![A-Za-z0-9])" + re.escape(w) + r"(?![A-Za-z0-9])", text)]
+
+    # The control must be able to tell a leak from its own prose: a sentinel that shows up
+    # in a render containing NO secret at all would make this check meaningless.
+    collisions = _hits(_render(base, base_stats, False))
+    if collisions:
+        leak_ok = False
+        print(f"  CONTROL INVALID: sentinel word(s) {collisions} appear in a render with "
+              f"no secret input -- choose distinctive sentinels")
+    for anon_flag in (False, True):
+        rendered = _render(st, st_stats, anon_flag)
+        # (a) no whole command, and (b) no WORD of any secret value, anywhere
+        for cmd, _want in _SECRET_CMDS:
+            if cmd.lower() in rendered:
+                leak_ok = False
+                print(f"  FULL COMMAND LEAKED (anonymise={anon_flag}): {cmd!r}")
+        for w in _hits(rendered):
+            leak_ok = False
+            print(f"  SECRET-VALUE WORD LEAKED (anonymise={anon_flag}): {w!r}")
+    if not leak_ok:
+        ok = False
+    print(f"  {len(_SECRET_CMDS)} commands with quoted multi-word secret values, text "
+          f"report + --json digest + loop-flags section, with and without --anonymise: "
+          f"{'OK -- no value fragment printed' if leak_ok else 'LEAKED'}")
 
     print("\nSELF-TEST [manifest guards: duplicate label and dangling parent must REFUSE]")
     dup_ok = validate_manifest(
@@ -1571,13 +1985,23 @@ def self_test():
     anon_args = argparse.Namespace(anonymise=True, top=2)
     anon_turns, anon_stats = collect_turns(_flag_fixture_lines(7, 4))
     leaky = "transcript-path-that-must-not-survive.jsonl"
+    # TWO sources, not one, so the flat-batch `per_source` rows are in the digest this
+    # asserts over. That key arrived with the cross-tabs/batch work and carries a `source`
+    # field of its own, so a one-source leg would have left the merged digest's only NEW
+    # path-bearing list unchecked -- exactly the "a future list reintroduces it" hole the
+    # walk above was written against.
+    leaky2 = "second-transcript-path-that-must-not-survive.jsonl"
+    anon_turns2, anon_stats2 = collect_turns(_flag_fixture_lines(7, 4))
     anon_digest = json.dumps(build_digest(
-        [leaky], [], anon_turns, None, anon_args,
-        compute_flags([(leaky, anon_turns, anon_stats)], SPAN_T, STREAK_T)))
-    a_ok = (leaky not in anon_digest and anonymise(leaky) in anon_digest)
-    print(f"  raw path present={leaky in anon_digest} (must be False), hashed form "
-          f"present={anonymise(leaky) in anon_digest} (must be True)  "
-          f"{'OK' if a_ok else 'MISMATCH'}")
+        [leaky, leaky2], [], anon_turns + anon_turns2,
+        {leaky: anon_turns, leaky2: anon_turns2}, None, None, anon_args,
+        compute_flags([(leaky, anon_turns, anon_stats),
+                       (leaky2, anon_turns2, anon_stats2)], SPAN_T, STREAK_T)))
+    a_ok = (leaky not in anon_digest and leaky2 not in anon_digest
+            and anonymise(leaky) in anon_digest and anonymise(leaky2) in anon_digest)
+    print(f"  raw path present={leaky in anon_digest or leaky2 in anon_digest} (must be "
+          f"False), hashed form present={anonymise(leaky) in anon_digest and anonymise(leaky2) in anon_digest}"
+          f" (must be True)  {'OK' if a_ok else 'MISMATCH'}")
     if not a_ok:
         ok = False
 
@@ -1622,9 +2046,10 @@ def self_test():
 
     print()
     if ok:
-        print("SELF-TEST PASSED -- positive controls exact; both usage negative controls, "
-              "both manifest guards, and\nevery loop-flag control fired (including the "
-              "counterfactual that makes the flags' exclusion\nrule falsifiable).")
+        print("SELF-TEST PASSED -- totals exact, Bash clustering exact, no secret-value "
+              "fragment reached any output;\nboth usage negative controls, both manifest "
+              "guards, and every loop-flag control fired (including\nthe counterfactual "
+              "that makes the flags' exclusion rule falsifiable).")
         return 0
     print("SELF-TEST FAILED -- do NOT believe this instrument's numbers.")
     return 3
@@ -1643,9 +2068,12 @@ def main():
                "Run --help-blind for this instrument's own failure modes.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("transcripts", nargs="*",
-                    help="one or more transcript .jsonl paths")
+                    help="one or more transcript .jsonl paths; give 2+ for a flat "
+                         "per-source breakdown without needing a manifest")
     ap.add_argument("--manifest", metavar="PATH",
-                    help="JSON manifest describing a tree of SEPARATE sessions to roll up")
+                    help="JSON manifest describing a tree of SEPARATE sessions to roll up "
+                         "(adds agent-level cross-tabs: per-node totals, per-node by-tool, "
+                         "and grand by-tool with vs without subsessions)")
     ap.add_argument("--json", action="store_true",
                     help="emit a compact digest for LLM review instead of the text report")
     ap.add_argument("--top", type=int, default=5, metavar="N",
@@ -1687,12 +2115,12 @@ def main():
     span_threshold, err = resolve_threshold(args.flag_span_tool_calls,
                                             "ARI_FLAG_SPAN_TOOL_CALLS")
     if err:
-        print(f"REFUSING: {err}. See --help-blind, blind mode 6.", file=sys.stderr)
+        print(f"REFUSING: {err}. See --help-blind, blind mode 7.", file=sys.stderr)
         return 2
     streak_threshold, err = resolve_threshold(args.flag_no_tool_streak,
                                               "ARI_FLAG_NO_TOOL_STREAK")
     if err:
-        print(f"REFUSING: {err}. See --help-blind, blind mode 6.", file=sys.stderr)
+        print(f"REFUSING: {err}. See --help-blind, blind mode 7.", file=sys.stderr)
         return 2
 
     # assemble the set of sources: positional paths + manifest transcripts
@@ -1760,12 +2188,12 @@ def main():
 
     cov = coverage(all_turns)
     reason = refusal_reason(cov)
+    rollup_rows = rollup(manifest_nodes, own_totals) if manifest_nodes else None
     if reason:
         msg = f"REFUSING: {reason}. See --help-blind."
         if args.json:
-            digest = build_digest(sources_read, sources_na, all_turns,
-                                  (rollup(manifest_nodes, own_totals)
-                                   if manifest_nodes else None), args, flags)
+            digest = build_digest(sources_read, sources_na, all_turns, per_path_turns,
+                                  manifest_nodes, rollup_rows, args, flags)
             digest["measured"] = False
             print(json.dumps(digest, indent=2))
             print(msg, file=sys.stderr)
@@ -1773,16 +2201,17 @@ def main():
             print(msg, file=sys.stderr)
         return 2
 
-    rollup_rows = rollup(manifest_nodes, own_totals) if manifest_nodes else None
-
     if args.json:
-        print(json.dumps(build_digest(sources_read, sources_na, all_turns,
-                                      rollup_rows, args, flags), indent=2))
+        print(json.dumps(build_digest(sources_read, sources_na, all_turns, per_path_turns,
+                                      manifest_nodes, rollup_rows, args, flags), indent=2))
         return 0
 
     print_report(sources_read, sources_na, all_turns, args, flags)
-    if rollup_rows is not None:
+    if manifest_nodes is not None:
+        print_crosstabs(manifest_nodes, per_path_turns, args)
         print_rollup(rollup_rows, args)
+    elif len(sources_read) >= 2:
+        print_per_source(sources_read, sources_na, per_path_turns, args)
     return 0
 
 

@@ -118,6 +118,23 @@ Stated so the gaps are visible rather than implied absent.
   tree; the instrument does not verify it. A node whose transcript is unreadable is reported as
   `n/a` and contributes nothing to its parent, never a zero -- but a WRONG parent edge sums
   silently, because nothing here can know the real shape.
+- **Bash clustering is a first-token heuristic, not a parse.** It clusters a Bash turn by the
+  command's first word after stripping leading `cd ...&&` chains and `VAR=` prefixes, so
+  `git commit` and `git push` both land under `git`, and a command it cannot reduce to a plain
+  word lands in `(unparsed)` rather than a real bucket. It does not understand pipelines,
+  subshells, or what a command actually did -- read it as "what the turn started by running".
+  The stripping is deliberately quote-aware and runs to a fixed point, and that is a PRIVACY
+  property rather than a tidiness one: a cluster key is printed in both the text report and the
+  `--json` digest, and `--anonymise` does not touch it (it hashes transcript paths and manifest
+  labels, not evidence). A peel that did not know where a quoted value ends once stopped inside
+  one and published a word of an env-var secret as a cluster key; the instrument's `--self-test`
+  now carries a control that renders commands with quoted multi-word secret values through both
+  output modes, with and without `--anonymise`, and fails if any word of a value appears in
+  either. The guarantee is about the DERIVATION, not a filter on the way out: nothing downstream
+  scrubs a cluster key, so the key must be incapable of carrying content in the first place.
+- **The flat per-source table claims no hierarchy.** Passing several transcripts positionally
+  shows each one's own total side by side; it does not infer any parent/child relationship
+  between them. Use `--manifest` when a real tree exists -- the instrument never guesses one.
 - **It prepares data for an LLM; it does not call one.** `--json` is a digest meant to be handed
   to a model for qualitative review. No network, no model request, no judgement of its own.
 

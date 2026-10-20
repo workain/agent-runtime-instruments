@@ -17,6 +17,10 @@ BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called,
       8       80        8000          800  Bash
       4       40        4000          400  (no tool call)
 
+BY BASH COMMAND (Bash turns clustered by command's first token after stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- `git commit`/`git push` both cluster as `git`):
+  turns      out  cache_read cache_create  bash command cluster
+      8       80        8000          800  (unparsed)
+
 BY AGENT (same-session Task subagents separated from the main thread):
   turns      out  cache_read cache_create  agent
      12      120       12000         1200  main thread
@@ -49,7 +53,7 @@ LOOP FLAGS
     UNMEASURED: not one real user turn was found, so this transcript has no span
     boundaries at all. The whole file would read as ONE span and would exceed any
     threshold, so NOTHING is flagged here: a dramatic number about a session whose turns
-    cannot be seen is worse than no number. See --help-blind, blind mode 5.
+    cannot be seen is worse than no number. See --help-blind, blind mode 6.
 
   SIGNAL 2 -- repeated / near-duplicate invocations: NOT IMPLEMENTED
       NOT IMPLEMENTED -- repeated/near-duplicate invocations. Published work rates this

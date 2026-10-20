@@ -1,19 +1,22 @@
 {
   "measured": true,
   "sources_read": [
-    "samples/fixtures/token_breakdown.jsonl"
+    "samples/fixtures/token_breakdown.jsonl",
+    "samples/fixtures/token_breakdown.child.jsonl"
   ],
-  "sources_unreadable": [],
+  "sources_unreadable": [
+    "samples/fixtures/token_breakdown.missing.jsonl"
+  ],
   "coverage": {
-    "total_turns": 6,
-    "usage_bearing": 6,
+    "total_turns": 7,
+    "usage_bearing": 7,
     "without_usage": 0,
-    "fully_attributed": 6,
+    "fully_attributed": 7,
     "field_present": {
-      "input_tokens": 6,
-      "output_tokens": 6,
-      "cache_creation_input_tokens": 6,
-      "cache_read_input_tokens": 6
+      "input_tokens": 7,
+      "output_tokens": 7,
+      "cache_creation_input_tokens": 7,
+      "cache_read_input_tokens": 7
     },
     "fields_entirely_absent": [],
     "fields_partially_absent": [],
@@ -21,14 +24,290 @@
     "sidechain_without_type": 0
   },
   "totals": {
-    "input_tokens": 49,
-    "output_tokens": 490,
-    "cache_creation_input_tokens": 4900,
-    "cache_read_input_tokens": 20500,
-    "turns": 6
+    "input_tokens": 50,
+    "output_tokens": 497,
+    "cache_creation_input_tokens": 4970,
+    "cache_read_input_tokens": 21200,
+    "turns": 7
   },
-  "cache_read_to_output": 41.83673469387755,
+  "cache_read_to_output": 42.65593561368209,
   "by_tool": [
+    {
+      "key": "Bash+Grep",
+      "input_tokens": 20,
+      "output_tokens": 200,
+      "cache_creation_input_tokens": 2000,
+      "cache_read_input_tokens": 8000,
+      "turns": 1
+    },
+    {
+      "key": "Read",
+      "input_tokens": 11,
+      "output_tokens": 107,
+      "cache_creation_input_tokens": 1070,
+      "cache_read_input_tokens": 5700,
+      "turns": 2
+    },
+    {
+      "key": "Grep",
+      "input_tokens": 4,
+      "output_tokens": 40,
+      "cache_creation_input_tokens": 400,
+      "cache_read_input_tokens": 3000,
+      "turns": 1
+    },
+    {
+      "key": "(no tool call)",
+      "input_tokens": 7,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 700,
+      "cache_read_input_tokens": 2500,
+      "turns": 2
+    },
+    {
+      "key": "Task",
+      "input_tokens": 8,
+      "output_tokens": 80,
+      "cache_creation_input_tokens": 800,
+      "cache_read_input_tokens": 2000,
+      "turns": 1
+    }
+  ],
+  "by_bash_command": [
+    {
+      "key": "git",
+      "input_tokens": 20,
+      "output_tokens": 200,
+      "cache_creation_input_tokens": 2000,
+      "cache_read_input_tokens": 8000,
+      "turns": 1
+    }
+  ],
+  "by_agent": [
+    {
+      "key": "main thread",
+      "input_tokens": 44,
+      "output_tokens": 437,
+      "cache_creation_input_tokens": 4370,
+      "cache_read_input_tokens": 16700,
+      "turns": 5
+    },
+    {
+      "key": "explore",
+      "input_tokens": 6,
+      "output_tokens": 60,
+      "cache_creation_input_tokens": 600,
+      "cache_read_input_tokens": 4500,
+      "turns": 2
+    }
+  ],
+  "top_by_cache_read": [
+    {
+      "cache_read": 8000,
+      "output": 200,
+      "agent": "main thread",
+      "tools": [
+        "Bash",
+        "Grep"
+      ],
+      "bash": [
+        "git"
+      ]
+    },
+    {
+      "cache_read": 5000,
+      "output": 100,
+      "agent": "main thread",
+      "tools": [
+        "Read"
+      ],
+      "bash": []
+    },
+    {
+      "cache_read": 3000,
+      "output": 40,
+      "agent": "explore",
+      "tools": [
+        "Grep"
+      ],
+      "bash": []
+    },
+    {
+      "cache_read": 2000,
+      "output": 80,
+      "agent": "main thread",
+      "tools": [
+        "Task"
+      ],
+      "bash": []
+    },
+    {
+      "cache_read": 1500,
+      "output": 20,
+      "agent": "explore",
+      "tools": [],
+      "bash": []
+    }
+  ],
+  "by_agent_node": [
+    {
+      "label": "root-session",
+      "parent": null,
+      "own": {
+        "input_tokens": 49,
+        "output_tokens": 490,
+        "cache_creation_input_tokens": 4900,
+        "cache_read_input_tokens": 20500,
+        "turns": 6
+      }
+    },
+    {
+      "label": "child-explore",
+      "parent": "root-session",
+      "own": {
+        "input_tokens": 1,
+        "output_tokens": 7,
+        "cache_creation_input_tokens": 70,
+        "cache_read_input_tokens": 700,
+        "turns": 1
+      }
+    },
+    {
+      "label": "child-gone",
+      "parent": "root-session",
+      "own": null
+    }
+  ],
+  "by_agent_tool": [
+    {
+      "label": "root-session",
+      "by_tool": [
+        {
+          "key": "Bash+Grep",
+          "input_tokens": 20,
+          "output_tokens": 200,
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 8000,
+          "turns": 1
+        },
+        {
+          "key": "Read",
+          "input_tokens": 10,
+          "output_tokens": 100,
+          "cache_creation_input_tokens": 1000,
+          "cache_read_input_tokens": 5000,
+          "turns": 1
+        },
+        {
+          "key": "Grep",
+          "input_tokens": 4,
+          "output_tokens": 40,
+          "cache_creation_input_tokens": 400,
+          "cache_read_input_tokens": 3000,
+          "turns": 1
+        },
+        {
+          "key": "(no tool call)",
+          "input_tokens": 7,
+          "output_tokens": 70,
+          "cache_creation_input_tokens": 700,
+          "cache_read_input_tokens": 2500,
+          "turns": 2
+        },
+        {
+          "key": "Task",
+          "input_tokens": 8,
+          "output_tokens": 80,
+          "cache_creation_input_tokens": 800,
+          "cache_read_input_tokens": 2000,
+          "turns": 1
+        }
+      ]
+    },
+    {
+      "label": "child-explore",
+      "by_tool": [
+        {
+          "key": "Read",
+          "input_tokens": 1,
+          "output_tokens": 7,
+          "cache_creation_input_tokens": 70,
+          "cache_read_input_tokens": 700,
+          "turns": 1
+        }
+      ]
+    },
+    {
+      "label": "child-gone",
+      "by_tool": null
+    }
+  ],
+  "by_agent_bash": [
+    {
+      "label": "root-session",
+      "by_bash_command": [
+        {
+          "key": "git",
+          "input_tokens": 20,
+          "output_tokens": 200,
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 8000,
+          "turns": 1
+        }
+      ]
+    },
+    {
+      "label": "child-explore",
+      "by_bash_command": []
+    },
+    {
+      "label": "child-gone",
+      "by_bash_command": null
+    }
+  ],
+  "grand_by_tool_with_agents": [
+    {
+      "key": "Bash+Grep",
+      "input_tokens": 20,
+      "output_tokens": 200,
+      "cache_creation_input_tokens": 2000,
+      "cache_read_input_tokens": 8000,
+      "turns": 1
+    },
+    {
+      "key": "Read",
+      "input_tokens": 11,
+      "output_tokens": 107,
+      "cache_creation_input_tokens": 1070,
+      "cache_read_input_tokens": 5700,
+      "turns": 2
+    },
+    {
+      "key": "Grep",
+      "input_tokens": 4,
+      "output_tokens": 40,
+      "cache_creation_input_tokens": 400,
+      "cache_read_input_tokens": 3000,
+      "turns": 1
+    },
+    {
+      "key": "(no tool call)",
+      "input_tokens": 7,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 700,
+      "cache_read_input_tokens": 2500,
+      "turns": 2
+    },
+    {
+      "key": "Task",
+      "input_tokens": 8,
+      "output_tokens": 80,
+      "cache_creation_input_tokens": 800,
+      "cache_read_input_tokens": 2000,
+      "turns": 1
+    }
+  ],
+  "grand_by_tool_root_only": [
     {
       "key": "Bash+Grep",
       "input_tokens": 20,
@@ -70,76 +349,17 @@
       "turns": 1
     }
   ],
-  "by_agent": [
-    {
-      "key": "main thread",
-      "input_tokens": 43,
-      "output_tokens": 430,
-      "cache_creation_input_tokens": 4300,
-      "cache_read_input_tokens": 16000,
-      "turns": 4
-    },
-    {
-      "key": "explore",
-      "input_tokens": 6,
-      "output_tokens": 60,
-      "cache_creation_input_tokens": 600,
-      "cache_read_input_tokens": 4500,
-      "turns": 2
-    }
-  ],
-  "top_by_cache_read": [
-    {
-      "cache_read": 8000,
-      "output": 200,
-      "agent": "main thread",
-      "tools": [
-        "Bash",
-        "Grep"
-      ]
-    },
-    {
-      "cache_read": 5000,
-      "output": 100,
-      "agent": "main thread",
-      "tools": [
-        "Read"
-      ]
-    },
-    {
-      "cache_read": 3000,
-      "output": 40,
-      "agent": "explore",
-      "tools": [
-        "Grep"
-      ]
-    },
-    {
-      "cache_read": 2000,
-      "output": 80,
-      "agent": "main thread",
-      "tools": [
-        "Task"
-      ]
-    },
-    {
-      "cache_read": 1500,
-      "output": 20,
-      "agent": "explore",
-      "tools": []
-    }
-  ],
   "loop_flags": {
     "signal1_span_tool_calls": {
       "state": "not_computed",
-      "real_user_turns": 1,
+      "real_user_turns": 2,
       "user_entries_excluded": {},
-      "spans": 1,
+      "spans": 2,
       "threshold": null,
-      "calls_p50": 6,
+      "calls_p50": 1,
       "calls_p90": 6,
       "calls_max": 6,
-      "turns_p50": 6,
+      "turns_p50": 1,
       "turns_max": 6,
       "rows": [
         {
@@ -148,6 +368,13 @@
           "preamble": false,
           "turns": 6,
           "calls": 6
+        },
+        {
+          "source": "samples/fixtures/token_breakdown.child.jsonl",
+          "index": 1,
+          "preamble": false,
+          "turns": 1,
+          "calls": 1
         }
       ],
       "flagged": []
@@ -159,11 +386,11 @@
     "signal3_no_tool_streaks": {
       "state": "not_computed",
       "threshold": null,
-      "assistant_turns": 6,
+      "assistant_turns": 7,
       "longest": 1,
       "per_thread": {
         "main thread": {
-          "turns": 4,
+          "turns": 5,
           "no_tool_turns": 1,
           "streaks": 1,
           "longest": 1,
@@ -179,5 +406,50 @@
       }
     }
   },
-  "loop_flags_are_not_verdicts": "A flagged span or streak is a pointer to look, computed from transcript structure against a caller-set threshold. It is not a finding that the work was wasted, and no threshold here is a validated constant."
+  "loop_flags_are_not_verdicts": "A flagged span or streak is a pointer to look, computed from transcript structure against a caller-set threshold. It is not a finding that the work was wasted, and no threshold here is a validated constant.",
+  "subsessions": [
+    {
+      "label": "root-session",
+      "parent": null,
+      "own": {
+        "input_tokens": 49,
+        "output_tokens": 490,
+        "cache_creation_input_tokens": 4900,
+        "cache_read_input_tokens": 20500
+      },
+      "subtree": {
+        "input_tokens": 50,
+        "output_tokens": 497,
+        "cache_creation_input_tokens": 4970,
+        "cache_read_input_tokens": 21200
+      }
+    },
+    {
+      "label": "child-explore",
+      "parent": "root-session",
+      "own": {
+        "input_tokens": 1,
+        "output_tokens": 7,
+        "cache_creation_input_tokens": 70,
+        "cache_read_input_tokens": 700
+      },
+      "subtree": {
+        "input_tokens": 1,
+        "output_tokens": 7,
+        "cache_creation_input_tokens": 70,
+        "cache_read_input_tokens": 700
+      }
+    },
+    {
+      "label": "child-gone",
+      "parent": "root-session",
+      "own": null,
+      "subtree": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    }
+  ]
 }

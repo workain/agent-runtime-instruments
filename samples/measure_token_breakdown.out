@@ -20,6 +20,10 @@ BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called,
       2       70        2500          700  (no tool call)
       1       80        2000          800  Task
 
+BY BASH COMMAND (Bash turns clustered by command's first token after stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- `git commit`/`git push` both cluster as `git`):
+  turns      out  cache_read cache_create  bash command cluster
+      1      200        8000         2000  git
+
 BY AGENT (same-session Task subagents separated from the main thread):
   turns      out  cache_read cache_create  agent
       4      430       16000         4300  main thread

@@ -1,2 +1,2 @@
-REFUSING: ARI_FLAG_SPAN_TOOL_CALLS='twenty' is not an integer. An env var that cannot be parsed is refused, not quietly ignored back to 'no threshold'. See --help-blind, blind mode 6.
+REFUSING: ARI_FLAG_SPAN_TOOL_CALLS='twenty' is not an integer. An env var that cannot be parsed is refused, not quietly ignored back to 'no threshold'. See --help-blind, blind mode 7.
 exit=2

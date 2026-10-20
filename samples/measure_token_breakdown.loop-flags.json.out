@@ -46,6 +46,16 @@
       "turns": 4
     }
   ],
+  "by_bash_command": [
+    {
+      "key": "(unparsed)",
+      "input_tokens": 8,
+      "output_tokens": 80,
+      "cache_creation_input_tokens": 800,
+      "cache_read_input_tokens": 8000,
+      "turns": 8
+    }
+  ],
   "by_agent": [
     {
       "key": "main thread",
@@ -63,6 +73,9 @@
       "agent": "main thread",
       "tools": [
         "Bash"
+      ],
+      "bash": [
+        "(unparsed)"
       ]
     },
     {
@@ -71,6 +84,9 @@
       "agent": "main thread",
       "tools": [
         "Bash"
+      ],
+      "bash": [
+        "(unparsed)"
       ]
     },
     {
@@ -79,6 +95,9 @@
       "agent": "main thread",
       "tools": [
         "Bash"
+      ],
+      "bash": [
+        "(unparsed)"
       ]
     },
     {
@@ -87,6 +106,9 @@
       "agent": "main thread",
       "tools": [
         "Bash"
+      ],
+      "bash": [
+        "(unparsed)"
       ]
     },
     {
@@ -95,6 +117,9 @@
       "agent": "main thread",
       "tools": [
         "Bash"
+      ],
+      "bash": [
+        "(unparsed)"
       ]
     }
   ],
