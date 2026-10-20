@@ -89,6 +89,41 @@ a sidechain's thread label is a tag, not its profile name
   ok   -- it is published as sidechain:152a74aa -- stable, distinguishing, and naming no profile
   ok   -- while the main thread and the 'type not recorded' placeholder pass through, being closed literals rather than site-specific names
   ok   -- and two different profiles get two different tags, so the label still distinguishes threads
+  ok   -- and a FRESH PROCESS computes the identical tag (sidechain:ed8ba1cf), so a watchdog polling every few minutes can still tell one thread from another across its own runs -- which a per-interpreter salted hash would silently break
+
+R1: reverting any fix on this branch must turn one of these RED
+  ok   -- the fixture really does hold a literal U+2028 inside a JSON string, and json.loads parses all 3 of its lines -- so it is VALID JSONL, not a corrupt file whose mishandling would not matter
+  ok   -- and str.splitlines() sees 4 lines in those 3 -- the alternative split this control exists to forbid does disagree, so the control is not vacuous
+  ok   -- splitting the RAW BYTES on b'\n' reads 3 lines and 3 turns. Under str.splitlines() this file is 4 lines and 2 TURNS: a turn silently lost, with no error, on a transcript that is entirely well-formed
+  ok   -- the line the trim drops is 286 bytes but 280 characters, so byte and character arithmetic MUST give different answers here
+  ok   -- start_offset (553) is the TRUE byte position of the window's first kept line (553). Counting characters instead gives 547 -- an offset pointing into the middle of a line
+  ok   -- and resuming from it returns the same 2 turns the window held -- which is the consequence that matters: a wrong offset drops the oldest turn on resume
+  ok   -- the fixture genuinely has no trailing newline
+  ok   -- a transcript with no trailing newline still reads all 3 lines and 3 turns -- popping the last element unconditionally would read 2, losing the newest turn on exactly the file shape a LIVE session always has
+  ok   -- an empty file reads 0 lines and 0 turns. b''.split(b'\n') is [b''], so the naive split reports lines_kept=1 -- provenance a caller logs and the bench divides by, claiming one line that does not exist
+  ok   -- and `from_offset` at EOF returns the EMPTY window --help-blind mode 7 promises, with grew=False -- not a window holding one phantom line
+  ok   -- with every flag on it `unmeasured`, never a reassuring clean result
+  ok   -- asking for 1 turn(s) of a transcript that replays EVERY id returns exactly 1, at read_fraction 0.483. An identity-keyed cut returns 4 for every one of these, because the newest ids' FIRST appearance is in the first half -- it reports head_complete=True while silently answering a different question
+  ok   -- asking for 2 turn(s) of a transcript that replays EVERY id returns exactly 2, at read_fraction 0.483. An identity-keyed cut returns 4 for every one of these, because the newest ids' FIRST appearance is in the first half -- it reports head_complete=True while silently answering a different question
+  ok   -- asking for 3 turn(s) of a transcript that replays EVERY id returns exactly 3, at read_fraction 1.000. An identity-keyed cut returns 4 for every one of these, because the newest ids' FIRST appearance is in the first half -- it reports head_complete=True while silently answering a different question
+  ok   -- when the computed read position is EXACTLY a line start (553), the read begins there. Without the one-byte look-back that proves it is a boundary, this case cannot be told from 'mid-line' and the loop falls back to offset 0 -- the whole file, which is the saving this library exists to make
+  ok   -- 3 CONTENT turns with NO user turn between them are one run of 3, and fire
+  ok   -- the SAME three turns with a real user turn after the second are runs of 2 and 1, so the longest is 2 and nothing fires. Without the span reset this is a run of 3 that FIRES -- recommending one subagent for two unrelated briefs, which is not the unit alm#833 measured or priced
+  ok   -- the fixture produces BOTH row kinds (['consecutive', 'span']) -- a control seeing only one of them would leave the other free to bypass public_label
+  ok   -- and EVERY row of both kinds is reduced to mcp:get_thing
+  ok   -- with the server segment absent from the whole flag, not merely from the rows this control happened to look at
+
+the name boundary: what reduces, what passes through, and what leaks
+  ok   -- a repeated Skill call FIRES, and neither the skill name nor its argument appears anywhere in the flag -- both live in the arguments, which are digested
+  ok   -- the published label is the bare built-in `Skill`, which names no skill
+  ok   -- mcp__a-mcp-server__send_message                -> mcp:send_message
+  ok   -- mcp__a-mcho-server__send_message               -> mcp:send_message
+  ok   -- mcp__a-mch-server__send_message                -> mcp:send_message
+  ok   -- mcp__a-mcph-server__send_message               -> mcp:send_message
+  ok   -- mcp__a-mcro-server__send_message               -> mcp:send_message
+  ok   -- mcp__some_underscored_server__send_message     -> mcp:send_message
+  ok   -- a built-in and a closed bash cluster pass through, being install-identical
+  ok   -- AND SO DOES a bare site-specific verb with no mcp__ prefix -- the residual public_label's docstring discloses, pinned here so it cannot be forgotten: if a later change hashes unrecognised names, this control fails and the docstring is what needs rewriting
 
 a threshold below 1 is refused by the FUNCTION, not only by the CLI
   ok   -- batchable_bash refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
@@ -114,7 +149,7 @@ the three states
   ok   -- all three states are reachable from real windows: ['measured', 'not_computed', 'unmeasured']
   ok   -- every flag returns the SAME core key set, so one caller branch works for all three: ('count', 'evidence', 'fingerprint', 'fired', 'flag', 'measure', 'measure_of', 'note', 'overshoot', 'severity', 'source', 'state', 'threshold', 'window')
 
-SELF-TEST PASSED -- 90 checks: the byte arithmetic at every offset, window/full agreement,
+SELF-TEST PASSED -- 121 checks: the byte arithmetic at every offset, window/full agreement,
 a positive AND a negative control for each of the three flags, both sides of each threshold
 boundary, all three states reachable, the resume cursor across an append and a rotation,
 and no raw argument in any evidence row.

@@ -313,6 +313,25 @@ build path with no sign of it in the diff. That is not hypothetical — it happe
 gate certified the tree clean, because `grep -I` skips binary files and `git log -G` does not
 search binary diffs. Both legs now have decoys.
 
+One gate asks a different question: not "does the code pass its controls" but **"do the
+controls protect what the code changed"**. `scripts/test_flags_controls.sh` reverts each fix
+`flags.py` makes — back to the code that was really there, one at a time — and requires a
+control to turn RED:
+
+```
+REVERT-EACH-FIX GATE -- 13 cases
+PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+```
+
+It exists because review found the opposite. Thirteen of fifty-three mutants left the suite
+green, and the cause was not carelessness: the controls written after the first review round
+pinned *the reviewer's findings* rather than *the fixes*. Four of six changed behaviours
+could be reverted with everything still green, and two of those reversions lost data — a
+turn silently dropped on a transcript holding a literal U+2028, and four turns returned when
+one was asked for. "The reviewer already found that one" is a record of one person having
+looked once; it is not coverage. This gate's own first run was **RED**, on a fix whose
+control did not exist yet, which is the only evidence that it can fail.
+
 `samples/` holds real output from every instrument, **including the runs that failed**: a caching
 run that exited 3, a census self-test that missed its decoys, the MCP counterfactual that refuses
 a server which never connected, and `samples/gate-evidence/check_figures.RED.out` — the figure

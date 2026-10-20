@@ -192,6 +192,33 @@ def turn_keys(win):
     return [tuple(t["call_keys"]) for t in win["turns"]]
 
 
+def _streams(lines):
+    """`lines` partitioned into (main thread, sidechain) -- the two streams whose entries
+    interleave in one transcript file.
+
+    Split on the same `isSidechain` field `measure_token_breakdown` keys its own thread
+    attribution on; an entry without it is main-thread. A line that is not JSON belongs to
+    neither and is dropped, exactly as `_assistant_mids` drops it.
+    """
+    main, side = [], []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        try:
+            d = json.loads(s)
+        except Exception:
+            continue
+        (side if isinstance(d, dict) and d.get("isSidechain") else main).append(line)
+    return main, side
+
+
+def _replays_an_id(lines):
+    """True if one turn id appears in more than one maximal consecutive run within `lines`."""
+    occ = FL._turn_occurrences(lines)
+    return len(occ) != len({mid for _i, mid in occ})
+
+
 def measure_file(path, last_turns, reps):
     """One row: the three reads, their costs, and whether they agree.
 
@@ -236,9 +263,17 @@ def measure_file(path, last_turns, reps):
     # transcript in the corpus came back MISMATCH purely because it had been resumed.
     #
     # Detected the way flags.py defines it: a turn id that occurs in more than one maximal
-    # consecutive run of assistant entries.
-    occ = FL._turn_occurrences(full["lines"])
-    resumed = len(occ) != len({mid for _i, mid in occ})
+    # consecutive run of assistant entries -- PER STREAM. The per-stream part is review's
+    # (R3): one main turn whose entries are SPLIT by a sidechain turn's entries yields the
+    # runs [main, side, main], and counting those together called the main id replayed when
+    # nothing was. That direction is bounded -- this is consulted only where the two reads
+    # already disagree, so it can never excuse an agreeing file, and it misclassified
+    # nothing on the real corpus (4 of 45 fired, all 4 genuine far-apart replays). It is
+    # fixed anyway because RESIDUAL means "the ONE disagreement we have accounted for": a
+    # real read-path defect that happened to surface on a sidechain-interleaved transcript
+    # would have been filed as the known residual and stopped being visible. That is the
+    # error this file warns about two comments up, pointing the other way.
+    resumed = any(_replays_an_id(ls) for ls in _streams(full["lines"]))
 
     # blind mode 3: the window must AGREE with the full read on the turns they share --
     # a question that only has an answer if the file held still while both ran.
@@ -576,6 +611,36 @@ def self_test():
     check(rr["resumed"] is True and rr["agree"] == "residual",
           "a transcript replaying a message.id is labelled RESIDUAL, not MISMATCH -- the "
           "slot reserved for an UNEXPLAINED read-path disagreement stays empty")
+    # control 8b (review R3): sidechain INTERLEAVING is not a replay. One main turn whose
+    # entries are split by a sidechain turn's entries used to be labelled resumed.
+    inter = [
+        FL._mk("mMAIN", [FL._tu("ic0", "Bash", dict(command="echo main"))], uuid="iu0"),
+        FL._mk("mSIDE", [FL._tu("ic1", "Read", dict(file_path="/s"))], uuid="iu1",
+               parent="iu0", sidechain=True),
+        FL._res("iu2", "iu1", "ic1", "side done"),
+        FL._mk("mMAIN", [FL._tu("ic2", "Bash", dict(command="echo main again"))],
+               uuid="iu3", parent="iu0"),
+        FL._res("iu4", "iu3", "ic2", "main done"),
+    ]
+    p_int = os.path.join(tmp, "interleaved.jsonl")
+    with open(p_int, "w") as fh:
+        for ln in inter:
+            fh.write(ln + "\n")
+    occ_all = FL._turn_occurrences([l for l in inter])
+    check(len(occ_all) != len({m for _i, m in occ_all}),
+          "control 8b: the fixture DOES look replayed to a whole-file count (runs %s) -- "
+          "so this control can fail" % ([m for _i, m in occ_all],))
+    check(measure_file(p_int, last_turns=1, reps=1)["resumed"] is False,
+          "but per stream nothing is replayed, so it is NOT labelled resumed: RESIDUAL "
+          "keeps meaning 'the one disagreement we accounted for', not 'had a subagent'")
+    m_only, s_only = _streams(inter)
+    check(not _replays_an_id(m_only) and not _replays_an_id(s_only)
+          and (len(m_only), len(s_only)) == (4, 1),
+          "the split puts %d entries in main and %d in sidechain, neither replaying -- the "
+          "sidechain's own tool_result sorts into MAIN, because only an assistant entry "
+          "carries isSidechain. Harmless: a tool_result carries no turn id either, so it "
+          "cannot make or break a replay" % (len(m_only), len(s_only)))
+
     check(measure_file(big, last_turns=10, reps=1)["resumed"] is False,
           "and a transcript that does not replay one is not labelled resumed, so the "
           "detector is not simply always true")

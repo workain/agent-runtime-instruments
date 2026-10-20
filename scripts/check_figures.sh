@@ -24,6 +24,8 @@ MIN_PAIRS=30
 
 # figure-string | sample file it must appear in
 PAIRS=(
+  'REVERT-EACH-FIX GATE -- 13 cases|samples/test_flags_controls.out'
+  'PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.|samples/test_flags_controls.out'
   'session trees: 20|samples/measure_session_footprint.out'
   'summed RSS: 7483 MB|samples/measure_session_footprint.out'
   'summed PSS: 5175 MB|samples/measure_session_footprint.out'

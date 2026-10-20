@@ -79,6 +79,7 @@ flags.no-transcript.out	instruments/flags.py	refu	samples/fixtures/flags.missing
 flags.two-windows-REFUSED.out	instruments/flags.py	refu	--last-turns 5 --from-offset 100 samples/fixtures/flags.repeats.jsonl
 flags.threshold-zero-REFUSED.out	instruments/flags.py	refu	--flag-repeated-calls 0 samples/fixtures/flags.repeats.jsonl
 bench_window_read.selftest.out	instruments/bench_window_read.py	refu	--self-test
+test_flags_controls.out	scripts/test_flags_controls.py	refu	
 bench_window_read.empty-corpus-REFUSED.out	instruments/bench_window_read.py	env	ROOTS=/nonexistent/ari24 --top 3
 EOF
 )

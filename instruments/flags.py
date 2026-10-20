@@ -116,6 +116,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -238,9 +239,20 @@ def _split_raw(raw, base):
          bytes on b"\n" is both the correct reading of the format and the only split whose
          offsets are knowable. A trailing `\r` is left on the line and neither
          `json.loads` nor `collect_turns`' own `.strip()` minds it.
+
+    AND ONE REGRESSION THE FIX ITSELF INTRODUCED, found by review: `b"".split(b"\n")` is
+    `[b""]`, not `[]`, and the pop above is guarded on a trailing newline the empty input
+    does not have -- so an empty file, and `from_offset` at EOF, each reported one line of
+    nothing. Detection was unaffected (`turns=0`, every flag correctly `unmeasured`), but
+    `lines_total`/`lines_kept` are window provenance a caller logs, `bench_window_read`
+    divides by them, and `--help-blind` mode 7 promises `from_offset` at EOF returns an
+    EMPTY window. One line of nothing is not an empty window. This was the one input shape
+    the oracle sweep that justified the rest of this function never fed it.
     """
     lines, offsets = [], []
     pos = 0
+    if not raw:
+        return lines, offsets            # see below: NO raw bytes is NO lines, not one empty
     parts = raw.split(b"\n")
     if parts and parts[-1] == b"" and raw.endswith(b"\n"):
         parts.pop()                      # the empty tail a trailing newline leaves behind
@@ -678,8 +690,29 @@ def public_label(label):
     about ("which call repeated"), the server is the site-specific part, and nothing about
     the DETECTION changes -- matching still happens over the full digest of the untouched
     arguments, and `call_keys` are not rewritten. Only what crosses the boundary is
-    narrowed. A non-MCP name is a closed public vocabulary (Bash:<cluster>, Read, Edit, ...)
-    and is passed through.
+    narrowed.
+
+    WHY A NON-MCP NAME IS PASSED THROUGH, AND THE RESIDUAL. The names this function lets
+    through unchanged are meant to be a closed vocabulary -- `Bash:<cluster>` (itself a
+    closed set, see the `bash_cluster` comment), `Read`, `Edit`, `Task`, `Skill` and the
+    rest of the CLI's own built-ins. The argument for publishing those is that they are
+    defined by the agent BINARY, identical on every install, and so cannot name anything
+    specific to this site. `mcp__*` is the opposite: it is the namespace a site DEFINES
+    into, which is exactly why it is the one that gets reduced.
+
+    That argument is structural for arguments but only CONVENTIONAL for names. Nothing in
+    this function enforces the vocabulary: a tool named without the `mcp__` prefix and yet
+    site-specific would be passed through verbatim. This box's own corpus contains one name
+    of that shape (a single bare verb from a fleet-control server, 1 call), so the gap is
+    real rather than hypothetical, and it is DISCLOSED here rather than claimed closed. The
+    fix, if it ever matters, is an allowlist of known built-ins with `tool:<8 hex>` for
+    anything outside it; that was not done because turning an unrecognised name into a hash
+    also destroys a legitimate caller's ability to read "which call repeated", and the known
+    exposure is one verb naming no argument, no path and no person.
+
+    What a Skill's own name does NOT do is reach a row: `Skill` is the label, and the skill
+    name travels in the ARGUMENTS, which are only ever digested. That is structural, and
+    there is a control for it.
     """
     if not isinstance(label, str):
         return label
@@ -2389,6 +2422,251 @@ def self_test():
     check(public_thread("profile_a") != public_thread("profile_b"),
           "and two different profiles get two different tags, so the label still "
           "distinguishes threads")
+    # Stability across RUNS, not just calls -- the property a periodic watchdog actually
+    # needs to say "the same thread is still looping", and the one an in-process control
+    # cannot see: `hash()` is salted per interpreter, `hashlib` is not. Nothing else here
+    # distinguishes them, and the docstring claims both.
+    probe = ("import importlib.util,sys;"
+             "s=importlib.util.spec_from_file_location('f',%r);"
+             "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
+             "print(m.public_thread('profile_a'))" % os.path.abspath(__file__))
+    fresh = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    check(fresh.returncode == 0
+          and fresh.stdout.strip() == public_thread("profile_a"),
+          "and a FRESH PROCESS computes the identical tag (%s), so a watchdog polling "
+          "every few minutes can still tell one thread from another across its own runs -- "
+          "which a per-interpreter salted hash would silently break"
+          % fresh.stdout.strip())
+
+    # ---- R1: the six behaviours THIS BRANCH CHANGED, each pinned by the input that -------
+    # ---- distinguishes the fix from the code it replaced. -------------------------------
+    #
+    # Round 2 of review found 13 of 53 mutants green and named the cause exactly: the
+    # controls added after round 1 pinned the REVIEWER'S FINDINGS, not MY FIXES. Reverting
+    # four of the six changes this branch makes left the suite green -- and two of those
+    # reversions LOSE DATA. A fix with no control is a fix that holds only until the next
+    # edit, and "the reviewer already found that one" is not coverage: it is a record of one
+    # person having looked once.
+    #
+    # The inputs below are review's own, lifted from .roast/r2_nonequiv*.py and r2_n6.py
+    # rather than re-derived, for the same reason this file copies alm#831's functions
+    # verbatim: an input re-invented is an input that may no longer distinguish anything.
+    print()
+    print("R1: reverting any fix on this branch must turn one of these RED")
+
+    def _wb(name, raw):
+        """A fixture written as exact BYTES -- the point of several controls below."""
+        pb = os.path.join(tmp, name)
+        with open(pb, "wb") as fh:
+            fh.write(raw)
+        return pb
+
+    def _asst_js(mid, cmd, parent=None, uuid=None):
+        """An assistant entry serialised the way a JS `JSON.stringify` writer serialises it:
+        ensure_ascii=FALSE. This is not a detail. Review's first attempt at the U+2028 probe
+        came back 'equivalent' because `json.dumps` defaults to ensure_ascii=True and had
+        escaped the very character under test -- and real transcripts are written by
+        JSON.stringify, which does NOT escape U+2028/U+2029. The escaping is why the defect
+        was reachable on a real file and why a fixture that escapes it proves nothing.
+        """
+        return json.dumps(dict(
+            type="assistant", uuid=uuid or ("u" + mid), parentUuid=parent,
+            timestamp="2026-10-20T00:00:00Z",
+            message=dict(id=mid, role="assistant", usage=dict(input_tokens=1),
+                         content=[_tu("c" + mid, "Bash", dict(command=cmd))])),
+            ensure_ascii=False)
+
+    # --- N3: a line holding a LITERAL U+2028. `str.splitlines()` cuts it in two. ---
+    raw_u = ("\n".join([_asst_js("m1", "echo one" + chr(0x2028) + "tail"),
+                        _asst_js("m2", "echo 2"),
+                        _asst_js("m3", "echo 3")]) + "\n").encode("utf-8")
+    p_u = _wb("u2028.jsonl", raw_u)
+    body_lines = [l for l in raw_u.decode("utf-8").split("\n") if l.strip()]
+    check(b"\xe2\x80\xa8" in raw_u and len(body_lines) == 3
+          and all(json.loads(l) for l in body_lines),
+          "the fixture really does hold a literal U+2028 inside a JSON string, and "
+          "json.loads parses all 3 of its lines -- so it is VALID JSONL, not a corrupt "
+          "file whose mishandling would not matter")
+    check(len(raw_u.decode("utf-8").splitlines()) == 4,
+          "and str.splitlines() sees 4 lines in those 3 -- the alternative split this "
+          "control exists to forbid does disagree, so the control is not vacuous")
+    w_u = read_window(p_u)
+    check((w_u["window"]["lines_total"], w_u["window"]["turns"]) == (3, 3),
+          "splitting the RAW BYTES on b'\\n' reads 3 lines and 3 turns. Under "
+          "str.splitlines() this file is 4 lines and 2 TURNS: a turn silently lost, with "
+          "no error, on a transcript that is entirely well-formed")
+
+    # --- N4: a dropped multibyte line. Offsets are BYTES, not characters. ---
+    raw_mb = ("\n".join([_asst_js("m1", "echo é中\U0001f600 padpadpadpad"),
+                         _asst_js("m2", "echo 2"), _asst_js("m3", "echo 3"),
+                         _asst_js("m4", "echo 4")]) + "\n").encode("utf-8")
+    p_mb = _wb("multibyte.jsonl", raw_mb)
+    drop0 = raw_mb.split(b"\n")[0]
+    check(len(drop0) != len(drop0.decode("utf-8")),
+          "the line the trim drops is %d bytes but %d characters, so byte and character "
+          "arithmetic MUST give different answers here"
+          % (len(drop0), len(drop0.decode("utf-8"))))
+    w_mb = read_window(p_mb, last_turns=2, first_chunk=10 ** 7)
+    true_off = raw_mb.find(w_mb["lines"][0].encode("utf-8", "surrogateescape"))
+    check(w_mb["window"]["start_offset"] == true_off,
+          "start_offset (%d) is the TRUE byte position of the window's first kept line "
+          "(%d). Counting characters instead gives %d -- an offset pointing into the "
+          "middle of a line" % (w_mb["window"]["start_offset"], true_off,
+                                true_off - (len(drop0) - len(drop0.decode("utf-8")))))
+    r_mb = read_window(p_mb, from_offset=w_mb["window"]["start_offset"])
+    check(r_mb["window"]["turns"] == w_mb["window"]["turns"] == 2,
+          "and resuming from it returns the same 2 turns the window held -- which is the "
+          "consequence that matters: a wrong offset drops the oldest turn on resume")
+
+    # --- N5: no trailing newline. The last turn must still be read. ---
+    raw_nt = "\n".join([_asst_js("m1", "echo 1"), _asst_js("m2", "echo 2"),
+                        _asst_js("m3", "echo 3")]).encode("utf-8")
+    p_nt = _wb("no_trailing_nl.jsonl", raw_nt)
+    check(not raw_nt.endswith(b"\n"), "the fixture genuinely has no trailing newline")
+    w_nt = read_window(p_nt)
+    check((w_nt["window"]["lines_total"], w_nt["window"]["turns"]) == (3, 3),
+          "a transcript with no trailing newline still reads all 3 lines and 3 turns -- "
+          "popping the last element unconditionally would read 2, losing the newest turn "
+          "on exactly the file shape a LIVE session always has")
+
+    # --- R2: an empty read is NO lines, not one line of nothing. ---
+    p_empty = _wb("empty.jsonl", b"")
+    w_e = read_window(p_empty)
+    check((w_e["window"]["lines_total"], w_e["window"]["lines_kept"],
+           w_e["window"]["turns"]) == (0, 0, 0),
+          "an empty file reads 0 lines and 0 turns. b''.split(b'\\n') is [b''], so the "
+          "naive split reports lines_kept=1 -- provenance a caller logs and the bench "
+          "divides by, claiming one line that does not exist")
+    w_eof = read_window(p_mb, from_offset=os.path.getsize(p_mb))
+    check((w_eof["window"]["lines_kept"], w_eof["window"]["turns"]) == (0, 0)
+          and w_eof["window"]["grew"] is False,
+          "and `from_offset` at EOF returns the EMPTY window --help-blind mode 7 promises, "
+          "with grew=False -- not a window holding one phantom line")
+    check(all(f["state"] == "unmeasured" and f["fired"] is False
+              for f in all_flags(w_e)["flags"].values()),
+          "with every flag on it `unmeasured`, never a reassuring clean result")
+
+    # --- N6: every message.id replayed. The cut is POSITIONAL. ---
+    seq = ["A", "B", "C", "D", "A", "B", "C", "D"]
+    dup_lines = [_asst_js("m" + m, "echo %d" % i,
+                          parent=("x%d" % (i - 1) if i else None), uuid="x%d" % i)
+                 for i, m in enumerate(seq)]
+    p_dup = _wb("replayed_ids.jsonl", ("\n".join(dup_lines) + "\n").encode("utf-8"))
+    for want_n in (1, 2, 3):
+        w_d = read_window(p_dup, last_turns=want_n, first_chunk=256)["window"]
+        check(w_d["turns"] == want_n and w_d["read_fraction"] <= 1.0,
+              "asking for %d turn(s) of a transcript that replays EVERY id returns exactly "
+              "%d, at read_fraction %.3f. An identity-keyed cut returns 4 for every one of "
+              "these, because the newest ids' FIRST appearance is in the first half -- it "
+              "reports head_complete=True while silently answering a different question"
+              % (want_n, w_d["turns"], w_d["read_fraction"]))
+
+    # --- N9: a read landing EXACTLY on a line start. The look-back byte. ---
+    starts = [0] + [i + 1 for i, c in enumerate(raw_mb) if c == 0x0a]
+    exact = [s for s in starts if 0 < s < len(raw_mb)][1]
+    w_ex = read_window(p_mb, last_turns=1, first_chunk=len(raw_mb) - exact)
+    check(w_ex["window"]["read_offset"] == exact,
+          "when the computed read position is EXACTLY a line start (%d), the read begins "
+          "there. Without the one-byte look-back that proves it is a boundary, this case "
+          "cannot be told from 'mid-line' and the loop falls back to offset 0 -- the whole "
+          "file, which is the saving this library exists to make" % exact)
+
+    # --- N10/N11: a CONTENT run crossing a real user turn. alm#833's unit. ---
+    def _run_lines(with_user_turn):
+        L = [_mk("md", [_tu("cd", "Task", dict(prompt="go"))], uuid="ud"),
+             _res("rd", "ud", "cd", "done")]
+        prev = "rd"
+        for i in range(2):
+            u = "ua%d" % i
+            L += [_mk("ma%d" % i, [_tu("ca%d" % i, "Bash", dict(command="echo a%d" % i))],
+                      parent=prev, uuid=u),
+                  _res("ra%d" % i, u, "ca%d" % i, "out")]
+            prev = "ra%d" % i
+        if with_user_turn:
+            L.append(_usr("uq", prev, "now do the other thing"))
+            prev = "uq"
+        L += [_mk("mb0", [_tu("cb0", "Bash", dict(command="echo b0"))], parent=prev,
+                  uuid="ub0"),
+              _res("rb0", "ub0", "cb0", "out")]
+        return L
+    p_span = _write(tmp, "span_reset.jsonl", _run_lines(True))
+    p_nospan = _write(tmp, "span_noreset.jsonl", _run_lines(False))
+    g_span = agent_reuse_gap(read_window(p_span), threshold=2)
+    g_nospan = agent_reuse_gap(read_window(p_nospan), threshold=2)
+    check((g_nospan["longest_content_run"], g_nospan["fired"]) == (3, True),
+          "3 CONTENT turns with NO user turn between them are one run of 3, and fire")
+    check((g_span["longest_content_run"], g_span["delegable_looking"], g_span["fired"])
+          == (2, False, False),
+          "the SAME three turns with a real user turn after the second are runs of 2 and 1, "
+          "so the longest is 2 and nothing fires. Without the span reset this is a run of "
+          "3 that FIRES -- recommending one subagent for two unrelated briefs, which is "
+          "not the unit alm#833 measured or priced")
+
+    # --- N17: EVERY evidence row goes through public_label, not just some. ---
+    FAKE_MCP = "mcp__example-fake-server__get_thing"
+    mcp_lines, prev = [], None
+    for i in range(5):
+        u = "v%d" % i
+        mcp_lines += [_mk("n%d" % i, [_tu("d%d" % i, FAKE_MCP, {"a": 1})],
+                          parent=prev, uuid=u),
+                      _res("s%d" % i, u, "d%d" % i, "ok")]
+        prev = "s%d" % i
+    p_mcpf = _write(tmp, "mcp_repeat.jsonl", mcp_lines)
+    f_mcp = repeated_invocations(read_window(p_mcpf), threshold=1)
+    kinds = {r["window"] for r in f_mcp["evidence"]}
+    check(f_mcp["fired"] and kinds == {"consecutive", "span"},
+          "the fixture produces BOTH row kinds (%s) -- a control seeing only one of them "
+          "would leave the other free to bypass public_label" % sorted(kinds))
+    check({r["label"] for r in f_mcp["evidence"]} == {"mcp:get_thing"},
+          "and EVERY row of both kinds is reduced to mcp:get_thing")
+    check("example-fake-server" not in json.dumps(f_mcp),
+          "with the server segment absent from the whole flag, not merely from the rows "
+          "this control happened to look at")
+
+    # ---- the tool-name namespace boundary, and its one disclosed hole -------------------
+    print()
+    print("the name boundary: what reduces, what passes through, and what leaks")
+    SKILL = "some-private-internal-skill-name"
+    SECRET = "--secret /srv/private/path"
+    sk_lines, sparent = [], None
+    for i in range(4):
+        sk_lines.append(json.dumps(dict(
+            type="assistant", uuid="ka%d" % i, parentUuid=sparent,
+            timestamp="2026-10-20T00:00:00Z",
+            message=dict(id="km%d" % i, usage=dict(input_tokens=1),
+                         content=[_tu("kc%d" % i, "Skill",
+                                      dict(skill=SKILL, args=SECRET))]))))
+        sk_lines.append(_res("kr%d" % i, "ka%d" % i, "kc%d" % i, "ok"))
+        sparent = "kr%d" % i
+    p_skill = _write(tmp, "skill.jsonl", sk_lines)
+    f_skill = repeated_invocations(read_window(p_skill), threshold=1)
+    sk_blob = json.dumps(f_skill)
+    check(f_skill["fired"] and SKILL not in sk_blob and SECRET not in sk_blob,
+          "a repeated Skill call FIRES, and neither the skill name nor its argument "
+          "appears anywhere in the flag -- both live in the arguments, which are digested")
+    check({r["label"] for r in f_skill["evidence"]} == {"Skill"},
+          "the published label is the bare built-in `Skill`, which names no skill")
+
+    # Every namespace shape this box's corpus actually contains, including four names a
+    # model garbled in flight -- a reduction that only handles the spelling it expects is
+    # not a boundary.
+    for ns in ("mcp__a-mcp-server__send_message",
+               "mcp__a-mcho-server__send_message",
+               "mcp__a-mch-server__send_message",
+               "mcp__a-mcph-server__send_message",
+               "mcp__a-mcro-server__send_message",
+               "mcp__some_underscored_server__send_message"):
+        got = public_label(ns)
+        check(got == "mcp:send_message",
+              "%-46s -> %s" % (ns, got))
+
+    check(public_label("Read") == "Read" and public_label("Bash:build") == "Bash:build",
+          "a built-in and a closed bash cluster pass through, being install-identical")
+    check(public_label("orient") == "orient",
+          "AND SO DOES a bare site-specific verb with no mcp__ prefix -- the residual "
+          "public_label's docstring discloses, pinned here so it cannot be forgotten: if "
+          "a later change hashes unrecognised names, this control fails and the docstring "
+          "is what needs rewriting")
 
     # ---- control: the library refuses what the CLI refuses --------------------------------
     print()
