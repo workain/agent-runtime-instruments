@@ -52,6 +52,30 @@ IDENTITY_ALLOWLIST=(
   # would mean the recipe is being bypassed rather than that the gate is too strict. The
   # gate is doing its job both times; what keeps failing is upstream of it.
   ed38f4d0fd9318ed7f76ae3ec8d0145db20ad78b
+
+  # SUPERSEDED WHEN #14 LANDS -- both entries below are a STOPGAP, not a precedent.
+  #
+  # These two are the third and fourth commits to need this exception for the same cause,
+  # and they are what the entry above predicted: merging PR #15 -- the PR that added the
+  # entry above -- itself produced `c72856a`, which then needed its own entry. An
+  # allowlist cannot catch up with a merge path that mints a fresh offender every time it
+  # is used, so these are here to get `main` green (its own `--all` scrub and the
+  # identity suite's "grandfathered commit alone passes" control were both failing),
+  # operator-authorized as a stopgap while #14 removes the cause.
+  #
+  # #14 is the actual fix: make the identity-clean recipe in README.md easier to run than
+  # the GitHub merge button, and stop the button from being available. When it lands,
+  # these two entries and the two above should be revisited together -- a list that only
+  # ever grows is the symptom this is standing in for. Do NOT add a fifth entry here
+  # without #14 being done or explicitly declined; at that point the gate is not the
+  # thing that needs adjusting.
+  #
+  # workain/agent-runtime-instruments#15 -- the squash-merge of PR #15 (the allowlist
+  # entry above), merged through GitHub rather than by the local recipe.
+  c72856aea0784f3c2bc3d147ed46474b91898cc5
+  # workain/agent-runtime-instruments#13 -- the squash-merge of PR #13 (ARI#11's closed
+  # cluster-key vocabulary), same cause, same merge path.
+  f1fb97d1dbdd9922b64f614705516bca5a3da277
 )
 
 # Check every entry's SHAPE. Returns 2 (and says why) on a malformed one; never exits,
