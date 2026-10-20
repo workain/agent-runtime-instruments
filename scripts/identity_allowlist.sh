@@ -37,6 +37,21 @@ IDENTITY_ALLOWLIST=(
   # not a general relaxation: see the merge recipe in README.md ("Merging a reviewed
   # branch into main"), which is the fix for the cause rather than for this commit.
   40372496f2687e0d1140cf94675f87dbf2309adf
+
+  # workain/agent-runtime-instruments#10 -- the squash-merge of PR #10, and the SECOND
+  # commit to need this exception for the SAME cause: it was merged through GitHub rather
+  # than by the local recipe above, so GitHub set its author to the merging token's real
+  # identity. Operator-approved as a one-time exception, on the same basis as the entry
+  # above -- that identity is already this repo's own public commit identity throughout
+  # this history, so grandfathering it exposes nothing new, and rewriting a shared main is
+  # the worse trade.
+  #
+  # Being the second of these is the point worth reading. The cause is documented and
+  # preventable -- README.md's recipe exists precisely because `gh pr merge` stamps the
+  # merger's identity, and it names the first such commit by SHA -- so a third entry here
+  # would mean the recipe is being bypassed rather than that the gate is too strict. The
+  # gate is doing its job both times; what keeps failing is upstream of it.
+  ed38f4d0fd9318ed7f76ae3ec8d0145db20ad78b
 )
 
 # Check every entry's SHAPE. Returns 2 (and says why) on a malformed one; never exits,
