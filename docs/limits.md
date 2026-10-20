@@ -132,6 +132,27 @@ Stated so the gaps are visible rather than implied absent.
   output modes, with and without `--anonymise`, and fails if any word of a value appears in
   either. The guarantee is about the DERIVATION, not a filter on the way out: nothing downstream
   scrubs a cluster key, so the key must be incapable of carrying content in the first place.
+- **The published cluster-key vocabulary is CLOSED, and that bounds what it can say.** A key is
+  a word from a public-command allowlist in the instrument, `(other)`, or `(unparsed)` -- never
+  anything else. This exists because the earlier guard tested only the SHAPE of a word, which
+  any basename satisfies, so a locally-named script or a branch/worktree name was published
+  verbatim; it was found on real data while re-vendoring this file into another repo, and the
+  observed keys were internal branch, worktree and script names rather than credentials (see
+  ARI#11 for the measured examples, which are deliberately not repeated here). `--anonymise`
+  does not touch a key. Hashing the unrecognized word was the other candidate and was rejected:
+  a command or branch name is low-entropy and its candidate space enumerable, so a hash is
+  confirmable by guessing -- it obscures the name rather than removing it. Read the consequence
+  both ways. Gating costs little signal where usage is ordinary -- across two independent
+  surveys the public commands were the HEAD of the distribution and the bucket absorbed well
+  under 1% of Bash turns -- but on a corpus that leans on local scripts `(other)` can be large,
+  and then it is genuinely hiding detail from you. Its DISTINCT-COMMAND COUNT is printed and in
+  the digest (`bash_other_distinct`) so you can tell one dominant unknown from twenty scattered
+  ones -- cardinality, never identity. The allowlist is deliberately biased toward omission,
+  since a missing word costs signal while a wrong one costs the guarantee; it is a seed list,
+  not a definition of "public command", and widening it is a reviewable code change. Two
+  caveats from the surveys that built it: they disagreed on their tail words, and many real
+  commands appeared in exactly one session -- so it must not be frequency-thresholded, or
+  rare-but-legitimate public commands would bucket.
 - **The flat per-source table claims no hierarchy.** Passing several transcripts positionally
   shows each one's own total side by side; it does not infer any parent/child relationship
   between them. Use `--manifest` when a real tree exists -- the instrument never guesses one.

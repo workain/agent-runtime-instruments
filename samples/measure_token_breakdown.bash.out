@@ -16,7 +16,7 @@ BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called,
   turns      out  cache_read cache_create  tools
       4      100       10000         1000  Bash
 
-BY BASH COMMAND (Bash turns clustered by command's first token after stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- `git commit`/`git push` both cluster as `git`):
+BY BASH COMMAND (Bash turns clustered by command's first token after stripping `cd ...&&` chains and `VAR=` prefixes; a heuristic, not a parse -- `git commit`/`git push` both cluster as `git`. Keys are a CLOSED vocabulary: a public command word, `(other)`, or `(unparsed)`):
   turns      out  cache_read cache_create  bash command cluster
       1       40        4000          400  (unparsed)
       2       30        3000          300  git

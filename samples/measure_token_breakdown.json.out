@@ -83,6 +83,7 @@
       "turns": 1
     }
   ],
+  "bash_other_distinct": 0,
   "by_agent": [
     {
       "key": "main thread",
