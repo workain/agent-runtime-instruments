@@ -1,0 +1,23 @@
+FIRST_CHUNK SWEEP -- how big should the first tail read be?
+
+Window: the newest 40 turns, over 10 real transcripts. The answer is identical
+for every candidate (flags.py's own self-test asserts first_chunk cannot change
+the result, only the cost) -- so this table is purely about cost.
+
+ first_chunk     total MB   reads        files that grew
+--------------------------------------------------------
+         64K        10.00      30           10 of 10  
+        128K         9.50      23           10 of 10    <- cheapest here
+        256K        10.00      20           10 of 10  
+        512K         9.50      13            3 of 10  
+       1024K        10.00      10            0 of 10    <- current default
+       2048K        20.00      10            0 of 10  
+       4096K        36.04      10            0 of 10  
+
+The current default reads 10.00 MB; the cheapest candidate reads 9.50 MB
+(5% less) over this corpus.
+
+A LIMIT WORTH STATING: this is one corpus, and the optimum is a property of how
+many bytes a turn takes in it. A deployment whose turns are much smaller or much
+larger should re-run this rather than inherit the number -- which is why
+read_window() takes first_chunk as a parameter at all.

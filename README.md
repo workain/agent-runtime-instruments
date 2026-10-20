@@ -70,6 +70,8 @@ with the reproduction for each.
 | `census_background_work.py` | work a turn boundary would kill | free, **self-testing** |
 | `bench_cache_residency.py` | does a cache hit need the writer alive? | ~6 requests |
 | `measure_token_breakdown.py` | where a session's tokens went, by tool / subagent / subsession, plus mechanical loop flags | free, reads transcripts |
+| `flags.py` | the same detectors as **named, callable flag functions** over a *recent window* of one transcript, for a caller polling a live session | free, reads part of one transcript |
+| `bench_window_read.py` | what that windowed read actually costs vs parsing the whole file | free, reads transcripts |
 
 `instruments/echo_mcp_server.py` is a 60-line stdio MCP server with one tool, so
 `bench_mcp_connect.py` runs out of the box without access to anyone's private servers.
@@ -90,6 +92,135 @@ See `samples/measure_token_breakdown.loop-flags-FLAGGED.out` for a flagged run.
 
 Read-only, with one disclosed exception: `census_background_work.py`'s self-test spawns short-lived
 decoy processes of its own and kills them again.
+
+### `flags.py` — the same detectors, on recent activity, for an outside caller
+
+Everything above runs **once, over a whole transcript**. That is right for a retrospective
+study and wrong for a process that wants to look at a live session every few turns, which is
+what `instruments/flags.py` adds: a **windowed read path** plus the detectors re-exposed as
+**named, independently callable functions with one output shape**. The module docstring is the
+full contract (`python3 instruments/flags.py --help-blind` prints it); this is the short version.
+
+**Read a window.** Pass exactly one of these, or none for the whole file:
+
+```python
+w = F.read_window(path, last_turns=40)    # the newest 40 logical assistant turns
+w = F.read_window(path, since="2026-10-20T12:00:00Z")
+w = F.read_window(path, from_offset=K)    # everything appended since byte K
+```
+
+`from_offset` is the one built for a polling caller: keep `w["window"]["next_offset"]` and pass
+it back next time, and the read costs what the session *appended*, not what it has accumulated.
+A file that has not grown returns an empty window; a file **shorter** than the cursor is treated
+as truncated or replaced and falls back to a full read rather than reporting an idle session.
+
+**Then call the flags.** Three, each citing where its logic came from rather than re-deriving it:
+
+| Flag | Fires on | Logic from |
+|---|---|---|
+| `batchable_bash` | consecutive single-Bash turns that could have been **one** call | alm#831's `witnesses()`/`jaccard()` dependency proxy, used as-is |
+| `repeated_invocations` | one identical tool+arguments signature, over and over | this repo's own signal 2 in `measure_token_breakdown.py` |
+| `agent_reuse_gap` | a long run of delegable-looking main-thread work with **no** subagent dispatch | alm#833's three-class delegability proxy and its dollar-derived break-even |
+
+Every flag returns the same dict. Four fields decide what a caller does:
+
+- **`state`** — `"measured"` / `"not_computed"` / `"unmeasured"`. **Read this first.** `fired:
+  False` is a trustworthy clean result *only* when state is `"measured"`; under the other two it
+  means nothing, and a watchdog that treats `"unmeasured"` as healthy will read a dead session as
+  a calm one. `all_flags()` returns the `unmeasured` list at the top so it is hard to miss.
+- **`measure`** vs **`threshold`** — a flag fires when `measure > threshold`, strictly greater,
+  for all three. `measure` is *not* always `len(evidence)`: `measure_of` says what it counts.
+- **`evidence`** — fingerprints, labels and counts. **Never a raw argument**: Bash commands become
+  closed-vocabulary `Bash:<cluster>` labels plus a digest, and alm#831's literal dependency
+  witnesses are reported only as a *count*. These flags are built to be shipped to a monitoring
+  process that may log them.
+- **`window`** — the provenance of what was read. When `spans_are_local` is true the window has a
+  horizon and **every count is a floor**: a run that began earlier is seen only from the window's
+  start, and a span index from a window must never be compared with one from a full read.
+
+**No flag ships a default threshold**, for the same reason the loop flags above don't. With none
+set, you get real counts and `state: "not_computed"`.
+
+**Samples, one per outcome a reader must be able to tell apart** — the point being that four of
+these five are *not* "nothing flagged", and a caller that cannot distinguish them has no signal:
+
+| Sample | What it shows |
+|---|---|
+| `samples/flags.FIRED.out` | `FIRED -- safely-mergeable consecutive single-Bash-call pairs` |
+| `samples/flags.clean.out` | not flagged, and it is `a MEASURED clean result` — trustworthy |
+| `samples/flags.no-threshold.out` | `NOT_COMPUTED: no threshold given`, with the counts still real |
+| `samples/flags.unmeasured.out` | `UNMEASURED: no tool call was seen at all in the window` — nothing to look at, **not** a clean result |
+| `samples/flags.agent-gap-gated.out` | the gap *exceeded* its threshold and still did not fire: the longest content run was `below the 3-turn break-even`, so the work was orchestration and could not have moved |
+
+`samples/flags.windowed.out` is the same detector over a 4-turn window, and prints
+`SPANS ARE LOCAL to this window` — the warning that every count in it is a floor.
+`samples/flags.json.out` is the shape a caller consumes.
+
+#### What the window actually costs
+
+Measured, not assumed, by `instruments/bench_window_read.py`. The full capture is
+`samples/bench_window_read.out`, over a `corpus: 10 transcripts >= 524288 bytes, largest first`
+on one box. Reading the newest 40 turns instead of the whole file, each line below quoted from
+that artefact. `median`, `best` and `worst` are across that corpus — deliberately not tied to
+a named file, because the corpus is whatever happens to be largest at the moment of the run
+and the largest transcript in this one is excluded from the medians anyway (see the residual
+below):
+
+```
+   WINDOW / FULL, bytes read    median 0.237   best 0.075   worst 0.387
+   WINDOW / FULL, lines parsed  median 0.271   best 0.080   worst 0.414
+   WINDOW / FULL, wall-clock    median 0.139   best 0.052   worst 0.270
+```
+
+The **resume** path — the one a polling caller actually uses — is cheaper again, because it
+reads only what arrived rather than a fixed window:
+`RESUME / FULL, bytes read    median 0.097   best 0.046   worst 0.161`. In absolute terms over
+those files: `bytes:                FULL 43.7 MB, WINDOW 8.0 MB, RESUME 3.7 MB`, and
+`lines fed to json.loads: FULL 16307, WINDOW 3336, RESUME 1486`.
+
+**Quote a row, not the median.** An independent re-run on the same box reproduced every
+per-file ratio to three decimals and got a different corpus median, because the median depends
+on which sessions happen to be largest at the moment of the run — the instrument says so in its
+own output. The per-file ratios are the reproducible figure.
+
+One residual, measured rather than described, because it is a property of the *shared* turn
+parser and not of the window: `collect_turns` keys a logical turn by `message.id` and merges
+every entry carrying it, which is right for the split turn it was built for. A **resumed**
+session can replay the same ids much later in the same file — on one real local transcript,
+769 entries apart — and then the full read collapses both occurrences into one turn while a
+window holding only the later one does not. **4 of 151** windowing comparisons over 45 real
+transcripts, confined to the resumed files. That is a rate for "the two reads do not line up",
+not for "the window is wrong": the window's own counts are internally consistent, and they are
+what every flag is computed from. The benchmark labels such a file `RESUMED TRANSCRIPT, DISCLOSED RESIDUAL` rather than
+`MISMATCH`, so a documented residual cannot occupy the slot reserved for an unexplained
+defect — on the current corpus that is the single largest transcript, which is why it is
+excluded from the figures above. The self-test reproduces it from a deliberate fixture.
+
+Two things that *were* contract violations, found by review and now gone — both verified over
+those 151 comparisons at eight window sizes: `last_turns=N` could **return more than N turns**
+(it returned 437 for N=400, because the cut was chosen by turn identity and a replayed id
+dragged it back to the file's start), and `read_fraction` could **exceed 1** — up to `1.934`, a
+"window" charging for nearly twice the file, partly from that and partly from the growth loop
+re-reading. The cut is positional now and the loop extends its buffer backwards instead: 0
+over-returns and a maximum `read_fraction` of exactly `1.000`.
+
+Four honest limits on those figures, each of which the instrument reports rather than hides.
+**Wall-clock is the weakest of the three** — it carries one box's load and page cache, so when
+the timing ratio and the byte ratio disagree, believe the bytes. **The saving is proportional to
+how much of the session the window is not reading**, so a session shorter than the window shows
+no saving, and those rows are printed rather than filtered out. **A live session can grow
+between the two reads**, in which case the window correctly sees a turn the full read never did;
+such a row is marked `GREW DURING MEASUREMENT` and excluded, because that is not the read-path
+disagreement the `MISMATCH` label is reserved for — a control forces the case deterministically
+(`a file that grew mid-measurement`, in `samples/bench_window_read.selftest.out`), since whether
+a live run happens to catch a session mid-turn is luck. And **the first tail read's size is itself a
+tuned number**: at 256 KB, 10 of 10 transcripts needed a second read
+(`        256K        10.00      20           10 of 10`), so `flags.FIRST_CHUNK` is 1 MB
+(`       1024K        10.00      10            0 of 10` — one read per file, no growth step).
+Extending the buffer rather than re-reading has since flattened that curve, so the sweep in
+`samples/bench_window_read.first-chunk-sweep.out` now makes 128 KB marginally cheaper in bytes
+and markedly more expensive in syscalls; 1 MB is kept for the property that is stable. It is a per-call parameter, because
+the optimum is a property of how many bytes a turn takes in your own corpus.
 
 ### Which engines are actually supported
 
@@ -181,6 +312,25 @@ paranoid: it refuses tracked binaries outright, because a compiled artefact can 
 build path with no sign of it in the diff. That is not hypothetical — it happened here, and the
 gate certified the tree clean, because `grep -I` skips binary files and `git log -G` does not
 search binary diffs. Both legs now have decoys.
+
+One gate asks a different question: not "does the code pass its controls" but **"do the
+controls protect what the code changed"**. `scripts/test_flags_controls.sh` reverts each fix
+`flags.py` makes — back to the code that was really there, one at a time — and requires a
+control to turn RED:
+
+```
+REVERT-EACH-FIX GATE -- 13 cases
+PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+```
+
+It exists because review found the opposite. Thirteen of fifty-three mutants left the suite
+green, and the cause was not carelessness: the controls written after the first review round
+pinned *the reviewer's findings* rather than *the fixes*. Four of six changed behaviours
+could be reverted with everything still green, and two of those reversions lost data — a
+turn silently dropped on a transcript holding a literal U+2028, and four turns returned when
+one was asked for. "The reviewer already found that one" is a record of one person having
+looked once; it is not coverage. This gate's own first run was **RED**, on a fix whose
+control did not exist yet, which is the only evidence that it can fail.
 
 `samples/` holds real output from every instrument, **including the runs that failed**: a caching
 run that exited 3, a census self-test that missed its decoys, the MCP counterfactual that refuses

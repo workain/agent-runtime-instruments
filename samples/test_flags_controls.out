@@ -1,0 +1,21 @@
+REVERT-EACH-FIX GATE -- 13 cases
+Each reverts one fix on this branch; a control must turn RED.
+
+baseline: the unmutated copy PASSES both self-tests, so a RED below is caused by the mutation
+
+N3-splitlines            RED   -- FAIL -- splitting the RAW BYTES on b'\n' reads 3 lines and 3 turns. Under str.splitlines() this 
+N4-char-offsets          RED   -- FAIL -- start_offset (547) is the TRUE byte position of the window's first kept line (553). Coun
+N5-drop-final-line       RED   -- FAIL -- a transcript with no trailing newline still reads all 3 lines and 3 turns -- popping the
+R2-phantom-empty-line    RED   -- FAIL -- an empty file reads 0 lines and 0 turns. b''.split(b'\n') is [b''], so the naive split r
+N6-identity-cut          RED   -- FAIL -- asking for 3 turn(s) of a transcript that replays EVERY id returns exactly 4, at read_fr
+N9-no-lookback           RED   -- FAIL -- when the computed read position is EXACTLY a line start (553), the read begins there. Wi
+N10-no-span-reset        RED   -- FAIL -- the SAME three turns with a real user turn after the second are runs of 2 and 1, so the 
+N11-span-reset-no-op     RED   -- FAIL -- the SAME three turns with a real user turn after the second are runs of 2 and 1, so the 
+N12-no-mcp-strip         RED   -- FAIL -- and EVERY row of both kinds is reduced to mcp:get_thing
+N13-strip-overreach      RED   -- FAIL -- the published label is the bare built-in `Skill`, which names no skill
+N17-span-rows-bypass     RED   -- FAIL -- and EVERY row of both kinds is reduced to mcp:get_thing
+N2-start-offset-early    RED   -- FAIL -- start_offset (287) is the TRUE byte position of the window's first kept line (553). Coun
+R3-resumed-whole-file    RED   -- FAIL -- but per stream nothing is replayed, so it is NOT labelled resumed: RESIDUAL keeps meanin
+
+PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+exit=0

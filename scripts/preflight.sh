@@ -15,6 +15,11 @@ echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null
 echo "preflight: identity"  && bash scripts/test_identity_allowlist.sh >/dev/null
 echo "preflight: fixtures"  && bash scripts/check_fixtures_fresh.sh >/dev/null
 echo "preflight: fixtures-gate" && bash scripts/test_fixture_freshness.sh >/dev/null
+# Reverting any fix flags.py makes must turn one of its own controls RED. Review round 2
+# found 13 of 53 mutants green because the controls pinned the REVIEWER'S FINDINGS and not
+# the FIXES -- four changed behaviours were revertible with the suite green, two of them
+# losing data. This gate is what stops that recurring on the next fix.
+echo "preflight: revert-each-fix" && bash scripts/test_flags_controls.sh >/dev/null
 # An instrument's own positive/negative controls are a gate, not documentation: they are
 # the only thing standing between a silently-wrong number and a published one. Every
 # instrument that ships a --self-test runs here. Add the flag to an instrument and it is

@@ -1,0 +1,265 @@
+{
+  "fired": [
+    "batchable_bash",
+    "agent_reuse_gap"
+  ],
+  "flags": {
+    "agent_reuse_gap": {
+      "class_counts": {
+        "CONTENT": 12
+      },
+      "count": 1,
+      "delegable_looking": true,
+      "dispatch_seen_in_window": false,
+      "evidence": [
+        {
+          "at_least": false,
+          "class_counts": {
+            "CONTENT": 12
+          },
+          "longest_content_run": 12,
+          "main_turns": 12,
+          "min_content_run": 3,
+          "turns_since_dispatch": 12
+        }
+      ],
+      "fingerprint": "0f57cad03e5eed15",
+      "fired": true,
+      "flag": "agent_reuse_gap",
+      "gap_is_floor": false,
+      "longest_content_run": 12,
+      "main_turns": 12,
+      "measure": 12,
+      "measure_of": "main-thread turns since the last Agent/Task dispatch",
+      "min_content_run": 3,
+      "note": "Counts main-thread turns since the last Agent/Task dispatch, and fires only if the window ALSO contains a contiguous run of at least 3 CONTENT turns -- alm#833's own unit and its own dollar-derived break-even, not a constant chosen here. Both halves matter: a long gap during orchestration or narration is not a missed handoff, because those turns structurally cannot move. This is a PROXY over a proxy. alm#833 validated its three-class labelling at 94.8% agreement against 120 hand labels and states plainly that it is biased; a fired flag here means 'this looks like work that could have moved', never 'this should have moved' -- dependency ordering between turns is not visible to it (alm#833 found 20 of 25 sampled spans dependency-ordered). In a window the gap is also a FLOOR on one side and a CEILING on the other: a dispatch older than the window is invisible, so `turns_since_dispatch` is reported as 'at least' the window's own length when no dispatch is seen.",
+      "overshoot": 2.4,
+      "severity": "over_threshold",
+      "source": "alm#833 Tasks/20261020_alm833_subagent_economy/census_c_delegability.py @ 5b8915ed1589f0ac2d17f1660ff24f76c23eb487",
+      "state": "measured",
+      "threshold": 5,
+      "turns_since_dispatch": 12,
+      "window": {
+        "bytes_read": 6770,
+        "chunks": 1,
+        "file_bytes": 6770,
+        "grew": null,
+        "head_complete": true,
+        "lines_kept": 24,
+        "lines_total": 24,
+        "mode": "full",
+        "next_offset": 6770,
+        "read_fraction": 1.0,
+        "read_offset": 0,
+        "rotated": false,
+        "spans_are_local": false,
+        "start_offset": 0,
+        "turns": 12,
+        "windowed": false
+      }
+    },
+    "batchable_bash": {
+      "count": 11,
+      "evidence": [
+        {
+          "a_cluster": "grep",
+          "a_fp": "3d79404f",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "8cf9bc8a",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "8cf9bc8a",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "0dfc39b5",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "0dfc39b5",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "16ba4d47",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "16ba4d47",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "abb1b34d",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "abb1b34d",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "a3cf8b2e",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "a3cf8b2e",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "3c332a32",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "3c332a32",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "1a33dc21",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "1a33dc21",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "8c10665c",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "8c10665c",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "e8989b74",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "e8989b74",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "bf4fc6a6",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        },
+        {
+          "a_cluster": "grep",
+          "a_fp": "bf4fc6a6",
+          "a_output_bytes": 2,
+          "b_cluster": "grep",
+          "b_fp": "937c48b0",
+          "jaccard": 0.0,
+          "thread": "main thread",
+          "witness_count": 0
+        }
+      ],
+      "fingerprint": "f8d4db0613dc9df8",
+      "fired": true,
+      "flag": "batchable_bash",
+      "measure": 11,
+      "measure_of": "safely-mergeable consecutive single-Bash-call pairs in the window",
+      "note": "Counts CONSECUTIVE pairs of single-Bash-call turns that alm#831's dependency proxy finds SAFE to merge: no token in B's command came from A's recorded output, and B is not a near-duplicate retry of A (jaccard < 0.60). A merge removes one turn, and one turn is one cache-replay tax payment -- that is the whole reason the count is interesting. It is a PROXY and alm#831 reports its own false-positive and false-negative rates against hand labels; read the count through those, not instead of them. It is also a FLOOR in a window: a pair whose first half sits before the window's start is not visible here, and `window.spans_are_local` tells you the window has a start.",
+      "overshoot": 5.5,
+      "pairs_examined": 11,
+      "pairs_with_no_recorded_output": 0,
+      "severity": "over_threshold",
+      "source": "alm#831 Tasks/20261020_alm831_bash_batching/{dep_check.py,analyze_batching.py} @ 1b7e486a89164599ec651902282b99f9d95eb287",
+      "state": "measured",
+      "threshold": 2,
+      "window": {
+        "bytes_read": 6770,
+        "chunks": 1,
+        "file_bytes": 6770,
+        "grew": null,
+        "head_complete": true,
+        "lines_kept": 24,
+        "lines_total": 24,
+        "mode": "full",
+        "next_offset": 6770,
+        "read_fraction": 1.0,
+        "read_offset": 0,
+        "rotated": false,
+        "spans_are_local": false,
+        "start_offset": 0,
+        "turns": 12,
+        "windowed": false
+      }
+    },
+    "repeated_invocations": {
+      "calls": 12,
+      "consecutive_longest": 0,
+      "count": 0,
+      "distinct_call_keys": 12,
+      "evidence": [],
+      "fingerprint": null,
+      "fired": false,
+      "flag": "repeated_invocations",
+      "in_span_max": 0,
+      "measure": 0,
+      "measure_of": "the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span",
+      "note": "Repeated invocations are counted MECHANICALLY: the identical tool and identical arguments, by digest. A repeat is not a finding that the work was wasted -- polling until a condition holds, retrying a flaky step, and re-reading a file that changed all repeat legitimately, and this instrument cannot tell those from a stuck loop because that needs the state the transcript does not record. What it gives you is where to look. Matching is EXACT, which under-reports on purpose: a retry whose arguments differ by a timestamp or a page token does not match, and no normalisation is shipped because none of the obvious ones is grounded -- the same reason no threshold is shipped. So treat a count here as a floor. In a WINDOW there is one further floor: a run that began before the window's first kept turn is seen only from the window's start, so its length is truncated, and a repeat whose other occurrences are all older is not seen at all. Span indices are LOCAL to the window (see read_window) -- an in-span multiplicity from a window and one from a full read are not the same measurement and must not be compared.",
+      "overshoot": null,
+      "severity": null,
+      "source": "this repository, instruments/measure_token_breakdown.py (ARI#17 signal 2)",
+      "state": "measured",
+      "threshold": 4,
+      "window": {
+        "bytes_read": 6770,
+        "chunks": 1,
+        "file_bytes": 6770,
+        "grew": null,
+        "head_complete": true,
+        "lines_kept": 24,
+        "lines_total": 24,
+        "mode": "full",
+        "next_offset": 6770,
+        "read_fraction": 1.0,
+        "read_offset": 0,
+        "rotated": false,
+        "spans_are_local": false,
+        "start_offset": 0,
+        "turns": 12,
+        "windowed": false
+      }
+    }
+  },
+  "path": "samples/fixtures/flags.content.jsonl",
+  "unmeasured": [],
+  "window": {
+    "bytes_read": 6770,
+    "chunks": 1,
+    "file_bytes": 6770,
+    "grew": null,
+    "head_complete": true,
+    "lines_kept": 24,
+    "lines_total": 24,
+    "mode": "full",
+    "next_offset": 6770,
+    "read_fraction": 1.0,
+    "read_offset": 0,
+    "rotated": false,
+    "spans_are_local": false,
+    "start_offset": 0,
+    "turns": 12,
+    "windowed": false
+  }
+}

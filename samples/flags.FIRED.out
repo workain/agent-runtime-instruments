@@ -1,0 +1,38 @@
+FLAGS -- samples/fixtures/flags.batchable.jsonl
+
+WINDOW
+  mode: full   turns: 8   lines kept: 16 of 16
+  bytes read: 4480 of 4480 (100.00% of the file) in 1 read(s)
+  offsets: start=0  next_offset=4480   (pass next_offset back as --from-offset)
+
+BATCHABLE BASH
+  FIRED -- safely-mergeable consecutive single-Bash-call pairs in the window = 7, over the threshold of 2 (3.5x)
+  measure: 7 (safely-mergeable consecutive single-Bash-call pairs in the window)
+  evidence rows: 7   fingerprint: cdc0c9b89c3e96ac
+  clean consecutive single-Bash pairs examined: 7  (0 had no recorded output)
+    {"a_cluster": "wc", "a_fp": "163ac253", "a_output_bytes": 3, "b_cluster": "wc", "b_fp": "0dae8972", "jaccard": 0.0, "thread": "main thread", "witness_count": 0}
+    {"a_cluster": "wc", "a_fp": "0dae8972", "a_output_bytes": 3, "b_cluster": "wc", "b_fp": "7c9a2a0a", "jaccard": 0.0, "thread": "main thread", "witness_count": 0}
+    {"a_cluster": "wc", "a_fp": "7c9a2a0a", "a_output_bytes": 3, "b_cluster": "wc", "b_fp": "b347fdce", "jaccard": 0.0, "thread": "main thread", "witness_count": 0}
+    {"a_cluster": "wc", "a_fp": "b347fdce", "a_output_bytes": 3, "b_cluster": "wc", "b_fp": "d3e9556e", "jaccard": 0.0, "thread": "main thread", "witness_count": 0}
+    {"a_cluster": "wc", "a_fp": "d3e9556e", "a_output_bytes": 3, "b_cluster": "wc", "b_fp": "a574ae75", "jaccard": 0.0, "thread": "main thread", "witness_count": 0}
+    ... and 2 more (use --json for all)
+  source: alm#831 Tasks/20261020_alm831_bash_batching/{dep_check.py,analyze_batching.py} @ 1b7e486a89164599ec651902282b99f9d95eb287
+
+REPEATED INVOCATIONS
+  not flagged: the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span = 0, threshold 4 -- a MEASURED clean result
+  measure: 0 (the largest number of occurrences of ONE tool+arguments signature, consecutively or within one local span)
+  evidence rows: 0   fingerprint: (none)
+  calls: 8  distinct signatures: 8  longest consecutive run: 0  max within one span: 0
+  source: this repository, instruments/measure_token_breakdown.py (ARI#17 signal 2)
+
+AGENT REUSE GAP
+  FIRED -- main-thread turns since the last Agent/Task dispatch = 8, over the threshold of 5 (1.6x)
+  measure: 8 (main-thread turns since the last Agent/Task dispatch)
+  evidence rows: 1   fingerprint: f24c0517bffa7c9e
+  main-thread turns: 8  turns since dispatch: 8  longest CONTENT run: 8 (break-even 3)
+  turn classes: {'CONTENT': 8}
+    {"at_least": false, "class_counts": {"CONTENT": 8}, "longest_content_run": 8, "main_turns": 8, "min_content_run": 3, "turns_since_dispatch": 8}
+  source: alm#833 Tasks/20261020_alm833_subagent_economy/census_c_delegability.py @ 5b8915ed1589f0ac2d17f1660ff24f76c23eb487
+
+FIRED: batchable_bash, agent_reuse_gap
+UNMEASURED (NOT a clean result): (none)

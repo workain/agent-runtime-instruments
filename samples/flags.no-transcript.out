@@ -1,0 +1,2 @@
+REFUSING: cannot read samples/fixtures/flags.missing.jsonl (FileNotFoundError). A wrong path and a quiet session produce the same zero, and only one of them is a fact. See --help-blind, blind mode 1.
+exit=2

@@ -1,0 +1,156 @@
+FLAGS SELF-TEST
+
+_read_from: no line is lost or duplicated at ANY offset
+  ok   -- every offset 0..22848 returns exactly the lines starting at or after it (0 wrong)
+  ok   -- offsets landing EXACTLY on a line boundary (80 of them) lose no line
+  ok   -- the start offset returned is the true offset of the first line returned, at every one of 22849 offsets (0 wrong) -- so a resume cursor cannot drift
+
+a window and a full read agree on the turns they share
+  ok   -- last_turns=1 -> 1 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=2 -> 2 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=5 -> 5 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=17 -> 17 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=59 -> 59 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=60 -> 60 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=61 -> 60 turns, call-for-call identical to the full read's tail
+  ok   -- last_turns=1000 -> 60 turns, call-for-call identical to the full read's tail
+  ok   -- the no-argument read is the FULL read and labels itself as one
+  ok   -- the fixture really does repeat exactly one message.id far from its first use
+  ok   -- RESIDUAL PINNED: on a transcript that replays a message.id, the window and the full read disagree -- the full read merged the two occurrences into one turn at the earlier position. A property of collect_turns' key, not of the window; measured at 3 of 675 comparisons over 45 real transcripts
+  ok   -- the read began at 18065 and the window's content begins at 30297 -- two different numbers, reported separately
+  ok   -- and resuming from start_offset reproduces the SAME window, call for call -- the defect this replaced disagreed on 26 of 45 real transcripts
+  ok   -- the answer is independent of first_chunk (5 reads vs 1) -- only the cost moves
+  ok   -- a small first_chunk really did force the growth loop (5 reads), a large one did not (1)
+  ok   -- no window reads more than the file even with a 64-byte first chunk forcing the growth loop repeatedly (max read_fraction 1.000 over 12 combinations) -- measured 1.934 before the buffer was extended rather than re-read
+  ok   -- a 5-turn window reads FEWER bytes than the full file (4097 < 34308) -- the cost claim, in the control rather than only in the prose
+
+the resume cursor: two windowed reads across an append == one full read
+  ok   -- an unchanged file returns grew=False and an empty window
+  ok   -- every flag on that empty window is UNMEASURED, not a clean result
+  ok   -- after appending 4 turns the resumed read sees exactly those 4 (saw 4)
+  ok   -- and it read 2263 bytes, not the whole 7922-byte file
+  ok   -- a full read of the grown file sees all 14 turns, so nothing was lost at the seam
+  ok   -- an offset past EOF sets rotated=True and falls back to a FULL read, rather than reporting an empty window for a replaced file
+
+the `since` window
+  ok   -- since=00:08 over turns stamped 00:00..00:11 keeps 4 turns (kept 4)
+  ok   -- a `since` older than the file keeps every turn (kept 12)
+  ok   -- and it is NOT reported as a local-span window, because it threw nothing away
+  ok   -- a `since` in the future keeps no turn (kept 0), rather than defaulting to all
+  ok   -- all three of these READS start at byte 0 (the file is smaller than the chunk), so only the TRIM can set the floor flag
+  ok   -- and it is set for BOTH windowing modes and not for the full read -- the floor warning cannot be suppressed by a file being small
+
+batchable_bash: fires on mergeable pairs, silent on dependent ones
+  ok   -- POSITIVE: 8 self-contained Bash turns -> 7 mergeable pairs of 7 examined, FIRED
+  ok   -- NEGATIVE: the same chain with alm#831's witness signature -> 0 of 7 pairs mergeable, not fired
+  ok   -- BOUNDARY: measure 7 does not fire at threshold 7 and does at 6 (strictly greater, same rule as compute_flags)
+  ok   -- the independent arm's pairs are accepted on their own merits: highest command-similarity 0.00, under the 0.60 retry threshold, so they were not merely not-retries
+  ok   -- and the dependent arm is rejected by the WITNESS test, not the retry test: all 7 pairs have similarity < 0.60 AND at least one witness
+  ok   -- no threshold -> NOT COMPUTED, with the count still reported
+  ok   -- a window with no Bash pair at all -> UNMEASURED, not a clean zero
+  ok   -- control 7: no raw command text reached an evidence row (0 leaks)
+
+repeated_invocations: fires on a run, silent on distinct calls
+  ok   -- POSITIVE: 9 identical Read calls -> consecutive run of 9, measure 9, FIRED
+  ok   -- NEGATIVE: 9 all-different Bash calls -> 0 repeat rows, a MEASURED clean result
+  ok   -- BOUNDARY: a run of 9 does not fire at threshold 9 and does at 8 -- and the threshold is compared against the RUN LENGTH, which is what signal 2 means by it, not against the number of groups
+  ok   -- a 4-turn window sees a run of 4, not 9 -- the floor the note promises, measured
+  ok   -- an empty file -> UNMEASURED and fired=False, which means NOTHING
+  ok   -- a turn that called no tool -> UNMEASURED ('nothing to look at', not 'no repeats')
+
+agent_reuse_gap: fires on delegable content, silent on orchestration
+  ok   -- POSITIVE: 12 CONTENT turns, no dispatch -> gap at least 12, longest run 12, FIRED
+  ok   -- NEGATIVE (the one that matters): 12 ORCHESTRATION turns -- the SAME 12-turn gap -- not fired, because alm#833 says those turns structurally cannot move
+  ok   -- NEGATIVE: a dispatch at turn 10 of 12 -> gap of 1, not fired
+  ok   -- BOUNDARY: a gap of 12 does not fire at threshold 12 and does at 11
+  ok   -- raising min_content_run to 99 makes the same window not delegable-looking, so the long gap alone does not fire -- both halves are load-bearing
+  ok   -- no threshold -> NOT COMPUTED, with the gap still reported
+  ok   -- a FULL read reports its gap exactly (12), a WINDOWED read reports it as a floor (at least 6) -- because only the latter can be hiding an older dispatch
+
+F2: the ten mutants that used to survive this suite
+  ok   -- a pair of commands sitting EXACTLY on the 0.60 retry threshold exists (jaccard 0.600) -- the boundary is reachable, so it can be tested
+  ok   -- and a pair AT the threshold is treated as a retry and is NOT mergeable (examined 1, mergeable 0) -- `>=` not `>`
+  ok   -- a two-tool turn next to a single-Bash turn contributes NO pair; only the single/single pair is examined (1, not 2)
+  ok   -- a TEXT-ONLY assistant turn between two Bash turns is a barrier: 0 pairs examined, so nothing is mergeable across it (got 0)
+  ok   -- an A B A B A loop: longest CONSECUTIVE run 0, but 3 occurrences of one signature within the span -- the second window is what sees it
+  ok   -- and it FIRES on that, with `measure` taken from the in-span window (3) -- so deleting repeated_in_spans now goes red
+  ok   -- a CONTENT run of EXACTLY 3 is delegable-looking at the 3-turn break-even and fires -- `>=` not `>`
+  ok   -- 5 main + 5 sidechain turns: the gap counts the 5 MAIN turns (5) and does not fire at a threshold of 5; counting the sidechain's own turns would make it 10 and fire
+  ok   -- a turn with no tool call classifies as REPORT, not CONTENT
+  ok   -- and a REPORT turn inside a run BREAKS it: longest run 2, not the 4 CONTENT turns either side of it, so the 3-turn gate stays shut
+  ok   -- a `since` window that cut past line 0 reports head_complete=False -- its oldest turn may be a fragment, and saying True would be a promise it cannot keep
+  ok   -- while a full read of the same file reports head_complete=True
+  ok   -- every pair of windowing arguments is refused (3 of 3)
+  ok   -- an offset inside an unterminated final line returns NO bytes and an offset of EOF (got b'', 60) -- there is no complete line at or after it
+  ok   -- while an offset inside the FIRST line still returns the unterminated tail, because a complete line boundary does exist after it
+
+a sidechain's thread label is a tag, not its profile name
+  ok   -- a sidechain repeat FIRES (so the row exists) and its evidence does not contain the profile name
+  ok   -- it is published as sidechain:152a74aa -- stable, distinguishing, and naming no profile
+  ok   -- while the main thread and the 'type not recorded' placeholder pass through, being closed literals rather than site-specific names
+  ok   -- and two different profiles get two different tags, so the label still distinguishes threads
+  ok   -- and a FRESH PROCESS computes the identical tag (sidechain:ed8ba1cf), so a watchdog polling every few minutes can still tell one thread from another across its own runs -- which a per-interpreter salted hash would silently break
+
+R1: reverting any fix on this branch must turn one of these RED
+  ok   -- the fixture really does hold a literal U+2028 inside a JSON string, and json.loads parses all 3 of its lines -- so it is VALID JSONL, not a corrupt file whose mishandling would not matter
+  ok   -- and str.splitlines() sees 4 lines in those 3 -- the alternative split this control exists to forbid does disagree, so the control is not vacuous
+  ok   -- splitting the RAW BYTES on b'\n' reads 3 lines and 3 turns. Under str.splitlines() this file is 4 lines and 2 TURNS: a turn silently lost, with no error, on a transcript that is entirely well-formed
+  ok   -- the line the trim drops is 286 bytes but 280 characters, so byte and character arithmetic MUST give different answers here
+  ok   -- start_offset (553) is the TRUE byte position of the window's first kept line (553). Counting characters instead gives 547 -- an offset pointing into the middle of a line
+  ok   -- and resuming from it returns the same 2 turns the window held -- which is the consequence that matters: a wrong offset drops the oldest turn on resume
+  ok   -- the fixture genuinely has no trailing newline
+  ok   -- a transcript with no trailing newline still reads all 3 lines and 3 turns -- popping the last element unconditionally would read 2, losing the newest turn on exactly the file shape a LIVE session always has
+  ok   -- an empty file reads 0 lines and 0 turns. b''.split(b'\n') is [b''], so the naive split reports lines_kept=1 -- provenance a caller logs and the bench divides by, claiming one line that does not exist
+  ok   -- and `from_offset` at EOF returns the EMPTY window --help-blind mode 7 promises, with grew=False -- not a window holding one phantom line
+  ok   -- with every flag on it `unmeasured`, never a reassuring clean result
+  ok   -- asking for 1 turn(s) of a transcript that replays EVERY id returns exactly 1, at read_fraction 0.483. An identity-keyed cut returns 4 for every one of these, because the newest ids' FIRST appearance is in the first half -- it reports head_complete=True while silently answering a different question
+  ok   -- asking for 2 turn(s) of a transcript that replays EVERY id returns exactly 2, at read_fraction 0.483. An identity-keyed cut returns 4 for every one of these, because the newest ids' FIRST appearance is in the first half -- it reports head_complete=True while silently answering a different question
+  ok   -- asking for 3 turn(s) of a transcript that replays EVERY id returns exactly 3, at read_fraction 1.000. An identity-keyed cut returns 4 for every one of these, because the newest ids' FIRST appearance is in the first half -- it reports head_complete=True while silently answering a different question
+  ok   -- when the computed read position is EXACTLY a line start (553), the read begins there. Without the one-byte look-back that proves it is a boundary, this case cannot be told from 'mid-line' and the loop falls back to offset 0 -- the whole file, which is the saving this library exists to make
+  ok   -- 3 CONTENT turns with NO user turn between them are one run of 3, and fire
+  ok   -- the SAME three turns with a real user turn after the second are runs of 2 and 1, so the longest is 2 and nothing fires. Without the span reset this is a run of 3 that FIRES -- recommending one subagent for two unrelated briefs, which is not the unit alm#833 measured or priced
+  ok   -- the fixture produces BOTH row kinds (['consecutive', 'span']) -- a control seeing only one of them would leave the other free to bypass public_label
+  ok   -- and EVERY row of both kinds is reduced to mcp:get_thing
+  ok   -- with the server segment absent from the whole flag, not merely from the rows this control happened to look at
+
+the name boundary: what reduces, what passes through, and what leaks
+  ok   -- a repeated Skill call FIRES, and neither the skill name nor its argument appears anywhere in the flag -- both live in the arguments, which are digested
+  ok   -- the published label is the bare built-in `Skill`, which names no skill
+  ok   -- mcp__a-mcp-server__send_message                -> mcp:send_message
+  ok   -- mcp__a-mcho-server__send_message               -> mcp:send_message
+  ok   -- mcp__a-mch-server__send_message                -> mcp:send_message
+  ok   -- mcp__a-mcph-server__send_message               -> mcp:send_message
+  ok   -- mcp__a-mcro-server__send_message               -> mcp:send_message
+  ok   -- mcp__some_underscored_server__send_message     -> mcp:send_message
+  ok   -- a built-in and a closed bash cluster pass through, being install-identical
+  ok   -- AND SO DOES a bare site-specific verb with no mcp__ prefix -- the residual public_label's docstring discloses, pinned here so it cannot be forgotten: if a later change hashes unrecognised names, this control fails and the docstring is what needs rewriting
+
+a threshold below 1 is refused by the FUNCTION, not only by the CLI
+  ok   -- batchable_bash refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
+  ok   -- repeated_invocations refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
+  ok   -- agent_reuse_gap refuses thresholds 0, -1 and 2.5 (3 of 3) -- alm#839 calls the function, so a guard living only in argparse would not protect it
+  ok   -- and min_content_run=0 is refused too, not silently clamped
+  ok   -- the orchestration vocabulary reaches the flag: declaring Bash orchestration turns the same window from FIRED to silent, so the override is not documentation
+
+tool_class: the generalised prefix rule vs alm#833's hard-coded one
+  ok   -- on the 41 tool names alm#833's own prefix list covered, the generalised rule gives an IDENTICAL answer (0 disagreements)
+  ok   -- and it is not identical by collapsing into one class: the same server's send_message and github_comment_on_issue are ORCHESTRATION, github_get_issue is CONTENT, and get_session_state is ORCHESTRATION despite the get_ prefix
+  ok   -- THE ONE DIVERGENCE, reproduced: 'mcp__some-other-server__get_thing' is CONTENT here and ORCHESTRATION upstream, because upstream could not strip an unknown server's prefix and so tested its get_/list_/github_ rule against the whole name
+  ok   -- an unknown server's fleet-control verb is still ORCHESTRATION, so the generalisation did not open a hole in the class that matters
+  ok   -- the verb vocabulary is a parameter: a deployment can replace it without editing this file
+
+the three states
+  ok   -- batchable_bash in state not_computed reports fired=False
+  ok   -- repeated_invocations in state not_computed reports fired=False
+  ok   -- agent_reuse_gap in state not_computed reports fired=False
+  ok   -- batchable_bash in state unmeasured reports fired=False
+  ok   -- repeated_invocations in state unmeasured reports fired=False
+  ok   -- agent_reuse_gap in state unmeasured reports fired=False
+  ok   -- all three states are reachable from real windows: ['measured', 'not_computed', 'unmeasured']
+  ok   -- every flag returns the SAME core key set, so one caller branch works for all three: ('count', 'evidence', 'fingerprint', 'fired', 'flag', 'measure', 'measure_of', 'note', 'overshoot', 'severity', 'source', 'state', 'threshold', 'window')
+
+SELF-TEST PASSED -- 121 checks: the byte arithmetic at every offset, window/full agreement,
+a positive AND a negative control for each of the three flags, both sides of each threshold
+boundary, all three states reachable, the resume cursor across an append and a rotation,
+and no raw argument in any evidence row.
+exit=0
