@@ -145,6 +145,18 @@ the loop-flag table.
   `case` match found its own subshell and reported two processes that did not exist.
 - **Kernel files report size 0.** `stat` on `cgroup.procs` returns 0 bytes, so `test -s` on it is
   always false and a guard written that way never runs. Read the content.
+- **A clean merge is not a correct one, and generated artefacts are where that bites.** Git
+  compares two branches' versions of a file to each other; it cannot compare either to the code
+  that is supposed to produce it. So a captured-output fixture can go stale with no conflict to
+  resolve and nothing to review. It happened twice here. Once a branch ADDED a fixture while
+  another branch changed the output format: there was no copy of the new file on the other side,
+  so git had nothing to merge and carried the pre-change capture forward untouched. Once a clean
+  merge produced a fixture holding one branch's header above another branch's body. Every gate
+  was green both times, including the figure gate, because a stale fixture still contains the
+  substring that gate pins. The only check that sees this class re-runs the instrument and
+  compares byte-for-byte: `scripts/check_fixtures_fresh.sh`. Which means the producing command
+  for every fixture has to be committed rather than remembered — if nobody can say what command
+  made a file, nothing can tell whether it is still true.
 - **Don't cache a clock.** `/proc/uptime` sampled once at import gave every later-started process
   a *negative* age, which silently failed every `age > threshold` test. The enumeration was
   correct and the clock was wrong; the self-test is what caught it.
