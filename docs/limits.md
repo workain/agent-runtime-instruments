@@ -183,6 +183,31 @@ Stated so the gaps are visible rather than implied absent.
   (the fixture built to exceed them), and in `measure_token_breakdown.loop-flags-clean.out`
   (built not to):
   `FLAGGED spans: 0 of 2 -- a MEASURED clean result against this threshold`.
+- **Signal 2 counts IDENTICAL calls, and "identical" means exact.** The unit is the tool name
+  plus a digest of its arguments, so `Read(a)` and `Read(b)` are different calls -- which is the
+  whole reason this signal could ship at all, since matching on tool name alone reports every
+  Bash-heavy session as one long repetition. The cost of exactness is under-reporting: a retry
+  whose arguments differ by a timestamp, a page token or a line number does not match, so a
+  count here is a FLOOR, not a total. No normalisation is shipped (drop numbers? fuzzy-match
+  strings?) because each candidate is a guess that would invent repeats out of legitimately
+  different calls, and nothing grounds a choice between them -- the same discipline as shipping
+  no threshold. Two windows are reported because neither subsumes the other: consecutive runs
+  of one signature, and occurrences of one signature within a single span (`A B A B A` has no
+  run longer than one but ran `A` three times before the operator said anything new). Runs are
+  per THREAD, since a subagent's turns interleave into the parent's transcript and a raw-order
+  scan would splice one actor's calls onto another's. Arguments are never published: they are
+  compared as a digest and displayed as 8 hex characters, so this adds no privacy surface over
+  the cluster keys. And a repeat is not a verdict -- polling until a condition holds, retrying
+  a flaky step and re-reading a changed file all repeat legitimately, and nothing here can tell
+  those from a stuck loop, because that needs state the transcript does not record.
+  All three of its states are published against real runs, so none of them has to be taken on
+  trust: `longest consecutive run of one signature: 8` and
+  `most occurrences of one signature within a single span: 7` in
+  `measure_token_breakdown.loop-flags-FLAGGED.out` (the same fixture signals 1 and 3 are pinned
+  against -- its eight Bash calls carry no `command`, so they share one signature and the run is
+  genuine), and `UNMEASURED: no tool call was seen at all` in
+  `measure_token_breakdown.no-bash-turns.out` -- the state that must never be mistaken for a
+  clean result, since "nothing could repeat" and "nothing did repeat" are different facts.
 - **No threshold ships as a default, so by default nothing is flagged.** Four frameworks' own
   loop ceilings were read at first hand (`docs/citations.md`) and the defaults that exist span 10
   to 1000, each a cost backstop rather than a non-convergence detector. So an unset threshold
@@ -206,10 +231,13 @@ Stated so the gaps are visible rather than implied absent.
   into the same transcript, so a raw scan would join a main-thread turn to a sidechain's and
   report a streak no thread had. The sidechain figure is still a ceiling: two different
   subagents' turns landing adjacently can merge into one apparent streak.
-- **Signal 2 does not exist yet** — repeated/near-duplicate invocations, the mode published work
-  rates most frequent of 14. It is reported as `NOT IMPLEMENTED` on every run rather than left to
-  be inferred from a gap, because matching on tool name alone would report any Bash-heavy session
-  as one long repetition.
+- **Signal 2 measures a proxy for its target, not the target.** Repeated steps rank most
+  frequent of 14 in the MAST taxonomy (`docs/citations.md`, cited to the body text that ranks the
+  modes rather than to the abstract, which does not rank them) — that ranking is why this signal
+  was worth building rather than deferring further. But the published mode is a step repeated
+  *with no state change*, and what this counts is a call repeated with identical arguments; the
+  two coincide only where the arguments are the whole state. A high count is a reason to go read
+  the transcript, not a failure mode detected.
 - **It flags structure, not semantics.** Nothing here reads what was said; there is no LLM call
   and no notion of whether two calls achieved the same thing. "Same command run twice with no
   state change" is the signal the literature actually names, and this instrument cannot see it

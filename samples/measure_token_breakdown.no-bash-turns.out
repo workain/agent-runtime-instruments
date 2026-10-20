@@ -1,0 +1,73 @@
+sources read:
+  samples/fixtures/token_breakdown.no-bash-turns.jsonl
+
+attribution coverage: 3 of 3 assistant turns were usage-bearing; 0 carried no recognised usage field
+usage-field presence across usage-bearing turns (a field missing here is a silent 0, not a measured one):
+  input_tokens: 3/3
+  output_tokens: 3/3
+  cache_creation_input_tokens: 3/3
+  cache_read_input_tokens: 3/3
+sidechain (subagent) turns: 0
+  (0 means no sidechain turns in the transcripts PASSED, not that no subagent ran: some
+   layouts write a subagent's turns to a separate transcript file. See --help-blind, mode 4b.)
+
+TOTAL over 3 usage-bearing turns: in=15 out=150 cache_create=1500 cache_read=15000
+cache_read : output overhead = 100.00
+
+BY TOOL (turn-grain: a turn's usage is attributed to the SET of tools it called, not split per call):
+  turns      out  cache_read cache_create  tools
+      3      150       15000         1500  (no tool call)
+
+BY AGENT (same-session Task subagents separated from the main thread):
+  turns      out  cache_read cache_create  agent
+      3      150       15000         1500  main thread
+
+TOP 5 TURNS BY cache_read (the turns re-reading the most cached context):
+   cache_read      out  agent / tools
+         5000       50  main thread / (no tool call)
+         5000       50  main thread / (no tool call)
+         5000       50  main thread / (no tool call)
+
+LOOP FLAGS
+  Mechanical signals, computed from transcript STRUCTURE only -- turn boundaries and
+  tool_use block counts -- never from judging what was said. THESE ARE FLAGS, NOT
+  VERDICTS: a flagged span means an unusual amount of work by the threshold YOU set,
+  which is a pointer to look. It is not a finding that the work was wasted, and no
+  threshold here is a validated constant.
+
+  real user turns (span boundaries): 1
+  user entries NOT counted as operator input: none
+    No isMeta, tool_result-only or engine-injected user entry was seen at all. For a
+    real Claude Code transcript that is itself unusual -- tool results come back as user
+    entries -- so check that this is the format you think it is.
+
+  SIGNAL 1 -- tool calls per span between consecutive real user turns
+    spans: 1  tool calls per span: p50=0 p90=0 max=0  (assistant turns per span: p50=3 max=3)
+    threshold: NOT SET -> NOT COMPUTED
+      Not a clean result and not a dirty one: no span was tested. No default ships
+      because no published threshold is grounded -- the frameworks' own ceilings span 10
+      to 1000 (each read at first hand; see docs/citations.md) and exist as cost
+      backstops, not as non-convergence detectors. Pick one from the distribution above
+      via --flag-span-tool-calls N or ARI_FLAG_SPAN_TOOL_CALLS, and treat it as a
+      starting point for recalibration.
+
+  SIGNAL 2 -- the same tool called with the same arguments, repeatedly
+    UNMEASURED: no tool call was seen at all, so there is nothing that could repeat.
+    Reported as unmeasured rather than as zero repeats, which would read as a clean result.
+      Repeated invocations are counted MECHANICALLY: the identical tool and identical
+      arguments, by digest. A repeat is not a finding that the work was wasted --
+      polling until a condition holds, retrying a flaky step, and re-reading a file that
+      changed all repeat legitimately, and this instrument cannot tell those from a
+      stuck loop because that needs the state the transcript does not record. What it
+      gives you is where to look. Matching is EXACT, which under-reports on purpose: a
+      retry whose arguments differ by a timestamp or a page token does not match, and no
+      normalisation is shipped because none of the obvious ones is grounded -- the same
+      reason no threshold is shipped. So treat a count here as a floor.
+
+  SIGNAL 3 -- consecutive assistant turns that called no tool
+    longest streak anywhere: 3 turn(s)
+    main thread: 3 turns, 3 with no tool call, in 1 streak(s), longest=3
+    sidechains: 0 turns, 0 with no tool call, in 0 streak(s), longest=0
+    threshold: NOT SET -> NOT COMPUTED
+      No streak was tested. Same reason as signal 1 for shipping no default; set one
+      with --flag-no-tool-streak N or ARI_FLAG_NO_TOOL_STREAK.

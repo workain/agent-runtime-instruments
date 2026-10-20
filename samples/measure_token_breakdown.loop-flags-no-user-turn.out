@@ -57,14 +57,28 @@ LOOP FLAGS
     threshold, so NOTHING is flagged here: a dramatic number about a session whose turns
     cannot be seen is worse than no number. See --help-blind, blind mode 6.
 
-  SIGNAL 2 -- repeated / near-duplicate invocations: NOT IMPLEMENTED
-      NOT IMPLEMENTED -- repeated/near-duplicate invocations. Published work rates this
-      the most frequent of 14 multi-agent failure modes (MAST FM-1.3, step repetition,
-      15.7% over 1600+ annotated traces), so it is the next signal to add, not one that
-      was judged unimportant. It is deferred rather than approximated: matching on tool
-      NAME alone would report a Bash-heavy session as one long repetition, and the
-      command-level clustering that makes it meaningful is being built separately.
-      Nothing partial is reported under its name.
+  SIGNAL 2 -- the same tool called with the same arguments, repeatedly
+    tool calls: 8, distinct call signatures: 1
+    longest consecutive run of one signature: 8
+    most occurrences of one signature within a single span: 8
+    2 repeat group(s) found (a signature is a tool plus a DIGEST of its arguments;
+    arguments themselves are never printed):
+      count  window      where                  signature
+          8  consecutive main thread            Bash:(unparsed)#44136fa3
+          8  span        span 0                 Bash:(unparsed)#44136fa3
+    threshold: NOT SET -> NOT COMPUTED
+      Nothing is flagged. The counts above are reported anyway, because they need no
+      constant; what would be flagged does. Set one with --flag-repeated-calls N or
+      ARI_FLAG_REPEATED_CALLS.
+      Repeated invocations are counted MECHANICALLY: the identical tool and identical
+      arguments, by digest. A repeat is not a finding that the work was wasted --
+      polling until a condition holds, retrying a flaky step, and re-reading a file that
+      changed all repeat legitimately, and this instrument cannot tell those from a
+      stuck loop because that needs the state the transcript does not record. What it
+      gives you is where to look. Matching is EXACT, which under-reports on purpose: a
+      retry whose arguments differ by a timestamp or a page token does not match, and no
+      normalisation is shipped because none of the obvious ones is grounded -- the same
+      reason no threshold is shipped. So treat a count here as a floor.
 
   SIGNAL 3 -- consecutive assistant turns that called no tool
     longest streak anywhere: 4 turn(s)

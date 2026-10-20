@@ -68,7 +68,7 @@ framework's own reference page or its own source file — not from a summary abo
 | "Starting in version 1.0.6, the default recursion limit is set to 1000 steps." | [docs.langchain.com/oss/python/langgraph/graph-api](https://docs.langchain.com/oss/python/langgraph/graph-api) | same |
 | `DEFAULT_MAX_TURNS = 10` | [`openai-agents-python/src/agents/run_config.py`](https://raw.githubusercontent.com/openai/openai-agents-python/main/src/agents/run_config.py) — the docs page names the constant but not its value, so the value was read from source | same |
 | `max_turns` \| `int \| None` \| default `None` \| "Maximum agentic turns (tool-use round trips)" | [code.claude.com/docs/en/agent-sdk/python](https://code.claude.com/docs/en/agent-sdk/python), `ClaudeAgentOptions` reference table | same |
-| "1600+ annotated traces collected across 7 popular MAS frameworks"; "This process identifies 14 unique modes, clustered into 3 categories"; "step repetitions (FM-1.3, 15.7%)" | MAST, [arXiv:2503.13657](https://arxiv.org/abs/2503.13657) v3 — first two from the abstract, the third from §4 of the PDF | same (signal 2's deferral rationale) |
+| "1600+ annotated traces collected across 7 popular MAS frameworks"; "This process identifies 14 unique modes, clustered into 3 categories"; "step repetitions (FM-1.3, 15.7%)" | MAST, [arXiv:2503.13657](https://arxiv.org/abs/2503.13657) v3 — first two from the abstract, the third from §4 of the PDF | same (signal 2's motivation) |
 
 **Rule 4 fired here, on a summary written by another agent.** These numbers reached this
 repository through a research brief, and re-fetching the four framework pages changed two of

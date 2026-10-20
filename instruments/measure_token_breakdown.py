@@ -42,9 +42,9 @@ splits that spend three ways:
   LOOP FLAGS   -- two mechanical (non-LLM) signals correlated with excessive work cycles,
                    computed from transcript STRUCTURE alone -- turn boundaries and
                    `tool_use` block counts -- and never from judging what was SAID:
-                   (1) tool calls in each span between consecutive REAL user turns, and
+                   (1) tool calls in each span between consecutive REAL user turns,
+                   (2) the same tool called with the same arguments repeatedly, and
                    (3) runs of consecutive assistant turns that called no tool at all.
-                   (2) is a deliberate gap -- see SIGNAL 2 below.
 
 THESE ARE FLAGS, NOT VERDICTS. A flagged span says "an unusual amount of work happened
 here by this threshold", which is a pointer for a human or a later semantic layer to look
@@ -108,18 +108,39 @@ than silent. Where an entry cannot be classified it counts as REAL, which splits
 and lowers every count: of the two directions to be wrong in, that is the one that cannot
 manufacture a finding.
 
-SIGNAL 2 IS NOT IMPLEMENTED HERE, deliberately and visibly. Repeated/near-duplicate tool
-invocations are the signal published work actually names as dominant: MAST's failure
-taxonomy, built from "1600+ annotated traces collected across 7 popular MAS frameworks",
-rates "step repetitions (FM-1.3, 15.7%)" the most frequent of its 14 modes -- the next
-highest is reasoning-action mismatch at 13.2% -- and that is identical-action-without-
-state-change, which needs no LLM to detect. It is exactly what this instrument should
-flag next. It is deferred rather
-than approximated because a tool-NAME-only match ("Bash called 9 times") is noise in a
-Bash-heavy session, and the command-level clustering that makes it meaningful is the BY
-BASH COMMAND view above (see `bash_cluster`), which landed only now -- signal 2 is the
-next thing to build ON it, and is still not approximated under its own name here. `--help-blind` says so, the run prints it as NOT IMPLEMENTED, and no
-partial version of it is reported under its name.
+SIGNAL 2 -- REPEATED INVOCATIONS -- IS WHAT PUBLISHED WORK NAMES AS DOMINANT, which is why
+it is here rather than approximated. MAST's failure taxonomy, built from "1600+ annotated
+traces collected across 7 popular MAS frameworks", rates "step repetitions (FM-1.3, 15.7%)"
+the most frequent of its 14 modes -- the next highest is reasoning-action mismatch at 13.2%
+-- and that is identical-action-without-state-change, which needs no LLM to detect.
+
+    It was deferred for a long time for a real reason: the only duplicate key available was
+    the tool NAME, and a real session calls Bash dozens of times with different commands, so
+    name-matching would have reported every Bash-heavy session as one long repetition and
+    discriminated nothing -- the uniformity trap docs/method.md names. The key is now the
+    tool plus a DIGEST OF ITS ARGUMENTS (`call_signature`), which is specific enough to tell
+    `Read(a)` from `Read(b)`; a self-test leg asserts that a fixture calling one tool six
+    times with six different arguments reports ZERO repeats, which is exactly the fixture a
+    name-only detector fails.
+
+    TWO WINDOWS, because they answer different questions and neither subsumes the other:
+    CONSECUTIVE runs of one signature (the stuck-retry shape), and the number of occurrences
+    of one signature WITHIN a span (`A B A B A` has no run longer than 1 but ran A three
+    times before the operator said anything new). Runs are computed PER THREAD, because a
+    subagent's turns are interleaved into the parent's transcript and a raw-order scan would
+    splice one actor's call onto another's -- the same lesson signal 3 already carries.
+
+    MATCHING IS EXACT, AND THAT UNDER-REPORTS ON PURPOSE. A retry whose arguments differ by
+    a timestamp, a page token or a line number does not match. No normalisation is shipped,
+    for the same reason no threshold is: the obvious candidates (drop numbers, fuzzy-match
+    strings) are each a guess that would manufacture repeats out of legitimately-different
+    calls, and nothing grounds a choice between them. So a count here is a FLOOR.
+
+    AND IT IS NOT A VERDICT. Polling until a condition holds, retrying a flaky step, and
+    re-reading a file that changed are all legitimate repeats, and this instrument cannot
+    tell them from a loop because that needs the state the transcript does not record. The
+    arguments are never published -- they are compared as a digest and shown as 8 hex
+    characters -- so this adds no privacy surface over the by-command clustering.
 
 `--json` emits a compact digest (totals, the breakdowns above, the loop flags, the N
 costliest turns by cache-read, a cache_read:output ratio per node) sized to hand to an LLM
@@ -284,6 +305,9 @@ UNPARSED = "(unparsed)"
 # A well-formed command word that is not a PUBLIC one. Parenthesised like the other
 # sentinels so it can never collide with a real command (`_CMD_WORD` admits no parens).
 OTHER = "(other)"
+# A `tool_use` block that carries no name. It still HAPPENED, so it gets a call signature
+# like any other call rather than being dropped -- the same reasoning turn_calls uses.
+UNNAMED_TOOL = "(tool name not recorded)"
 
 _ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")  # a `VAR=value` token, value already unquoted
 _CHAIN_OPS = ("&&", "||", "|", ";", "&")
@@ -495,6 +519,46 @@ def bash_other_distinct(turns):
     return len(fps)
 
 
+def call_signature(name, inp):
+    """(label, fingerprint) identifying ONE tool call for repeat detection.
+
+    Returns a PUBLISHABLE label and a fingerprint of the arguments. The split is the whole
+    privacy design: "was this call repeated" needs to compare arguments, but the arguments
+    are the one thing that must never be printed, so the comparison happens over a digest
+    and only the digest's first 8 hex characters are ever shown.
+
+      * the LABEL is closed-vocabulary by construction. For Bash it is `Bash:<cluster>`,
+        where the cluster comes from `bash_cluster` and is therefore a public command word,
+        `(other)` or `(unparsed)` -- so the label cannot carry a local script or branch
+        name (ARI#11). For every other tool it is the tool's own name, which this file
+        already publishes in BY TOOL, so no new surface is opened.
+      * the FINGERPRINT is a sha256 over the arguments canonicalised with sorted keys, so
+        two calls that differ only in key order compare equal. It is never reversed and
+        never published whole.
+
+    Why a FULL digest is compared but a short one displayed: an 8-hex collision between
+    two genuinely different calls would merge them and manufacture a repeat that never
+    happened. Comparing the full digest makes that impossible; truncating only for display
+    keeps the output readable. Those are different jobs and the code does not confuse them.
+
+    `default=str` so an argument value this file has never seen (a non-JSON-serialisable
+    object from some other harness) still fingerprints instead of raising. An argument
+    block that cannot be canonicalised at all falls back to `repr`, which is stable within
+    a run -- the alternative is to drop the call, and a dropped call cannot be seen to
+    repeat.
+    """
+    tool = name if isinstance(name, str) and name else UNNAMED_TOOL
+    if tool == "Bash" and isinstance(inp, dict):
+        label = f"Bash:{bash_cluster(inp.get('command'))}"
+    else:
+        label = tool
+    try:
+        canon = json.dumps(inp, sort_keys=True, separators=(",", ":"), default=str)
+    except (TypeError, ValueError):
+        canon = repr(inp)
+    return label, hashlib.sha256(canon.encode("utf-8", "surrogateescape")).hexdigest()
+
+
 def anonymise(tag):
     """Hash an identifier the same way the other instruments do: `sess-<8 hex>`.
 
@@ -564,6 +628,7 @@ def collect_turns(lines):
 
         names, call_ids, idless = set(), set(), 0
         bash, bash_other = set(), set()
+        callsigs = []          # (block id or None, label, fingerprint) in block order
         content = msg.get("content")
         if isinstance(content, list):
             for b in content:
@@ -590,6 +655,11 @@ def collect_turns(lines):
                         call_ids.add(bid)
                     else:
                         idless += 1
+                    # signal 2's unit. Recorded for EVERY tool_use block, named or not,
+                    # and tagged with the same block id used to dedup a split turn above.
+                    lab, sig = call_signature(nm, b.get("input"))
+                    callsigs.append((bid if isinstance(bid, str) and bid else None,
+                                     lab, sig))
 
         usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else None
 
@@ -598,7 +668,8 @@ def collect_turns(lines):
             t = dict(tools=set(), bash=set(), bash_other_fp=set(),
                      usage=None, has_usage=False,
                      sidechain=False, agent=None,
-                     call_ids=set(), calls_idless=0, span=span)
+                     call_ids=set(), calls_idless=0, span=span,
+                     call_keys=[], _call_key_ids=set())
             turns[mid] = t
             order.append(mid)
         t["tools"] |= names
@@ -606,6 +677,16 @@ def collect_turns(lines):
         t["bash_other_fp"] |= bash_other
         t["call_ids"] |= call_ids
         t["calls_idless"] += idless
+        # Append in order, deduping by block id the same way call_ids does: one logical
+        # turn is several entries repeating the same tool_use blocks, and counting those
+        # repeats would read a split turn as a retry loop -- the exact trap this file
+        # already keys `usage` by message.id to avoid.
+        for bid_, lab_, sig_ in callsigs:
+            if bid_ is not None:
+                if bid_ in t["_call_key_ids"]:
+                    continue
+                t["_call_key_ids"].add(bid_)
+            t["call_keys"].append((lab_, sig_))
         if d.get("isSidechain"):
             t["sidechain"] = True
         if not t["agent"] and isinstance(d.get("attributionAgent"), str):
@@ -783,6 +864,63 @@ def turn_calls(t):
     return len(t["call_ids"]) + t["calls_idless"]
 
 
+def repeated_runs(turns):
+    """CONSECUTIVE runs of the identical call signature, per thread.
+
+    Per THREAD, not in raw file order, for the same reason `no_tool_streaks` is: a
+    subagent's turns are interleaved into the parent's transcript, so scanning the file
+    straight through would splice one thread's call onto another's and report a run that
+    no single actor performed.
+
+    A "run" is only recorded at length >= 2. A length-1 run is just a call.
+    """
+    threads = {}
+    for t in turns:
+        threads.setdefault(agent_key(t) if t["sidechain"] else MAIN,
+                           []).extend(t["call_keys"])
+    out = {}
+    for thread, seq in threads.items():
+        runs, prev, n = [], None, 0
+        for k in seq:
+            if k == prev:
+                n += 1
+            else:
+                if n >= 2:
+                    runs.append((prev[0], prev[1], n))
+                prev, n = k, 1
+        if n >= 2:
+            runs.append((prev[0], prev[1], n))
+        out[thread] = dict(calls=len(seq), runs=runs)
+    return out
+
+
+def repeated_in_spans(turns, real_user_turns):
+    """How many times one call signature occurs WITHIN a span, consecutively or not.
+
+    The second window, and it answers a different question from `repeated_runs`: a loop
+    that alternates `A B A B A` has no consecutive run longer than 1, but it ran A three
+    times in one span without anything else intervening that changed the request. Reported
+    at multiplicity >= 2 only.
+
+    Spans, not the whole file, because a signature recurring after the operator typed
+    again is a NEW request that happened to need the same call -- which is ordinary, not a
+    loop. The span boundary is what separates "it kept retrying" from "I asked twice".
+    """
+    by = {}
+    for t in turns:
+        by.setdefault(t["span"], []).extend(t["call_keys"])
+    rows = []
+    idxs = ([0] if 0 in by else []) + list(range(1, real_user_turns + 1))
+    for i in idxs:
+        counts = {}
+        for k in by.get(i, []):
+            counts[k] = counts.get(k, 0) + 1
+        for (lab, sig), n in counts.items():
+            if n >= 2:
+                rows.append((i, lab, sig, n))
+    return rows
+
+
 def quantile(xs, pct):
     """Nearest-rank (inverse-ECDF) quantile over an already-sorted list; None when empty.
 
@@ -863,7 +1001,8 @@ def no_tool_streaks(turns):
     return out
 
 
-def compute_flags(per_source, span_threshold, streak_threshold):
+def compute_flags(per_source, span_threshold, streak_threshold,
+                  repeat_threshold=None):
     """Aggregate both signals over one or more sources and decide what is flagged.
 
     PER SOURCE, then concatenated -- never over a merged turn list. Span indices restart
@@ -876,6 +1015,7 @@ def compute_flags(per_source, span_threshold, streak_threshold):
       not measurable              -> "unmeasured", and nothing is flagged
     """
     spans, streaks, real_users, excluded, asst = [], {}, 0, {}, 0
+    rep_rows, rep_calls, rep_keys = [], 0, set()
     for label, turns, stats in per_source:
         real_users += stats["real_user_turns"]
         asst += len(turns)
@@ -887,6 +1027,18 @@ def compute_flags(per_source, span_threshold, streak_threshold):
             acc = streaks.setdefault(thread, dict(turns=0, runs=[]))
             acc["turns"] += rec["turns"]
             acc["runs"] += rec["runs"]
+        # signal 2, PER SOURCE like the other two: a run must not be spliced across files,
+        # and a span index means nothing outside the transcript it came from.
+        for t in turns:
+            rep_calls += len(t["call_keys"])
+            rep_keys.update(t["call_keys"])
+        for thread, rec in repeated_runs(turns).items():
+            for lab, sig, n in rec["runs"]:
+                rep_rows.append(dict(source=label, window="consecutive", thread=thread,
+                                     span=None, label=lab, fingerprint=sig[:8], count=n))
+        for idx, lab, sig, n in repeated_in_spans(turns, stats["real_user_turns"]):
+            rep_rows.append(dict(source=label, window="span", thread=None, span=idx,
+                                 label=lab, fingerprint=sig[:8], count=n))
 
     calls = sorted(s["calls"] for s in spans)
     turns_per_span = sorted(s["turns"] for s in spans)
@@ -921,38 +1073,43 @@ def compute_flags(per_source, span_threshold, streak_threshold):
                                   flagged=([r for r in v["runs"] if r > streak_threshold]
                                            if s3_state == "measured" else []))
                          for k, v in streaks.items()})
+    # Signal 2 needs calls to compare. Zero tool calls is not "no repetition found", it
+    # is nothing to look at -- the same distinction signal 1 draws for a file with no user
+    # turn, and the reason neither reports a reassuring clean result it did not earn.
+    cons = [r["count"] for r in rep_rows if r["window"] == "consecutive"]
+    inspan = [r["count"] for r in rep_rows if r["window"] == "span"]
+    s2_state = ("unmeasured" if rep_calls == 0
+                else "not_computed" if repeat_threshold is None else "measured")
+    s2 = dict(state=s2_state,
+              threshold=repeat_threshold,
+              calls=rep_calls,
+              distinct_call_keys=len(rep_keys),
+              repeats_found=len(rep_rows),
+              consecutive_longest=(max(cons) if cons else 0),
+              in_span_max=(max(inspan) if inspan else 0),
+              rows=rep_rows,
+              # STRICTLY greater, both windows, same boundary rule as signals 1 and 3.
+              flagged=([r for r in rep_rows if r["count"] > repeat_threshold]
+                       if s2_state == "measured" else []),
+              note=SIGNAL2_NOTE)
     return dict(signal1_span_tool_calls=s1,
-                # named in the digest, not left to be inferred from a missing key: an LLM
-                # handed two signals out of three will reason about the two it can see
-                signal2_repeated_invocations=dict(state="not_implemented",
-                                                  note=SIGNAL2_DEFERRED),
+                signal2_repeated_invocations=s2,
                 signal3_no_tool_streaks=s3)
 
 
-# TODO(#4 signal 2, deferred pending #3): repeated / near-duplicate tool invocations --
-# runs of the same tool+arguments with no intervening state change. Blocked on nothing
-# technical; blocked on MEANING. The only duplicate key available in this file today is
-# the tool NAME, and `turn_calls` above already shows why that is not enough: a real
-# session calls Bash dozens of times with different commands, so name-matching would flag
-# every Bash-heavy session as one long repetition and discriminate nothing -- the
-# uniformity trap docs/method.md names. The command-level clustering that makes the key
-# meaningful is #3's work (Bash-command clustering / agent cross-tabs); once it lands, the
-# key becomes (cluster, argument-string) and this signal can be built on the span rows
-# compute_flags already produces. Until then it is reported as NOT IMPLEMENTED, in the
-# text report and in the --json digest, rather than shipped as a name-only approximation
-# under the same name.
-#
-# The deferred signal is named in the output rather than left to be inferred from its
-# absence. Two signals present and one missing with no explanation reads as two being all
-# there is.
-SIGNAL2_DEFERRED = (
-    "NOT IMPLEMENTED -- repeated/near-duplicate invocations. Published work rates this "
-    "the most frequent of 14 multi-agent failure modes (MAST FM-1.3, step repetition, "
-    "15.7% over 1600+ annotated traces), so it is the next "
-    "signal to add, not one that was judged unimportant. It is deferred rather than "
-    "approximated: matching on tool NAME alone would report a Bash-heavy session as one "
-    "long repetition, and the command-level clustering that makes it meaningful is being "
-    "built separately. Nothing partial is reported under its name."
+# Signal 2's own caveat, carried in the text report AND the digest, for the same reason
+# signals 1 and 3 carry theirs: a number labelled "repeated invocations" invites being read
+# as "wasted work", and it is not that.
+SIGNAL2_NOTE = (
+    "Repeated invocations are counted MECHANICALLY: the identical tool and identical "
+    "arguments, by digest. A repeat is not a finding that the work was wasted -- polling "
+    "until a condition holds, retrying a flaky step, and re-reading a file that changed "
+    "all repeat legitimately, and this instrument cannot tell those from a stuck loop "
+    "because that needs the state the transcript does not record. What it gives you is "
+    "where to look. Matching is EXACT, which under-reports on purpose: a retry whose "
+    "arguments differ by a timestamp or a page token does not match, and no normalisation "
+    "is shipped because none of the obvious ones is grounded -- the same reason no "
+    "threshold is shipped. So treat a count here as a floor."
 )
 
 
@@ -1028,8 +1185,44 @@ def print_flags(flags):
                 print(f"    FLAGGED spans: 0 of {s1['spans']} -- a MEASURED clean result "
                       f"against this threshold")
 
-    print("\n  SIGNAL 2 -- repeated / near-duplicate invocations: NOT IMPLEMENTED")
-    print(_wrap(SIGNAL2_DEFERRED, indent="      "))
+    s2 = flags["signal2_repeated_invocations"]
+    print("\n  SIGNAL 2 -- the same tool called with the same arguments, repeatedly")
+    if s2["state"] == "unmeasured":
+        print("    UNMEASURED: no tool call was seen at all, so there is nothing that "
+              "could repeat.\n    Reported as unmeasured rather than as zero repeats, "
+              "which would read as a clean result.")
+    else:
+        print(f"    tool calls: {s2['calls']}, distinct call signatures: "
+              f"{s2['distinct_call_keys']}")
+        print(f"    longest consecutive run of one signature: "
+              f"{s2['consecutive_longest']}")
+        print(f"    most occurrences of one signature within a single span: "
+              f"{s2['in_span_max']}")
+        if s2["rows"]:
+            print(f"    {len(s2['rows'])} repeat group(s) found (a signature is a tool "
+                  f"plus a DIGEST of its arguments;\n    arguments themselves are never "
+                  f"printed):")
+            print(f"      {'count':>5}  {'window':<11} {'where':<22} signature")
+            for r in sorted(s2["rows"], key=lambda r: -r["count"]):
+                where = (r["thread"] if r["window"] == "consecutive"
+                         else f"span {r['span']}")
+                print(f"      {r['count']:>5}  {r['window']:<11} {str(where)[:22]:<22} "
+                      f"{r['label']}#{r['fingerprint']}")
+        else:
+            print("    no signature repeated, in either window.")
+        if s2["state"] == "not_computed":
+            print("    threshold: NOT SET -> NOT COMPUTED")
+            print(_wrap("Nothing is flagged. The counts above are reported anyway, "
+                        "because they need no constant; what would be flagged does. Set "
+                        "one with --flag-repeated-calls N or ARI_FLAG_REPEATED_CALLS.",
+                        indent="      "))
+        else:
+            print(f"    threshold: > {s2['threshold']} occurrences -- caller-set, "
+                  f"strictly greater")
+            print(f"    FLAGGED repeat groups: {len(s2['flagged'])}"
+                  + ("" if s2["flagged"]
+                     else " -- a MEASURED clean result against this threshold"))
+    print(_wrap(SIGNAL2_NOTE, indent="      "))
 
     print("\n  SIGNAL 3 -- consecutive assistant turns that called no tool")
     if s3["state"] == "unmeasured":
@@ -1795,6 +1988,90 @@ def _internal_name_fixture_lines():
     return out
 
 
+# Signal 2's fixtures. The argument values carry distinctive sentinels (`zorkmid`,
+# `frotz`) so the privacy leg below can assert that detecting a repeat never publishes the
+# arguments it compared -- the counts and an 8-hex digest are the only output.
+_REPEAT_ARG = "/tmp/zorkmid-fixture-path"
+_REPEAT_ARG2 = "/tmp/frotz-fixture-path"
+
+
+def _tool_asst(mid, blocks, usage):
+    return json.dumps(dict(type="assistant", isSidechain=False,
+                           message=dict(id=mid, role="assistant", content=blocks,
+                                        usage=usage)))
+
+
+def _tu(cid, name, inp):
+    return {"type": "tool_use", "id": cid, "name": name, "input": inp}
+
+
+def _repeat_fixture_lines():
+    """An OBVIOUS repeat pattern, in both windows signal 2 measures.
+
+    After one real user turn (so everything lands in span 1):
+      * 4 consecutive identical `Read` calls on the same path -> a consecutive run of 4.
+      * then `A B A B A` over two other signatures -> no consecutive run, but A occurs 3
+        times inside the one span, which is the second window and the reason it exists.
+    Also included: ONE logical turn written as two entries repeating the SAME tool_use
+    block id, which must NOT read as a repeat -- a split turn is one call.
+    """
+    u = lambda: _u(1, 10, 100, 1000)
+    user = json.dumps(dict(type="user", message=dict(role="user", content="go")))
+    rd = lambda cid, path: _tu(cid, "Read", {"file_path": path})
+    out = [user]
+    # 4 identical consecutive calls -- same tool, same arguments, different block ids
+    for n in range(4):
+        out.append(_tool_asst(f"msg-r-{n}", [rd(f"tu-r-{n}", _REPEAT_ARG)], u()))
+    # A B A B A within the same span: A repeats 3x, never consecutively
+    for n, path in enumerate([_REPEAT_ARG2, "/tmp/other-1",
+                              _REPEAT_ARG2, "/tmp/other-2", _REPEAT_ARG2]):
+        out.append(_tool_asst(f"msg-a-{n}", [rd(f"tu-a-{n}", path)], u()))
+    # one logical turn, two entries, SAME block id -> one call, not two
+    out.append(_tool_asst("msg-split", [rd("tu-split", "/tmp/split-once")], u()))
+    out.append(_tool_asst("msg-split", [rd("tu-split", "/tmp/split-once")], u()))
+    return out
+
+
+def _interleaved_thread_fixture_lines():
+    """The SAME call alternating between the main thread and a sidechain.
+
+    Signal 3 already learned this the hard way: a subagent's turns are interleaved into
+    the parent's transcript, so a raw-order scan splices one actor's call onto another's.
+    Here main and a sidechain each make the identical call twice, alternating. Scanned in
+    file order that is a run of FOUR that nobody performed; per thread it is two runs of
+    two. Without this fixture the thread split is untested, because every other signal-2
+    fixture is main-thread only.
+    """
+    u = lambda: _u(1, 10, 100, 1000)
+    user = json.dumps(dict(type="user", message=dict(role="user", content="go")))
+    out = [user]
+    for n in range(4):
+        side = (n % 2 == 1)
+        blk = [_tu(f"tu-i-{n}", "Read", {"file_path": _REPEAT_ARG})]
+        d = dict(type="assistant", isSidechain=side,
+                 message=dict(id=f"msg-i-{n}", role="assistant", content=blk,
+                              usage=u()))
+        if side:
+            d["attributionAgent"] = "explore"
+        out.append(json.dumps(d))
+    return out
+
+
+def _no_repeat_fixture_lines():
+    """The counterfactual: the SAME tool every time, with DIFFERENT arguments every time.
+
+    This is the control that stops signal 2 from being a tool-name counter -- the exact
+    trap that kept it deferred. A name-only detector reports this as one long 6-deep
+    repetition; a signature detector must report none.
+    """
+    u = lambda: _u(1, 10, 100, 1000)
+    user = json.dumps(dict(type="user", message=dict(role="user", content="go")))
+    return [user] + [
+        _tool_asst(f"msg-n-{n}", [_tu(f"tu-n-{n}", "Read",
+                                      {"file_path": f"/tmp/distinct-{n}"})], u())
+        for n in range(6)]
+
+
 def _secret_fixture_lines():
     """One Bash turn per `_SECRET_CMDS` entry -- the leak control's own transcript.
 
@@ -2055,14 +2332,136 @@ def self_test():
         ("spans FLAGGED", [r["calls"] for r in p1["flagged"]], [7]),
         ("signal 3 longest streak", p3["longest"], 4),
         ("streaks FLAGGED (main)", p3["per_thread"][MAIN]["flagged"], [4]),
+        # ARI#17: was "not_implemented". This control is called with no repeat threshold,
+        # so the convention it must now report is the SAME not_computed that signals 1 and
+        # 3 report in that case -- never "clean", which would be a claim it cannot make.
         ("signal 2 state", pos["signal2_repeated_invocations"]["state"],
-         "not_implemented"),
+         "not_computed"),
     ]
     for label, got, exp in checks:
         if got != exp:
             ok = False
         print(f"  {label:<32} got={str(got):<18} expected={str(exp):<18} "
               f"{'OK' if got == exp else 'MISMATCH'}")
+
+    print("\nSELF-TEST [signal 2 (ARI#17): an obvious repeat pattern must be counted in "
+          "BOTH windows, a same-tool/different-args fixture must count NONE, and no "
+          "argument may be published]")
+    r2_ok = True
+    rt, rt_stats = collect_turns(_repeat_fixture_lines())
+    nt, nt_stats = collect_turns(_no_repeat_fixture_lines())
+    RT = 2
+    rf = compute_flags([("/tmp/repeat.jsonl", rt, rt_stats)], None, None, RT)
+    nf = compute_flags([("/tmp/norepeat.jsonl", nt, nt_stats)], None, None, RT)
+    r2, n2 = rf["signal2_repeated_invocations"], nf["signal2_repeated_invocations"]
+    cons = max([r["count"] for r in r2["rows"] if r["window"] == "consecutive"] or [0])
+    insp = max([r["count"] for r in r2["rows"] if r["window"] == "span"] or [0])
+    for name, got, want in [
+        ("consecutive run of identical calls", cons, 4),
+        ("state with a threshold set", r2["state"], "measured"),
+        ("FLAGGED groups (count > 2)", len(r2["flagged"]) > 0, True),
+        # the counterfactual -- the leg that stops signal 2 being a tool-NAME counter
+        ("same tool, different args: repeats", n2["repeats_found"], 0),
+        ("...and that is MEASURED, not unmeasured", n2["state"], "measured"),
+        ("...with nothing flagged", len(n2["flagged"]), 0),
+        ("...but the calls WERE seen", n2["calls"], 6),
+        ("...as distinct signatures", n2["distinct_call_keys"], 6),
+    ]:
+        if got != want:
+            r2_ok = False
+        print(f"  {name:<42} got={str(got):<12} expected={str(want):<12} "
+              f"{'OK' if got == want else 'MISMATCH'}")
+    print(f"  {'max occurrences within one span':<42} got={insp:<12} "
+          f"(A B A B A plus the run above, all in span 1)")
+    # The span window must catch something the CONSECUTIVE window structurally cannot,
+    # or there is no reason for it to exist. `A B A B A` is that case: A occurs 3x in the
+    # span with no run longer than 1. Asserted by its own signature, because the in-span
+    # maximum above is dominated by the 4-run and would stay green if this window broke.
+    a_fp = hashlib.sha256(json.dumps({"file_path": _REPEAT_ARG2}, sort_keys=True,
+                                     separators=(",", ":")).encode()).hexdigest()[:8]
+    a_span = [r["count"] for r in r2["rows"]
+              if r["window"] == "span" and r["fingerprint"] == a_fp]
+    a_cons = [r["count"] for r in r2["rows"]
+              if r["window"] == "consecutive" and r["fingerprint"] == a_fp]
+    interleaved_ok = (a_span == [3] and a_cons == [])
+    if not interleaved_ok:
+        r2_ok = False
+    print(f"  {'interleaved A B A B A: span window only':<42} "
+          f"span={a_span} (must be [3]), consecutive={a_cons} (must be [])  "
+          f"{'OK' if interleaved_ok else 'MISMATCH'}")
+
+    # NEAR-MISS, both directions, same discipline as signals 1 and 3
+    n_at = len([r for r in compute_flags([("/tmp/r.jsonl", rt, rt_stats)], None, None,
+                                         4)["signal2_repeated_invocations"]["flagged"]
+                if r["window"] == "consecutive"])
+    n_over = len([r for r in compute_flags([("/tmp/r.jsonl", rt, rt_stats)], None, None,
+                                           3)["signal2_repeated_invocations"]["flagged"]
+                  if r["window"] == "consecutive"])
+    nm_ok = (n_at == 0 and n_over == 1)
+    if not nm_ok:
+        r2_ok = False
+    print(f"  {'boundary is strictly >':<42} at=4 -> {n_at} flagged (must be 0); "
+          f"at=3 -> {n_over} (must be 1)  {'OK' if nm_ok else 'MISMATCH'}")
+
+    # thread separation: the identical call alternating main/sidechain is TWO runs of 2,
+    # never one run of 4. Mirrors signal 3's own interleaving control.
+    it2, it2_stats = collect_turns(_interleaved_thread_fixture_lines())
+    i2 = compute_flags([("/tmp/i.jsonl", it2, it2_stats)], None, None,
+                       RT)["signal2_repeated_invocations"]
+    i_cons = sorted(r["count"] for r in i2["rows"] if r["window"] == "consecutive")
+    i_threads = sorted(str(r["thread"]) for r in i2["rows"]
+                       if r["window"] == "consecutive")
+    thr_ok = (i_cons == [2, 2] and len(set(i_threads)) == 2)
+    if not thr_ok:
+        r2_ok = False
+    print(f"  {'main/sidechain interleaved: 2 runs of 2':<42} runs={i_cons} "
+          f"(must be [2, 2]) across {len(set(i_threads))} thread(s) (must be 2)  "
+          f"{'OK' if thr_ok else 'MISMATCH -- a run was spliced across threads'}")
+
+    # a split turn is ONE call: the same block id across two entries is not a repeat
+    split_fp = hashlib.sha256(json.dumps({"file_path": "/tmp/split-once"},
+                                         sort_keys=True,
+                                         separators=(",", ":")).encode()).hexdigest()[:8]
+    split_ok = not any(r["fingerprint"] == split_fp for r in r2["rows"])
+    if not split_ok:
+        r2_ok = False
+    print(f"  {'split turn counted once, not as a repeat':<42} "
+          f"{'OK' if split_ok else 'MISMATCH -- a split turn read as a retry'}")
+
+    # unmeasured, not "clean": nothing that could repeat is not the same as no repeats
+    ut, ut_stats = collect_turns([
+        json.dumps(dict(type="assistant", isSidechain=False,
+                        message=dict(id="m-x", role="assistant",
+                                     content=[{"type": "text", "text": "ok"}],
+                                     usage=_u(1, 1, 1, 1))))])
+    us = compute_flags([("/tmp/u.jsonl", ut, ut_stats)], None, None,
+                       RT)["signal2_repeated_invocations"]["state"]
+    if us != "unmeasured":
+        r2_ok = False
+    print(f"  {'no tool call at all -> unmeasured':<42} got={us:<12} "
+          f"expected=unmeasured   {'OK' if us == 'unmeasured' else 'MISMATCH'}")
+
+    # PRIVACY: signal 2 COMPARES arguments, so its output must not contain them
+    def _render_s2(trns, stats):
+        a = argparse.Namespace(top=5, anonymise=False, json=False)
+        src = ["/tmp/repeat-fixture.jsonl"]
+        flg = compute_flags([(src[0], trns, stats)], 1, 1, 1)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_report(src, [], trns, a, flg)
+        return (buf.getvalue() + json.dumps(
+            build_digest(src, [], trns, {src[0]: trns}, None, None, a, flg))).lower()
+
+    arg_hits = [w for w in ("zorkmid", "frotz", "split-once")
+                if w in _render_s2(rt, rt_stats)]
+    if arg_hits:
+        r2_ok = False
+        print(f"  ARGUMENT CONTENT PUBLISHED: {arg_hits} -- signal 2 compares arguments "
+              f"but must never print them")
+    if not r2_ok:
+        ok = False
+    print(f"  arguments absent from text report + --json digest while repeats ARE "
+          f"reported: {'OK' if not arg_hits else 'LEAKED'}")
 
     print(f"\nSELF-TEST [loop flags, NEGATIVE control: a fixture under BOTH thresholds "
           f"must report a MEASURED clean result, not 'not computed']")
@@ -2366,8 +2765,8 @@ def main():
                "{label, transcript_path, parent_label}.\n"
                "Loop-flag thresholds have NO DEFAULT and may be set by env var instead of "
                "flag:\n"
-               "  ARI_FLAG_SPAN_TOOL_CALLS, ARI_FLAG_NO_TOOL_STREAK (both refuse a value "
-               "below 1).\n"
+               "  ARI_FLAG_SPAN_TOOL_CALLS, ARI_FLAG_NO_TOOL_STREAK, "
+               "ARI_FLAG_REPEATED_CALLS\n  (all refuse a value below 1).\n"
                "Run --help-blind for this instrument's own failure modes.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("transcripts", nargs="*",
@@ -2389,6 +2788,11 @@ def main():
                          "threshold is grounded (framework ceilings span 10 to 1000; "
                          "sources in docs/citations.md). Whatever you pass is a starting "
                          "point, not a validated constant")
+    ap.add_argument("--flag-repeated-calls", type=int, default=None, metavar="N",
+                    help="FLAG each group of MORE THAN N occurrences of one identical "
+                         "tool+arguments signature, consecutively or within one span. "
+                         "Env: ARI_FLAG_REPEATED_CALLS. Same no-default posture as the "
+                         "others: unset reports the counts and says NOT COMPUTED")
     ap.add_argument("--flag-no-tool-streak", type=int, default=None, metavar="N",
                     help="FLAG each run of MORE THAN N consecutive assistant turns that "
                          "called no tool at all. Env: ARI_FLAG_NO_TOOL_STREAK. Same "
@@ -2422,6 +2826,11 @@ def main():
         return 2
     streak_threshold, err = resolve_threshold(args.flag_no_tool_streak,
                                               "ARI_FLAG_NO_TOOL_STREAK")
+    if err:
+        print(f"REFUSING: {err}. See --help-blind, blind mode 7.", file=sys.stderr)
+        return 2
+    repeat_threshold, err = resolve_threshold(args.flag_repeated_calls,
+                                              "ARI_FLAG_REPEATED_CALLS")
     if err:
         print(f"REFUSING: {err}. See --help-blind, blind mode 7.", file=sys.stderr)
         return 2
@@ -2487,7 +2896,8 @@ def main():
         return 0
 
     flags = compute_flags([(p, per_path_turns[p], per_path_stats[p])
-                           for p in sources_read], span_threshold, streak_threshold)
+                           for p in sources_read], span_threshold, streak_threshold,
+                          repeat_threshold)
 
     cov = coverage(all_turns)
     reason = refusal_reason(cov)
