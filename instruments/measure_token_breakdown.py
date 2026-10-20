@@ -162,10 +162,24 @@ WHAT WOULD THIS PRINT IF IT WERE BLIND?
          rollup and contributes nothing to its parent's sum -- never silently dropped and
          never counted as 0, because a child that cost nothing and a child we could not
          read must not look the same. The count of `n/a` nodes is printed.
-      4. SUBAGENT TYPE NOT RECORDED. Some sidechain turns carry no `attributionAgent`.
+      4. THE BY-AGENT SPLIT SEEING NO SUBAGENT, in either of two ways.
+         (a) SUBAGENT TYPE NOT RECORDED. Some sidechain turns carry no `attributionAgent`.
          They are still counted as sidechain spend, under "(subagent type not recorded)",
          never merged into the main thread -- the by-agent split would otherwise under-
          report subagent cost whenever the label happened to be absent.
+         (b) THE SIDECHAIN TURNS ARE IN A FILE NOBODY PASSED IN -- the dangerous one,
+         because it prints as a clean `0` rather than as a gap. This instrument counts
+         sidechains in the transcripts it is GIVEN, and at least one real on-disk layout
+         writes a subagent's turns to a SEPARATE transcript file beside the parent's
+         rather than inline: measured on 109 real transcripts, the separate per-subagent
+         files were 100% sidechain turns (2179 of 2179) and the session transcripts were
+         0% (0 of 5805). Both numbers are correct, and a caller who enumerates only
+         session transcripts therefore gets `sidechain_turns: 0` NO MATTER HOW MUCH
+         delegation happened. So a zero here means "none in these files", never "no
+         subagent ran", and the run says so on the line itself rather than leaving the
+         reader to infer it. If you need the subagent spend, pass those files too (or
+         name them in a `--manifest`); if a tree really did delegate by spawning separate
+         SESSIONS instead, that is the subsession rollup's job, not this split's.
       5. A BASH TURN WHOSE COMMAND IS UNREADABLE OR NOT PUBLIC. The by-command
          clustering reads `tool_use.input.command`, and two separate things can stop it
          naming a command -- kept as two buckets, because collapsing them would hide
@@ -1267,6 +1281,14 @@ def print_report(sources_read, sources_na, turns, args, flags=None):
     print(f"sidechain (subagent) turns: {cov['sidechain_turns']}"
           + (f", of which {cov['sidechain_without_type']} with no recorded subagent type"
              if cov["sidechain_without_type"] else ""))
+    if not cov["sidechain_turns"]:
+        # A bare 0 here reads as "nothing was delegated", which it does not mean: some
+        # layouts put a subagent's turns in a SEPARATE transcript file, so a caller who
+        # passed only session transcripts gets 0 however much delegation happened. Same
+        # rule as every other zero in this instrument -- see --help-blind, blind mode 4b.
+        print("  (0 means no sidechain turns in the transcripts PASSED, not that no "
+              "subagent ran: some\n   layouts write a subagent's turns to a separate "
+              "transcript file. See --help-blind, mode 4b.)")
 
     print(f"\nTOTAL over {tot['turns']} usage-bearing turns: {fmt(tot)}")
     r = ratio(tot)
