@@ -1,0 +1,4 @@
+{"type": "user", "message": {"role": "user", "content": "just answer"}}
+{"type": "assistant", "isSidechain": false, "message": {"id": "msg-t-0", "role": "assistant", "content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 5, "output_tokens": 50, "cache_creation_input_tokens": 500, "cache_read_input_tokens": 5000}}}
+{"type": "assistant", "isSidechain": false, "message": {"id": "msg-t-1", "role": "assistant", "content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 5, "output_tokens": 50, "cache_creation_input_tokens": 500, "cache_read_input_tokens": 5000}}}
+{"type": "assistant", "isSidechain": false, "message": {"id": "msg-t-2", "role": "assistant", "content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 5, "output_tokens": 50, "cache_creation_input_tokens": 500, "cache_read_input_tokens": 5000}}}

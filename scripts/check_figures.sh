@@ -57,7 +57,16 @@ PAIRS=(
   'threshold: NOT SET -> NOT COMPUTED|samples/measure_token_breakdown.loop-flags-no-threshold.out'
   'UNMEASURED: not one real user turn was found|samples/measure_token_breakdown.loop-flags-no-user-turn.out'
   'is below 1|samples/measure_token_breakdown.loop-flags-threshold-zero-REFUSED.out'
-  'NOT IMPLEMENTED|samples/measure_token_breakdown.loop-flags-FLAGGED.out'
+  # ARI#17: signal 2 used to be pinned here by its 'NOT IMPLEMENTED' line. It is
+  # implemented now, so the figure that replaces it pins the thing worth pinning -- that
+  # the signal actually COUNTS on a published run -- rather than deleting the check and
+  # leaving the newest signal the only one with no artefact behind it. Both of its windows
+  # are pinned, because neither subsumes the other and a reader must be able to tell a
+  # consecutive run from a within-span multiplicity.
+  'longest consecutive run of one signature: 8|samples/measure_token_breakdown.loop-flags-FLAGGED.out'
+  'most occurrences of one signature within a single span: 7|samples/measure_token_breakdown.loop-flags-FLAGGED.out'
+  # and its own 'nothing to measure' state, the one that must not read as a clean result
+  'UNMEASURED: no tool call was seen at all|samples/measure_token_breakdown.no-bash-turns.out'
 )
 
 # docs/limits.md is in this list deliberately. A review round found four stale figures in

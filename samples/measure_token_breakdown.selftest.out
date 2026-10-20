@@ -42,7 +42,24 @@ SELF-TEST [loop flags, POSITIVE control: a fixture built to exceed both threshol
   spans FLAGGED                    got=[7]                expected=[7]                OK
   signal 3 longest streak          got=4                  expected=4                  OK
   streaks FLAGGED (main)           got=[4]                expected=[4]                OK
-  signal 2 state                   got=not_implemented    expected=not_implemented    OK
+  signal 2 state                   got=not_computed       expected=not_computed       OK
+
+SELF-TEST [signal 2 (ARI#17): an obvious repeat pattern must be counted in BOTH windows, a same-tool/different-args fixture must count NONE, and no argument may be published]
+  consecutive run of identical calls         got=4            expected=4            OK
+  state with a threshold set                 got=measured     expected=measured     OK
+  FLAGGED groups (count > 2)                 got=True         expected=True         OK
+  same tool, different args: repeats         got=0            expected=0            OK
+  ...and that is MEASURED, not unmeasured    got=measured     expected=measured     OK
+  ...with nothing flagged                    got=0            expected=0            OK
+  ...but the calls WERE seen                 got=6            expected=6            OK
+  ...as distinct signatures                  got=6            expected=6            OK
+  max occurrences within one span            got=4            (A B A B A plus the run above, all in span 1)
+  interleaved A B A B A: span window only    span=[3] (must be [3]), consecutive=[] (must be [])  OK
+  boundary is strictly >                     at=4 -> 0 flagged (must be 0); at=3 -> 1 (must be 1)  OK
+  main/sidechain interleaved: 2 runs of 2    runs=[2, 2] (must be [2, 2]) across 2 thread(s) (must be 2)  OK
+  split turn counted once, not as a repeat   OK
+  no tool call at all -> unmeasured          got=unmeasured   expected=unmeasured   OK
+  arguments absent from text report + --json digest while repeats ARE reported: OK
 
 SELF-TEST [loop flags, NEGATIVE control: a fixture under BOTH thresholds must report a MEASURED clean result, not 'not computed']
   max span=3 (threshold 5), longest streak=1 (threshold 3); flagged spans=0 streaks=0; both states measured=True OK
