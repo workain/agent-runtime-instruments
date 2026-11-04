@@ -199,6 +199,7 @@ TOKENS_UNMEASURED = "NOT MEASURED -- no tokeniser given (bytes are exact and nee
 # module that must refuse it, rather than matched as a literal in two files that could
 # drift apart.
 UNPARSEABLE = "__unparseable__"
+UNREAD = "__unread__"
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +299,11 @@ _TOK_PROBES = ("the quick brown fox jumps over the lazy dog, repeatedly and at l
 # A real BPE's spread across the probes above, measured on cl100k_base: 3.26. Every
 # fixed-divisor estimator tried came in at or below 1.12 -- len//4 1.06, round(len/4)
 # 1.08, ceil 1.03, len//4+1 1.03, len//5 1.06, int(len/3.8) 1.12. The threshold sits in
-# the middle of that gap, nearer the estimators, so a tokeniser would have to be three
-# times less varied than cl100k_base before it tripped.
+# the middle of that gap (the midpoint of 1.12 and 3.26 is 2.19), so a real tokeniser
+# would have to be 2.17x less varied than cl100k_base before it tripped. An earlier
+# version of this comment said "three times", which is not what 3.26 / 1.5 is; a review
+# measured it. All seven encodings tiktoken 0.14.0 ships -- gpt2, r50k_base, p50k_base,
+# p50k_edit, cl100k_base, o200k_base, o200k_harmony -- measure 3.259 on these probes.
 _TOK_MIN_SPREAD = 1.5
 
 
@@ -427,6 +431,12 @@ def decompose(rec, tok=None):
         # structure, so a field missing from `fields` breaks it.
         "coverage_ok": coverage_holds(summed, framing, whole),
         "coverage_residual": whole - (summed + framing),
+        # The most a NORMALISED serialisation can legitimately exceed the compact bytes
+        # a client sent: one byte per separator. `json.dumps` writes `", "`/`": "` where
+        # a compact client writes `,`/`:`, and nothing else about the same object can
+        # differ in length. Counted over the whole string, so string CONTENTS inflate it
+        # too -- deliberately generous, because this bound is used to REFUSE.
+        "separator_slack": ser(body).count(", ") + ser(body).count(": "),
         "provider_metadata_bytes": meta,
         "model_input_bytes": whole - meta,
         "engine_specific_bytes": sum(v for k, v in fields.items() if k in ENGINE_SPECIFIC),
@@ -468,6 +478,16 @@ def structural_fault(rec):
         return ("has a `body` that is JSON but not an object (it is a %s). A body is "
                 "decomposed field by named field, which a %s has none of"
                 % (type(body).__name__, type(body).__name__))
+    # A body the RECORDER never read. Refused here, ahead of the `raw_bytes` legs,
+    # because its `raw_bytes` is deliberately null -- an unframeable request has a body
+    # of UNKNOWN length, and recording that as 0 is what turned 40391 chunked bytes into
+    # a startup probe in a review's demonstration. "has no `raw_bytes`" would be a true
+    # but useless reason for it; this one names the request.
+    if isinstance(body, dict) and UNREAD in body:
+        return ("has a body capture_proxy.py never READ (%s), so its length is unknown "
+                "rather than zero. Measuring around it would file real traffic under "
+                "`startup probes` -- the omission that looks like good news"
+                % body[UNREAD])
     # `raw_bytes` -- the field the report calls its ONLY direct observation. Checked here
     # because the first version of this function validated `rec` and `body` and stopped
     # exactly short of it, and a review found four record shapes that still reached a
@@ -579,6 +599,7 @@ def measure(paths, tok=None):
     """-> (report, exit_code). Every refusal carries its reason in the report."""
     rep = {"captures": list(paths), "requests": 0, "probes": 0, "measurable": 0,
            "rows": [], "errors": [], "unknown_fields": [], "coverage_broken": []}
+    arm_source = {}
     for p in paths:
         recs, err = read_capture(p)
         if err:
@@ -612,9 +633,47 @@ def measure(paths, tok=None):
             row["capture"] = p
             rep["rows"].append(row)
             rep["measurable"] += 1
+            # One arm label, two captures -- see this function's own note above.
+            first_seen = arm_source.setdefault(row["arm"], p)
+            if first_seen != p:
+                dupe = ("captures %s and %s are both labelled arm %r. The table and the "
+                        "published claims are keyed by arm and keep the FIRST request "
+                        "per arm, so the second capture's figures are counted in "
+                        "`measurable` and appear in no row and in no claim -- a whole "
+                        "capture that no gate reads. Relabel one at capture time "
+                        "(capture_proxy.py --arm), or compare a rerun against its "
+                        "reference with --reference, which is what that flag is for."
+                        % (first_seen, p, row["arm"]))
+                if dupe not in rep["errors"]:
+                    rep["errors"].append(dupe)
             for f in row["unknown_fields"]:
                 if f not in rep["unknown_fields"]:
                     rep["unknown_fields"].append(f)
+            # An overrun BEYOND what separators can explain. The note above says an
+            # overrun is normal, and it is -- up to one byte per separator. Past that the
+            # normalised split is not a re-serialisation of these wire bytes at all, and
+            # printing it under a reassuring note is how a review's one-word recorder
+            # mutation published a 2.9x overstatement at exit 0 with coverage green.
+            #
+            # Two causes produce this, and this instrument cannot tell them apart: a
+            # recorder that mis-decoded the body (the mutation: utf-8 -> ascii, whose
+            # replacement characters tripled a CJK payload), or a client whose NUMBER
+            # spelling differs from json.dumps' (`1E5` re-serialised as `100000.0`).
+            # Both mean the split does not describe the bytes in `wire B`, so both are
+            # refused and the reason names both. Headroom on the real captures here is
+            # 18 B on dsh and 693 B on Hermes -- see docs/limits.md.
+            if row["body_bytes"] - row["wire_bytes"] > row["separator_slack"] > 0:
+                rep["errors"].append(
+                    "%s request %d: the normalised body is %d B against %d B observed on "
+                    "the wire, an overrun of %d B where this body's separators explain at "
+                    "most %d. A normalised split larger than the wire figure is normal "
+                    "(json.dumps writes `\", \"` where a compact client writes `,`), but "
+                    "not by this much: either the recorder mis-decoded the body, or this "
+                    "client spells numbers differently from json.dumps. Either way the "
+                    "split is not a re-serialisation of those bytes, and the table would "
+                    "publish it as one."
+                    % (p, len(rep["rows"]), row["body_bytes"], row["wire_bytes"],
+                       row["body_bytes"] - row["wire_bytes"], row["separator_slack"]))
             if not row["coverage_ok"]:
                 rep["coverage_broken"].append(
                     "%s request %d: fields(%d) + framing(%d) != body(%d), residual %d"
@@ -744,8 +803,10 @@ def headline_claims(rep):
     # nothing anywhere pinned a single Hermes figure, so the whole right-hand column of
     # README's table could be rewritten -- or the two columns swapped -- with every gate
     # green. A bare table cell is also unpinnable in practice: a one-digit figure like
-    # `9` matches 62 of this repository's artefacts by plain substring, so no exclusion
-    # list can protect it. A per-arm CLAUSE can be, which is why these exist.
+    # `9` matches all but a handful of this repository's artefacts by plain substring, so
+    # no exclusion list can protect it. A per-arm CLAUSE can be, which is why these
+    # exist. (No count here on purpose: an earlier version said 62, measured over a
+    # corpus the gate does not search, and nothing read it to notice.)
     out = []
     first_by_arm = {}
     for row in rep["rows"]:
@@ -871,6 +932,12 @@ def report(rep, code, tokeniser_label, tokeniser_why, extra_lines):
                 out.append("    %-22s %10d B%s" % (k, v, mark))
             out.append("    %-22s %10d B  (braces, quoted keys, separators)"
                        % ("(json framing)", r["framing_bytes"]))
+            over = r["body_bytes"] - r["wire_bytes"]
+            if over > 0:
+                out.append("    normalised-vs-wire: this body is %d B over the wire, of "
+                           "%d B its separators explain (%d B of headroom before the "
+                           "refusal)"
+                           % (over, r["separator_slack"], r["separator_slack"] - over))
             out.append("    %-22s %10d B  = the whole body, with nothing unaccounted"
                        % ("TOTAL", r["body_bytes"]))
             out.append("    %d tool schema(s) exposed, %d message(s) in the conversation"
@@ -891,9 +958,11 @@ def report(rep, code, tokeniser_label, tokeniser_why, extra_lines):
                 # here `fixed B` is 101.2%% of `wire B` and model input 101.7%%. Said
                 # out loud rather than left for a reader to find and distrust the table.
                 out.append("    NOTE: model input %d B and fixed %d B EXCEED wire %d B "
-                           "(%.1f%%). Not an error: this client serialises more"
+                           "(%.1f%%), within the %d B this body's separators explain. "
+                           "Not an error: this client serialises more"
                            % (r["model_input_bytes"], r["fixed_bytes"], r["wire_bytes"],
-                              100.0 * r["model_input_bytes"] / r["wire_bytes"]))
+                              100.0 * r["model_input_bytes"] / r["wire_bytes"],
+                              r["separator_slack"]))
                 out.append("      compactly than json.dumps' default separators, so the "
                            "normalised split is larger than what was sent. `wire B` is "
                            "the observation; the rest is a re-serialisation.")
@@ -1264,7 +1333,12 @@ def self_test():
     # class as the unknown-field case, so the same answer: named and refused.
     dup = os.path.join(tmp, "dup.jsonl")
     with open(dup, "w", encoding="utf-8") as fh:
-        fh.write('{"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "raw_bytes": 10, '
+        # raw_bytes is the ~10 KB really on the wire, not a token value: the parsed
+        # body is 60-odd bytes once json.loads has dropped the first `system`, and a
+        # wire figure BELOW the body would trip the separator-bound refusal first --
+        # sending this case RED for a reason it does not name.
+        fh.write('{"arm": "fx", "endpoint": "/v1/messages", "ts": 0, '
+                 '"raw_bytes": 10093, '
                  '"header_names": [], "body": {"model": "m", "messages": [], '
                  '"system": "%s", "system": "x", "tools": [{"name": "t"}]}}\n'
                  % ("S" * 10000))
@@ -1305,91 +1379,14 @@ def self_test():
         ok("no overrun note when model input is below the wire figure")
     else:
         no("overrun note fired on a capture where model input < wire")
-    over = _fixture(tmp, "overrun.jsonl", [known], raw_bytes=10)
+    # body 113 B, separators explain 11 -> 103 observed is an overrun of 10, inside it
+    over = _fixture(tmp, "overrun.jsonl", [known], raw_bytes=103)
     ro2, _ = measure([over])
-    if "EXCEED wire 10 B" in report(ro2, 0, None, None, []):
+    if "EXCEED wire 103 B" in report(ro2, 0, None, None, []):
         ok("when the normalised split EXCEEDS the wire figure, the report says so "
            "(unflagged, `fixed B` larger than `wire B` reads as a broken instrument)")
     else:
         no("a normalised split larger than the wire figure was printed unflagged")
-
-    print("== 11f. the fields whose LENGTH is published must be the right container ==")
-    # `n_tools` and `n_messages` are printed as counts, and len() obliges on anything: a
-    # review passed a dict for `tools` and got `2 tool schema(s) exposed` from its keys,
-    # and a string for `messages` and got `5 message(s)` from its characters, both at
-    # exit 0. The coverage invariant is over TOP-LEVEL fields and cannot see inside one,
-    # so this is the only place it can be caught.
-    for k, v, shape in (("tools", {"a": 1, "b": 2}, "a dict"),
-                        ("messages", "hello", "a string")):
-        bad = os.path.join(tmp, "container-%s.jsonl" % k)
-        body = {"model": "m", "tools": [{"name": "t"}],
-                "messages": [{"role": "user", "content": "hi"}]}
-        body[k] = v
-        with open(bad, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps({"arm": "fx", "endpoint": "/v1/messages", "ts": 0,
-                                 "raw_bytes": 100, "header_names": [],
-                                 "body": body}) + "\n")
-        rep, code = measure([bad])
-        if code == 2 and any("`%s` that is" % k in e for e in rep["errors"]):
-            ok("a `%s` that is %s is refused by name, not counted (len() of the wrong "
-               "container counts the wrong thing and prints it as a schema count)"
-               % (k, shape))
-        else:
-            no("`%s` as %s -> exit %d, errors=%r" % (k, shape, code, rep["errors"]))
-
-    print("== 11g. raw_bytes -- the only direct observation -- is validated ==")
-    # Four record shapes a review found reaching a traceback and exit 1, which is not in
-    # this instrument's documented exit set. Two of them arrived via the wire-overrun
-    # NOTE added in the same round as the door-check, which is the uncomfortable part:
-    # the door-check validated `rec` and `body` and stopped exactly short of the field
-    # the report calls its only observation.
-    shapes = [("absent", None, "has no `raw_bytes`"),
-              ("null", "NULL", "has no `raw_bytes`"),
-              ("a string", "8225", "not an integer"),
-              ("negative", -1, "negative `raw_bytes`"),
-              ("0 beside a body that parsed", 0, "`raw_bytes: 0` but a body")]
-    for label, val, want in shapes:
-        bad = os.path.join(tmp, "rawbytes-%s.jsonl" % label.split()[0])
-        rec = {"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "header_names": [],
-               "body": {"model": "m", "tools": [{"name": "t"}],
-                        "messages": [{"role": "user", "content": "hi"}]}}
-        if val == "NULL":
-            rec["raw_bytes"] = None
-        elif val is not None:
-            rec["raw_bytes"] = val
-        with open(bad, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec) + "\n")
-        try:
-            rep, code = measure([bad])
-        except Exception as e:  # noqa: BLE001
-            no("raw_bytes %s raised %s instead of refusing" % (label, type(e).__name__))
-            continue
-        if code == 2 and any(want in e for e in rep["errors"]):
-            ok("raw_bytes %s -> exit 2, named (it used to reach a ZeroDivisionError or a "
-               "`int += None` and exit 1)" % label)
-        else:
-            no("raw_bytes %s -> exit %d, errors=%r" % (label, code, rep["errors"]))
-
-    print("== 11h. instruction roles are read in BOTH protocol branches ==")
-    # The Anthropic branch used to return the whole `messages` list as conversation
-    # without looking at any role. A review sent a body carrying BOTH a top-level
-    # `system` and a 5000-byte `role: system` message and got `fixed B = 33`, with 5070
-    # bytes filed as conversation -- the developer-role defect through the other branch,
-    # landing on the headline figure.
-    mixed_body = {"model": "m", "system": "TOP-LEVEL-SYSTEM",
-                  "tools": [{"name": "t"}],
-                  "messages": [{"role": "system", "content": "X" * 5000},
-                               {"role": "user", "content": "hi"}]}
-    mx = _fixture(tmp, "both-scope-shapes.jsonl", [mixed_body], raw_bytes=5154)
-    rx, cx = measure([mx])
-    rr = rx["rows"][0]
-    if cx == 0 and rr["system_bytes"] > 5000 and rr["n_messages"] == 1:
-        ok("a top-level `system` AND a role:system message both land in the system "
-           "column (%d B, 1 conversation message) -- the Anthropic branch reads roles "
-           "too, which it did not" % rr["system_bytes"])
-    else:
-        no("mixed scope shapes: exit %d, system=%d convo=%d msgs=%d"
-           % (cx, rr["system_bytes"], rr["conversation_bytes"], rr["n_messages"]))
 
     print("== 11c. the claims pin EVERY arm, and the percentage names its denominator ==")
     # Two review findings in one leg. headline_claims() read rep["rows"][0], so nothing
@@ -1454,6 +1451,150 @@ def self_test():
                % label)
         else:
             no("%s beside a good capture -> exit %d" % (label, code2))
+
+    print("== 11f. the fields whose LENGTH is published must be the right container ==")
+    # `n_tools` and `n_messages` are printed as counts, and len() obliges on anything: a
+    # review passed a dict for `tools` and got `2 tool schema(s) exposed` from its keys,
+    # and a string for `messages` and got `5 message(s)` from its characters, both at
+    # exit 0. The coverage invariant is over TOP-LEVEL fields and cannot see inside one,
+    # so this is the only place it can be caught.
+    for k, v, shape in (("tools", {"a": 1, "b": 2}, "a dict"),
+                        ("messages", "hello", "a string")):
+        bad = os.path.join(tmp, "container-%s.jsonl" % k)
+        body = {"model": "m", "tools": [{"name": "t"}],
+                "messages": [{"role": "user", "content": "hi"}]}
+        body[k] = v
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"arm": "fx", "endpoint": "/v1/messages", "ts": 0,
+                                 "raw_bytes": 100, "header_names": [],
+                                 "body": body}) + "\n")
+        rep, code = measure([bad])
+        if code == 2 and any("`%s` that is" % k in e for e in rep["errors"]):
+            ok("a `%s` that is %s is refused by name, not counted (len() of the wrong "
+               "container counts the wrong thing and prints it as a schema count)"
+               % (k, shape))
+        else:
+            no("`%s` as %s -> exit %d, errors=%r" % (k, shape, code, rep["errors"]))
+
+    print("== 11g. raw_bytes -- the only direct observation -- is validated ==")
+    # Four record shapes a review found reaching a traceback and exit 1, which is not in
+    # this instrument's documented exit set. Two of them arrived via the wire-overrun
+    # NOTE added in the same round as the door-check, which is the uncomfortable part:
+    # the door-check validated `rec` and `body` and stopped exactly short of the field
+    # the report calls its only observation.
+    shapes = [("absent", None, "has no `raw_bytes`"),
+              ("null", "NULL", "has no `raw_bytes`"),
+              ("a string", "8225", "not an integer"),
+              ("negative", -1, "negative `raw_bytes`"),
+              ("0 beside a body that parsed", 0, "`raw_bytes: 0` but a body")]
+    for label, val, want in shapes:
+        bad = os.path.join(tmp, "rawbytes-%s.jsonl" % label.split()[0])
+        rec = {"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "header_names": [],
+               "body": {"model": "m", "tools": [{"name": "t"}],
+                        "messages": [{"role": "user", "content": "hi"}]}}
+        if val == "NULL":
+            rec["raw_bytes"] = None
+        elif val is not None:
+            rec["raw_bytes"] = val
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+        try:
+            rep, code = measure([bad])
+        except Exception as e:  # noqa: BLE001
+            no("raw_bytes %s raised %s instead of refusing" % (label, type(e).__name__))
+            continue
+        if code == 2 and any(want in e for e in rep["errors"]):
+            ok("raw_bytes %s -> exit 2, named (it used to reach a ZeroDivisionError or a "
+               "`int += None` and exit 1)" % label)
+        else:
+            no("raw_bytes %s -> exit %d, errors=%r" % (label, code, rep["errors"]))
+
+    print("== 11h. instruction roles are read in BOTH protocol branches ==")
+    # The Anthropic branch used to return the whole `messages` list as conversation
+    # without looking at any role. A review sent a body carrying BOTH a top-level
+    # `system` and a 5000-byte `role: system` message and got `fixed B = 33`, with 5070
+    # bytes filed as conversation -- the developer-role defect through the other branch,
+    # landing on the headline figure.
+    # THREE instruction-role shapes at once, and the arithmetic is hand-computed:
+    #   top-level "TOP-LEVEL-SYSTEM"                       ser  18 B
+    #   [{role: system, 100xS}, {role: developer, 10xD}]   ser 183 B
+    #                                              system_bytes 201 B
+    #   tools [{"name": "t"}]                              ser  15 B
+    #                                               fixed_bytes 216 B
+    #   [{role: user, "hi"}]                   conversation_bytes 35 B, 1 message
+    #
+    # TWO instruction messages of DIFFERENT lengths is the point: with only one, keeping
+    # just the first is indistinguishable from keeping all of them, which is how a
+    # six-character mutation walked through 51 passing checks. Truncating to the first
+    # here reports system_bytes 153 (the list is 135 B alone), and the exact-equality
+    # assertion below sees a 48-byte difference that `> 5000` could not.
+    mixed_body = {"model": "m", "system": "TOP-LEVEL-SYSTEM",
+                  "tools": [{"name": "t"}],
+                  "messages": [{"role": "system", "content": "S" * 100},
+                               {"role": "developer", "content": "D" * 10},
+                               {"role": "user", "content": "hi"}]}
+    mx = _fixture(tmp, "both-scope-shapes.jsonl", [mixed_body], raw_bytes=400)
+    rx, cx = measure([mx])
+    rr = rx["rows"][0]
+    want_mixed = {"system_bytes": 201, "tools_bytes": 15, "fixed_bytes": 216,
+                  "conversation_bytes": 35, "n_messages": 1}
+    got_mixed = {k: rr[k] for k in want_mixed}
+    if cx == 0 and got_mixed == want_mixed:
+        ok("a top-level `system` AND a role:system AND a role:developer message all "
+           "land in the system column (18 + 183 = 201 B, +15 B of tools = 216 B fixed), "
+           "leaving 1 conversation message of 35 B -- the Anthropic branch reads roles "
+           "too, which it did not, and it reads ALL of them, which a six-character "
+           "mutation showed nothing was checking")
+    else:
+        no("mixed scope shapes: exit %d, got %r want %r" % (cx, got_mixed, want_mixed))
+
+    print("== 11i. an overrun BEYOND what separators explain is refused, not noted ==")
+    # The note above says an overrun is normal, and up to one byte per separator it is.
+    # Past that the normalised split is not a re-serialisation of the observed bytes at
+    # all -- and the note, which carried no ceiling, told the reader it was fine. A
+    # review changed one word in the recorder (utf-8 -> ascii), whose replacement
+    # characters tripled a CJK payload from 6303 to 18303 B, and got a 290.4% overrun
+    # printed under "Not an error" at exit 0 with coverage green.
+    #
+    # These two fixtures differ by ONE byte of wire: at 101 the overrun is 12 and is
+    # refused, at 102 it is exactly the 11 the separators explain and is noted. The
+    # boundary is the bound itself, not a threshold somebody picked.
+    for wire, want_refusal in ((101, True), (102, False)):
+        ob = _fixture(tmp, "overrun-%d.jsonl" % wire, [known], raw_bytes=wire)
+        ro, oc = measure([ob])
+        refused = oc == 2 and any("separators explain at most 11" in e
+                                  for e in ro["errors"])
+        if refused == want_refusal:
+            ok("wire %d B against a 113 B body (overrun %d, separators explain 11) -> %s"
+               % (wire, 113 - wire,
+                  "refused by name" if refused else "measured, with the note"))
+        else:
+            no("wire %d B -> exit %d, errors=%r" % (wire, oc, ro["errors"]))
+
+    print("== 11j. two captures under ONE arm label are refused, not merged ==")
+    # Both the table and the claim set keep the first request per arm, so a second
+    # capture sharing a label contributes figures to `measurable` that no row shows and
+    # no claim pins. A review reproduced round-2 finding 3 exactly this way, using the
+    # two committed dsh fixtures.
+    same_a = _fixture(tmp, "arm-collision-a.jsonl", [known], raw_bytes=400)
+    same_b = _fixture(tmp, "arm-collision-b.jsonl", [known], raw_bytes=401)
+    rc, cc = measure([same_a, same_b])
+    if cc == 2 and any("both labelled arm" in e for e in rc["errors"]):
+        ok("two captures sharing one arm label -> exit 2, naming both files (they used "
+           "to collapse into one row, with the second capture pinned by nothing)")
+    else:
+        no("arm collision -> exit %d, rows=%d, errors=%r"
+           % (cc, len(rc["rows"]), rc["errors"]))
+    # ...and the same two records in ONE file are not a collision: that is an ordinary
+    # multi-request capture, and refusing it would refuse every real one.
+    twin = _fixture(tmp, "two-in-one-capture.jsonl", [known, known], raw_bytes=400)
+    rt, ct = measure([twin])
+    if ct == 0 and rt["measurable"] == 2 and len(rt["rows"]) == 2:
+        ok("two requests in ONE capture are still measured (2 rows) -- the refusal is "
+           "about two FILES claiming one label, not about a capture with history")
+    else:
+        no("two records in one capture -> exit %d, measurable=%d rows=%d errors=%r"
+           % (ct, rt["measurable"], len(rt["rows"]), rt["errors"]))
 
     print("== 12. an unavailable tokeniser is a reported state, never a crash ==")
     fn, why = load_tokeniser("nonsense")

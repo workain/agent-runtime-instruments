@@ -1,0 +1,31 @@
+# check_figures.sh observed RED on the attack that round 3's regression finding R1 named.
+#
+# The attack is two lines of ONE paragraph, in README, with no figure wrapped across them:
+#
+#     The refusal ends `exit=2
+#     `fixed 99999 B` is the per-turn cost, and the clean run ends `exit=0
+#
+# The first line leaves an inline span open. The joiner this branch added in round 2 --
+# which exists so that a figure WRAPPED across a line break is still checked -- merges the
+# two, and merging RE-PAIRS the backticks: the span opened on line 1 now closes on line 2's
+# opening backtick, so `fixed 99999 B` sits between two backticks that are no longer a
+# delimiter pair and the span pattern never sees it. Nothing else in the gate reads a
+# five-digit figure inside backticks, and `exit=2` really does occur in this repo's
+# refusal-mode samples, so quoting it in prose is ordinary. Measured on b76e737: the whole
+# preflight green, with a figure published in README that exists in no artefact.
+#
+# The fix is NOT a better joiner. Any joiner is one re-pairing away from the same defect,
+# because joining is what changes which backticks pair. Each prose file is now read TWICE
+# -- as written, and joined -- and the figures are the UNION, which no arrangement of line
+# breaks can subtract from. This artefact is that fix failing to be unnecessary: it is the
+# gate RED on the attack, which is the only evidence that the union leg does anything.
+#
+# Reproduce: apply the two lines above to README.md in a clone, run scripts/check_figures.sh.
+# date: 2026-11-04T19:32:36Z   HEAD: b76e737 (fix applied on top)
+
+FAIL: README.md states 'fixed 99999 B' which appears in NO artefact under samples/.
+      Either it drifted, or it is not a measurement and belongs in EXEMPT
+      in this script WITH A REASON.
+all 13 figures in 13 --help-blind answers exist in an artefact
+
+FIGURE CHECK FAILED.

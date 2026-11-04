@@ -22,6 +22,7 @@ Two choices carried over deliberately from the gate this is modelled on:
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -272,11 +273,27 @@ CASES = [
         return rep, 2'''),
 
     ("C25-raw-bytes-unvalidated", "measure_request_construction",
-     'a door-check that validates the record and the body and stops short of raw_bytes -- the one field this report calls a direct observation. Absent or 0 divided by zero inside the wire-overrun note; null or a string hit `int += None` in the per-model totals. Four shapes, all exit 1 with a traceback naming no file and no line, which is the class this door-check exists to end.',
+     'a door-check that validates the record and the body and stops short of raw_bytes -- the one field this report calls a direct observation. Absent or 0 divided by zero inside the wire-overrun note; null or a string hit `int += None` in the per-model totals. Four shapes, all exit 1 with a traceback naming no file and no line, which is the class this door-check exists to end. The mutation DELETES the four checks, which is what the code looked like before them: an earlier version of this case neutered only the first and left the rest, so the mutant refused everything with a body and went RED for a reason this case does not name -- arbitrary damage reads as a passing control, which a review caught.',
      '''    raw = rec.get("raw_bytes")
-    if raw is None:''',
-     '''    raw = 0
-    if False:'''),
+    if raw is None:
+        return ("has no `raw_bytes`. That field is the wire length as OBSERVED, and the "
+                "only figure in this report that is not computed; defaulting it to 0 "
+                "would publish a zero-byte request, and every ratio taken against it "
+                "divides by that zero")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return ("has a `raw_bytes` that is not an integer (it is %s). A byte count read "
+                "from a socket is an int; a string that looks like one is a recorder "
+                "that changed shape, which is worth stopping for"
+                % type(raw).__name__)
+    if raw < 0:
+        return "has a negative `raw_bytes` (%d), which no observation produces" % raw
+    if raw == 0 and body:
+        return ("has `raw_bytes: 0` but a body that parsed into %d field(s). Those two "
+                "cannot both be observations of the same request, and every ratio taken "
+                "against the wire figure divides by that zero" % len(body))
+''',
+     '''    raw = rec.get("raw_bytes")
+'''),
 
     ("C26-counted-containers-unchecked", "measure_request_construction",
      'trusting `tools` and `messages` to be lists. Their lengths are PUBLISHED counts and len() obliges on anything: a dict for tools reported `2 tool schema(s) exposed` from its keys, a string for messages reported `5 message(s)` from its characters, both at exit 0. The coverage invariant is over top-level fields and cannot see inside one.',
@@ -344,6 +361,42 @@ CASES = [
      'treating a zero-length payload as a body that FAILED to parse. A Content-Length: 0 health check then made the measuring instrument refuse the ENTIRE capture, with a refusal whose own evidence said `0 raw bytes` were affected -- a good capture thrown away over nothing, recoverable only by capturing again.',
      '    if not raw:',
      '    if False:'),
+
+    # ---------------------------------------------------------------------------
+    # C36-C41 pin the fixes made after a THIRD review, which was asked to look first for
+    # regressions the round-2 fixes had introduced -- because round 1's fixes had already
+    # introduced one. It found two, and four more mutations that survived both self-tests
+    # and the whole preflight. Three of those four are in capture_proxy.py again: the
+    # recorder keeps being the place where a defect cannot be seen from the reader side.
+    ("C36-only-the-first-instruction-message", "measure_request_construction",
+     "counting only the FIRST instruction-role message. Six characters in the function round 2 rewrote; it survived 51 self-test checks and the whole preflight, because no fixture anywhere carried two instruction-role messages and this leg asserted `system_bytes > 5000` when the exact value was available. Every later message's bytes leave system_bytes, fixed_bytes, system_tokens AND conversation_bytes -- 6038 of them in the review's demonstration, in no column at all, at exit 0. The coverage invariant is over top-level fields and cannot see inside `messages`.",
+     '        parts.append(instr)',
+     '        parts.append(instr[:1])'),
+
+    ("C37-recorder-decodes-as-ascii", "capture_proxy",
+     'decoding the wire bytes as ascii. ONE WORD, and it survived both self-tests and the whole preflight because every body the self-test sent was ASCII -- while samples/fixtures/request_construction.hermes.jsonl already is not. On a CJK payload the replacement characters inflated a 6303-byte body to 18303: a 2.9x overstatement of the headline figure at exit 0, coverage green, whose one visible symptom was the round-1 overrun note telling the reader it was normal.',
+     '            body = json.loads(raw.decode("utf-8", "replace"))\n        except Exception:\n            # An unparseable body',
+     '            body = json.loads(raw.decode("ascii", "replace"))\n        except Exception:\n            # An unparseable body'),
+
+    ("C38-chunked-body-never-read", "capture_proxy",
+     "framing every request by Content-Length alone. A chunked POST carries none, so the recorder read ZERO bytes and wrote `raw_bytes: 0, body: null` -- which the measuring instrument counts as a startup probe: 40391 real bytes reported as `1 measurable, 1 startup probes` with a 100% coverage banner at exit 0. node's own fetch with a stream body sends exactly this, and urllib cannot construct one, which is why no leg here had ever sent one.",
+     '        te = (self.headers.get("Transfer-Encoding") or "").strip().lower()',
+     '        te = ""'),
+
+    ("C39-unframeable-body-posed-as-empty", "capture_proxy",
+     "recording a body that could not be FRAMED as though nothing had been sent. `Content-Length: 0` and `this recorder never read it` are different facts, and last round's empty-POST fix conflated them in the other direction: length UNKNOWN became length ZERO, which reads as an observation and files real traffic under startup probes.",
+     '    if unread is not None:',
+     '    if False:'),
+
+    ("C40-overrun-note-without-a-ceiling", "measure_request_construction",
+     'printing `Not an error` over an overrun of ANY size. A normalised split can legitimately exceed the wire figure, but only by one byte per separator; past that it is not a re-serialisation of those bytes at all. Without the bound, the recorder mutation C37 publishes a 290.4% overrun under a note that reassures the reader, at exit 0. The two fixtures either side of the boundary differ by ONE byte of wire, so the ceiling is the bound and not a threshold somebody picked.',
+     '            if row["body_bytes"] - row["wire_bytes"] > row["separator_slack"] > 0:',
+     '            if False:'),
+
+    ("C41-two-captures-one-arm-label", "measure_request_construction",
+     "merging two captures that share an arm label. The table and the claims are keyed by arm and keep the FIRST request per arm, so the second capture's figures are counted in `measurable` and appear in no row and in no claim. That is round-2 finding 3 -- one whole engine pinned by nothing -- reached by label collision instead of by rows[0], and a review reproduced it with this repository's own two committed dsh fixtures.",
+     '            if first_seen != p:',
+     '            if False:'),
 
     ("C13-recorder-keepalive-sse", "capture_proxy",
      "answering an event stream under keep-alive. With no Content-Length the client "
@@ -413,7 +466,12 @@ def main():
                 fh.write(text.replace(old, new, 1))
             rc, fails = run_selftest(work, mod)
             if rc != 0 and fails:
-                print("%-34s RED   -- %s" % (name, fails[0][:88]))
+                # mkdtemp names the one thing in this output that cannot repeat.
+                # Normalised so this gate's own artefact is regenerable; the
+                # refusal text either side of it is what the case is about.
+                shown = re.sub(r"/tmp/ari-[a-z-]+-[A-Za-z0-9_]+", "<tmp>",
+                               fails[0])
+                print("%-34s RED   -- %s" % (name, shown[:88]))
             elif rc != 0:
                 print("%-34s RED   -- exit %d (no FAIL line; a raise or a hang, which "
                       "still counts)" % (name, rc))

@@ -134,6 +134,7 @@ raw-payloads/drive_dsh.live-events-redacted.out	the verbatim server-notification
 engine_evidence.dsh-hermes-storage.out	evidence for two engine ADAPTERS, not a measurement: the on-disk shape of a dsh session log and the absence of any hermes transcript file. Both runtime homes were throwaway directories for the capture runs ($HERMES_HOME alone is ~700 MB of installed venv), so neither can be recreated by a script here. See its own header
 measure_request_construction.tokens.out	needs a tiktoken install, which is deliberately NOT a dependency of this repository -- the reproducible counterpart is measure_request_construction.tokeniser-unavailable.out
 gate-evidence/test_request_construction_controls.RED.out	not output of the current code at all: it records what the controls gate printed on its FIRST run, while 3 of 13 fixes were still unprotected. See that directory's own header
+gate-evidence/check_figures.hidden-span-RED.out	not output of the current code at all: it records check_figures.sh RED on the backtick re-pairing attack of round 3's finding R1, against a README this repository no longer contains. The attack is two lines long and is quoted in its own header, so it is reproducible by hand in a clone -- but not by a script that must leave the tree clean
 EOF
 )
 

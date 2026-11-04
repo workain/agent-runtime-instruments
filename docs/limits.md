@@ -300,6 +300,38 @@ Stated so the gaps are visible rather than implied absent.
 - **`capture_proxy.py` records header NAMES and never header values.** That is deliberate and it
   is the one irreversible mistake available in that file, so it is pinned by a control. It does
   mean a capture cannot tell you which credential a run used — by design.
+- **An overrun past the separator bound is refused, and the bound is tight.** A normalised split
+  can legitimately exceed the observed wire figure, because `json.dumps` writes `", "` where a
+  compact client writes `,` — but only by one byte per separator, which this instrument now
+  computes per body and prints in the note. Past it the split is not a re-serialisation of those
+  bytes at all and the capture is refused. Two causes produce that and this instrument **cannot
+  tell them apart**: a recorder that mis-decoded the body, or a client whose number spelling
+  differs from `json.dumps`' (`1E5` re-serialised as `100000.0`). The refusal names both. Headroom
+  on the real captures here is `693 B of headroom` on Hermes and `18 B of headroom` on dsh — tight enough that a
+  future float-heavy payload could trip it, which is the trade for catching a recorder mutation
+  that otherwise published a 2.9x overstatement at exit 0 under a note saying "Not an error".
+- **A chunked request body is de-chunked; one that cannot be framed is refused.** `Content-Length:
+  0` means nothing was sent and is recorded as a null body. A `Transfer-Encoding` this recorder
+  cannot decode, an unreadable `Content-Length`, or a chunked stream that ends mid-body are a
+  different fact — the body was never read, so its length is **unknown, not zero** — and are
+  recorded with a null length that the reader refuses by name. The distinction is load-bearing:
+  recording unknown as zero is what filed 40391 chunked bytes under `startup probes` at exit 0.
+- **A `raw_bytes` that is a float is refused, not rounded.** `8225.0` is a shape some JSON
+  producers emit, and this instrument stops on it. Deliberate: the field is the one direct
+  observation, and a recorder that changed its type is worth a refusal rather than a silent
+  `int()`. It does mean a third-party capture may need its `raw_bytes` normalised before this will
+  read it.
+- **Two captures cannot share an arm label.** The table and the published claims are keyed by arm
+  and keep the first request per arm, so a second capture under the same label would be counted in
+  `measurable` and appear in no row and in no claim. Refused rather than auto-renamed: the arm is
+  the label the operator chose at capture time. Use `--reference` to compare a rerun against the
+  capture it is meant to reproduce.
+- **The figure gate reads each prose file twice — as written, and with inline spans reunited
+  across line breaks — and takes the union.** Reading only the reunited copy is not safe: joining
+  re-pairs backticks, so a span left open on one line can swallow the next line's opening
+  backtick and hide that line's figure. A review published a five-digit `fixed` figure that way
+  with the whole preflight green. The union cannot lose a span to any arrangement of line breaks;
+  a joiner alone, however careful, is one re-pairing away from the same defect.
 - **The engine adapters match the shape each engine was OBSERVED to have, and nothing else.** A
   `dsh` installed as a launcher on PATH is not matched by the dsh adapter, and neither is the
   `hermes` launcher: both were tried as bare-name patterns and both fired on unrelated command

@@ -40,6 +40,13 @@
   PASS  hand-computed columns all match: system 12 + tools 15 = fixed 27 B, 1 tool, 1 message, and wire 12345 B read from the RECORD (not re-derived from the body, which is 113 B here -- so the two are now distinguishable)
   PASS  no overrun note when model input is below the wire figure
   PASS  when the normalised split EXCEEDS the wire figure, the report says so (unflagged, `fixed B` larger than `wire B` reads as a broken instrument)
+== 11c. the claims pin EVERY arm, and the percentage names its denominator ==
+  PASS  a two-arm capture yields claims for BOTH arms (10 claims over arm-one, arm-two) -- it used to pin only rows[0], leaving one whole engine unpinned
+  PASS  the metadata share is computed over the BODY (96.5%), and this fixture's wire figure would give 3041.4% -- so the denominator is pinned, not assumed
+== 11d. a request with tools but no messages is a TURN, not a probe ==
+  PASS  a tools-only request is measured, not filed as a startup probe
+== 11e. a refused capture is fatal even beside a good one ==
+  PASS  a corrupt line beside a GOOD capture still exits 2 and prints no table -- a refused capture is a hole in the total whether or not another one was fine
 == 11f. the fields whose LENGTH is published must be the right container ==
   PASS  a `tools` that is a dict is refused by name, not counted (len() of the wrong container counts the wrong thing and prints it as a schema count)
   PASS  a `messages` that is a string is refused by name, not counted (len() of the wrong container counts the wrong thing and prints it as a schema count)
@@ -50,14 +57,13 @@
   PASS  raw_bytes negative -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
   PASS  raw_bytes 0 beside a body that parsed -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
 == 11h. instruction roles are read in BOTH protocol branches ==
-  PASS  a top-level `system` AND a role:system message both land in the system column (5053 B, 1 conversation message) -- the Anthropic branch reads roles too, which it did not
-== 11c. the claims pin EVERY arm, and the percentage names its denominator ==
-  PASS  a two-arm capture yields claims for BOTH arms (10 claims over arm-one, arm-two) -- it used to pin only rows[0], leaving one whole engine unpinned
-  PASS  the metadata share is computed over the BODY (96.5%), and this fixture's wire figure would give 3041.4% -- so the denominator is pinned, not assumed
-== 11d. a request with tools but no messages is a TURN, not a probe ==
-  PASS  a tools-only request is measured, not filed as a startup probe
-== 11e. a refused capture is fatal even beside a good one ==
-  PASS  a corrupt line beside a GOOD capture still exits 2 and prints no table -- a refused capture is a hole in the total whether or not another one was fine
+  PASS  a top-level `system` AND a role:system AND a role:developer message all land in the system column (18 + 183 = 201 B, +15 B of tools = 216 B fixed), leaving 1 conversation message of 35 B -- the Anthropic branch reads roles too, which it did not, and it reads ALL of them, which a six-character mutation showed nothing was checking
+== 11i. an overrun BEYOND what separators explain is refused, not noted ==
+  PASS  wire 101 B against a 113 B body (overrun 12, separators explain 11) -> refused by name
+  PASS  wire 102 B against a 113 B body (overrun 11, separators explain 11) -> measured, with the note
+== 11j. two captures under ONE arm label are refused, not merged ==
+  PASS  two captures sharing one arm label -> exit 2, naming both files (they used to collapse into one row, with the second capture pinned by nothing)
+  PASS  two requests in ONE capture are still measured (2 rows) -- the refusal is about two FILES claiming one label, not about a capture with history
 == 12. an unavailable tokeniser is a reported state, never a crash ==
   PASS  a malformed --tokeniser spec is refused with a reason
   PASS  an unsupported tokeniser module is refused with a reason
@@ -72,5 +78,5 @@
 == 15. framing is right for keys that are not plain ASCII words ==
   PASS  multibyte and escape-needing keys: coverage still exact, and framing 84 B differs from the len(key)+2 shortcut's 69 B -- so the shortcut is a DETECTABLE revert
 
-self-test: 51 pass, 0 fail
+self-test: 55 pass, 0 fail
 exit=0

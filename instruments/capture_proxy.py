@@ -60,7 +60,10 @@ ARM = os.environ.get("ARI_ARM", "unlabelled")
 REPLY = "Acknowledged."
 
 
-def record(capture, arm, endpoint, headers, raw):
+UNREAD = "__unread__"
+
+
+def record(capture, arm, endpoint, headers, raw, unread=None):
     """Append one captured request as a single JSONL line.
 
     `raw_bytes` is the exact serialized length of what arrived on the wire -- the one
@@ -71,6 +74,15 @@ def record(capture, arm, endpoint, headers, raw):
     publishable, and `.items()` here instead of `.keys()` would put the Authorization /
     x-api-key value of a misconfigured run into it.
     """
+    if unread is not None:
+        # The body was never read, so its length is UNKNOWN -- not zero. `raw_bytes` is
+        # null rather than 0 for exactly that reason: 0 is an observation, and this is
+        # the absence of one. The measuring instrument refuses the capture by name.
+        return _write(capture, {
+            "arm": arm, "endpoint": endpoint, "ts": time.time(),
+            "raw_bytes": None, "header_names": sorted(headers.keys()),
+            "body": {UNREAD: unread},
+        })
     if not raw:
         # NOTHING SENT is not the same as COULD NOT PARSE, and conflating them cost a
         # whole capture. A `Content-Length: 0` POST -- a health check, a probe -- used to
@@ -88,14 +100,18 @@ def record(capture, arm, endpoint, headers, raw):
             # sending something this does not understand is a finding, and a silently
             # skipped request would show up as a smaller payload instead.
             body = {"__unparseable__": raw.decode("utf-8", "replace")[:2000]}
-    rec = {
+    return _write(capture, {
         "arm": arm,
         "endpoint": endpoint,
         "ts": time.time(),
         "raw_bytes": len(raw),
         "header_names": sorted(headers.keys()),
         "body": body,
-    }
+    })
+
+
+def _write(capture, rec):
+    """Append one record. `ensure_ascii=False` is load-bearing: see record()'s own note."""
     with open(capture, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         fh.flush()
@@ -134,11 +150,63 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
         self.close_connection = True
 
+    def _read_chunked(self):
+        """-> (raw, unread_reason). The de-chunked body, or why it was not read."""
+        out = []
+        while True:
+            line = self.rfile.readline(65537)
+            if not line:
+                return b"".join(out), ("a chunked body that ended mid-stream after "
+                                       "%d decoded bytes" % sum(len(c) for c in out))
+            field = line.split(b";")[0].strip()
+            if not field:
+                continue
+            try:
+                size = int(field, 16)
+            except ValueError:
+                return b"".join(out), ("a chunked body whose chunk size %r is not "
+                                       "hexadecimal" % field[:40])
+            if size == 0:
+                while True:                       # trailers, then the terminating blank
+                    t = self.rfile.readline(65537)
+                    if t in (b"\r\n", b"\n", b""):
+                        break
+                return b"".join(out), None
+            out.append(self.rfile.read(size))
+            self.rfile.read(2)                    # the CRLF that follows each chunk
+
+    def _read_body(self):
+        """-> (raw, unread_reason). `unread_reason` is None when the bytes were read.
+
+        A chunked POST is DE-CHUNKED rather than skipped: framing every request by
+        `int(Content-Length or 0)` read zero bytes from one, which then became a startup
+        probe downstream -- 40391 real bytes reported as `1 measurable, 1 startup
+        probes` at exit 0 in a review's demonstration.
+        """
+        te = (self.headers.get("Transfer-Encoding") or "").strip().lower()
+        if te:
+            if "chunked" in te:
+                return self._read_chunked()
+            return b"", ("`Transfer-Encoding: %s`, which this recorder cannot decode"
+                         % te[:40])
+        cl = self.headers.get("Content-Length")
+        if cl is None:
+            # RFC 7230 s3.3.3: no Content-Length and no Transfer-Encoding is a request
+            # with NO BODY. That is nothing sent, which record() already has a state for
+            # -- not a body of unknown length.
+            return b"", None
+        try:
+            n = int(cl)
+        except ValueError:
+            return b"", ("a `Content-Length` of %r, which is not a byte count" % cl[:40])
+        if n < 0:
+            return b"", "a negative `Content-Length` (%d)" % n
+        return (self.rfile.read(n) if n else b""), None
+
     def do_POST(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b""
+        raw, unread = self._read_body()
         path = self.path.split("?")[0]
-        record(self.capture, self.arm, path, dict(self.headers), raw)
+        record(self.capture, self.arm, path, dict(self.headers), raw, unread)
         try:
             body = json.loads(raw.decode("utf-8", "replace"))
         except Exception:
@@ -338,8 +406,65 @@ def self_test():
     post_bytes("/v1/messages", garbage)
     # ...and NOTHING sent is a third case, distinct from both.
     post_bytes("/v1/messages", b"")
+    # ----------------------------------------------------------------------------------
+    # Three requests added after a review found two defects that needed a request urllib
+    # cannot construct, and a third that needed a body that is not ASCII. Everything sent
+    # above is ASCII and framed by Content-Length, which is exactly why neither defect was
+    # visible: one word of this file (`"utf-8"` -> `"ascii"`) and one of do_POST's framing
+    # survived both self-tests and the whole preflight.
+    #
+    # They are SENT here, before the shutdown, and asserted at the end with the rest.
+    def post_raw(request_bytes):
+        """Send a hand-built HTTP/1.1 request, so framing itself can be the subject."""
+        c = socket.create_connection(("127.0.0.1", port), timeout=10)
+        try:
+            c.sendall(request_bytes)
+            c.settimeout(10)
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                d = c.recv(4096)
+                if not d:
+                    break
+                buf += d
+            return buf
+        finally:
+            c.close()
+
+    # 7. A CHUNKED body -- no Content-Length at all. do_POST used to frame every request
+    #    by `int(Content-Length or 0)`, so this read ZERO bytes and was recorded as
+    #    `raw_bytes: 0, body: null`, which the measuring instrument then counted as a
+    #    startup probe: a review put 40391 real bytes through it and got `1 measurable,
+    #    1 startup probes` with a 100% coverage banner at exit 0. node's own `fetch` with
+    #    a stream body sends exactly this.
+    chunked_body = json.dumps({"model": "m", "tools": [{"name": "t"}],
+                               "messages": [{"role": "user",
+                                             "content": "C" * 300}]}).encode()
+    half = len(chunked_body) // 2
+    creq = (b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n\r\n")
+    for part in (chunked_body[:half], chunked_body[half:]):
+        creq += b"%x\r\n%s\r\n" % (len(part), part)
+    creq += b"0\r\n\r\n"
+    post_raw(creq)
+    # 8. A body that could not be FRAMED at all. `Content-Length: 0` means nothing was
+    #    sent and is recorded as `body: null`; this is the other case, and conflating the
+    #    two is what defect 7 was. Length UNKNOWN is not length ZERO.
+    post_raw(b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+             b"Content-Type: application/json\r\nTransfer-Encoding: gzip\r\n"
+             b"Connection: close\r\n\r\n")
+    # 9. A NON-ASCII body. `raw.decode("utf-8", "replace")` -> `"ascii"` is one word, and
+    #    it survived both self-tests and the whole preflight because every body above is
+    #    ASCII -- while samples/fixtures/request_construction.hermes.jsonl already is not.
+    cjk = {"model": "m", "system": "\u6f22\u5b57" * 200, "tools": [{"name": "t"}],
+           "messages": [{"role": "user", "content": "\u30c6\u30b9\u30c8" * 100}]}
+    cjk_bytes = json.dumps(cjk, ensure_ascii=False).encode("utf-8")
+    post_bytes("/v1/messages", cjk_bytes)
     srv.shutdown()
-    recs = [json.loads(l) for l in open(cap, encoding="utf-8") if l.strip()]
+    captured = [json.loads(l) for l in open(cap, encoding="utf-8") if l.strip()]
+    # The legs below index the first six requests from the END, so the three sent above
+    # are held back rather than renumbering six assertions around them.
+    recs, extra = captured[:6], captured[6:]
     last = recs[-3]
     if last["raw_bytes"] == len(compact) and last["raw_bytes"] != len(normalised):
         ok("raw_bytes is the OBSERVED length (%d B of compact JSON), not a "
@@ -391,6 +516,41 @@ def self_test():
         ok("the arm label is carried onto every record")
     else:
         no("arm label missing or wrong")
+
+    # --- and the three sent just before the shutdown ---------------------------------
+    if len(extra) == 3:
+        ch, un, nz = extra
+    else:
+        ch = un = nz = {}
+        no("3 requests sent after the six above -> %d recorded" % len(extra))
+    if (ch.get("raw_bytes") == len(chunked_body)
+            and isinstance(ch.get("body"), dict) and ch["body"].get("messages")):
+        ok("a CHUNKED POST is de-chunked and recorded with its real length (%d B in 2 "
+           "chunks, no Content-Length header at all) -- it used to record `raw_bytes: 0, "
+           "body: null` and be counted downstream as a startup probe"
+           % len(chunked_body))
+    else:
+        no("chunked POST recorded as raw_bytes=%r (sent %d B), body keys %r"
+           % (ch.get("raw_bytes"), len(chunked_body),
+              sorted(ch.get("body") or {})))
+    if (un.get("raw_bytes") is None and isinstance(un.get("body"), dict)
+            and UNREAD in un["body"] and "gzip" in un["body"][UNREAD]):
+        ok("a body this recorder could not FRAME is marked `%s` with a NULL length and "
+           "the reason -- not `raw_bytes: 0`, which would read as an observation that "
+           "nothing was sent" % UNREAD)
+    else:
+        no("an unframeable body was not marked unread: %r" % un)
+    if (nz.get("raw_bytes") == len(cjk_bytes)
+            and (nz.get("body") or {}).get("system") == cjk["system"]):
+        ok("a NON-ASCII body keeps its exact UTF-8 length (%d B, not the %d characters "
+           "it decodes to) and round-trips unchanged -- decoding it as ascii replaces "
+           "every multibyte character and inflated one real payload 2.9x"
+           % (len(cjk_bytes), len(json.dumps(cjk, ensure_ascii=False))))
+    else:
+        no("non-ASCII body: raw_bytes=%r (sent %d B), system round-trip %s"
+           % (nz.get("raw_bytes"), len(cjk_bytes),
+              (nz.get("body") or {}).get("system") == cjk["system"]))
+
 
     print()
     print("self-test: %d pass, %d fail" % (len(checks), len(fails)))

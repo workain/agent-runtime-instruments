@@ -28,8 +28,8 @@ PAIRS=(
   # ARI#28, measure_request_construction.py. Its own revert-each-fix gate, pinned the same
   # way -- and its FIRST run was RED on 3 of 13, which is the only evidence a gate of this
   # kind can offer that it is able to fail at all.
-  'REVERT-EACH-FIX GATE (request construction) -- 35 cases|samples/test_request_construction_controls.out'
-  'PASSED -- all 35 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
+  'REVERT-EACH-FIX GATE (request construction) -- 41 cases|samples/test_request_construction_controls.out'
+  'PASSED -- all 41 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
   # Every state this instrument can END in needs an artefact a reader can tell from the
   # others, for the same reason the loop flags do: the dangerous output is not a zero, it
   # is a complete-looking decomposition that is simply too small.
@@ -346,6 +346,19 @@ EXEMPT=(
   'xtends its buffer backwards instead: 0'
   # --- gloss of the pinned per-file row's size column (the largest transcript in the run) ---
   '42MB'
+  # --- ARI#28 round 3. Code quoted in the prose as the defect it was, in the spelling the
+  # --- mutation used. None is a reading of anything and none can appear in an artefact --
+  # --- same rule as '103 transcripts' above. `utf-8` is here because it contains a digit
+  # --- and `system_bytes > 5000` because the leg that asserted it was the weak one. ---
+  'int(Content-Length or 0)' 'parts.append(instr[:1])' 'system_bytes > 5000' 'utf-8'
+  # --- the output the DEFECTIVE recorder produced for 40391 real bytes, quoted as the
+  # --- finding. It must not match an artefact: the artefacts now show it de-chunked. ---
+  '1 measurable, 1 startup probes'
+  # --- ARI#28 round 3. ILLUSTRATIONS in docs/limits.md, not readings: a float raw_bytes
+  # --- some producers emit, and the number spelling whose re-serialisation is the second
+  # --- cause the overrun refusal cannot distinguish from a mis-decoded body. Each is an
+  # --- example of a shape, and none is a measurement of anything here. ---
+  '8225.0' '1E5' '100000.0' 'Content-Length: 0'
   # --- API surface, not measurements: a parameter name, a command line, and an example
   # --- ISO-8601 instant in a code block showing how to call read_window(). None of these
   # --- is a reading of anything, and none could appear in an artefact. ---
@@ -416,10 +429,23 @@ extract_figures() {
   # the first attempt and was worse: it merges fenced code blocks and unmatched
   # backticks, which re-pairs every span in the file and produced 400-character "figures"
   # of ordinary prose.
+  #
+  # THE JOINED COPY IS READ IN ADDITION TO THE FILE, NOT INSTEAD OF IT -- and the next
+  # review showed why that has to be spelled out. Joining re-PAIRS backticks: a span left
+  # open on one line swallows the opening backtick of the next line's span, and that
+  # line's figure lands between two backticks that are no longer a delimiter pair. The
+  # demonstration published `fixed 99999 B` in README, present in no artefact, with this
+  # gate and the whole preflight green -- a figure the PER-LINE extractor this one
+  # replaced had caught. Reading both copies is a union, and no arrangement of line
+  # breaks can subtract from a union; a smarter joiner would still have been one
+  # re-pairing away from hiding something.
   local joined
   joined="$(mktemp)"
   awk '
     /^[[:space:]]*```/ { if (p) { print b; b = ""; p = 0; o = 0 } f = !f; print; next }
+    # A blank line ends a paragraph, and an inline span cannot cross one. Flushing here
+    # bounds a re-pairing to the paragraph it starts in.
+    /^[[:space:]]*$/ { if (p) { print b; b = ""; p = 0; o = 0 } print; next }
     { if (f) { print; next }
       # A blockquote marker is stripped before the span is reunited. Without this the
       # `> ` of a continuation line lands INSIDE the span, and a correct clause quoted
@@ -432,6 +458,8 @@ extract_figures() {
       if (o == 0) { print b; b = ""; p = 0 } else p = 1 }
     END { if (p) print b }' "$pf" > "$joined"
   { grep -ohE '`[^`]*[0-9][^`]*`' "$joined" | sed 's/^`//; s/`$//'
+    # the same pattern on the file AS WRITTEN -- the union leg described above
+    grep -ohE '`[^`]*[0-9][^`]*`' "$pf" | sed 's/^`//; s/`$//'
     grep -ohE '[A-Za-z][A-Za-z0-9_ ()<=-]{2,34}[:=] ?[0-9][0-9.,/]*' "$pf"
     grep -ohE '\b[0-9][0-9.,]* ?(MB|MiB|GB|KB|ms|bytes)\b' "$pf"
     grep -ohE '\b[0-9]+[0-9.,]* ?s\b' "$pf"

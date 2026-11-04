@@ -12,6 +12,9 @@
   PASS  header NAMES recorded, header VALUES not -- the Authorization value sent above is absent from the capture
   PASS  both protocols landed on one capture, each tagged with its endpoint
   PASS  the arm label is carried onto every record
+  PASS  a CHUNKED POST is de-chunked and recorded with its real length (387 B in 2 chunks, no Content-Length header at all) -- it used to record `raw_bytes: 0, body: null` and be counted downstream as a startup probe
+  PASS  a body this recorder could not FRAME is marked `__unread__` with a NULL length and the reason -- not `raw_bytes: 0`, which would read as an observation that nothing was sent
+  PASS  a NON-ASCII body keeps its exact UTF-8 length (2201 B, not the 801 characters it decodes to) and round-trips unchanged -- decoding it as ascii replaces every multibyte character and inflated one real payload 2.9x
 
-self-test: 14 pass, 0 fail
+self-test: 17 pass, 0 fail
 exit=0

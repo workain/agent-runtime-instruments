@@ -54,6 +54,7 @@
       "n_messages": 1,
       "n_tools": 3,
       "provider_metadata_bytes": 6519,
+      "separator_slack": 473,
       "summed_field_bytes": 8525,
       "system_bytes": 48,
       "tools_bytes": 1617,

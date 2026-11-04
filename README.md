@@ -247,11 +247,21 @@ non-repository working directory on one box:
 | model-input bytes | `MODEL INPUT 2161 B` | `MODEL INPUT 49655 B` |
 | provider metadata | `provider metadata 6519 B (75.1% of the body)` | `provider metadata 0 B` |
 
-Every cell above is a clause the instrument itself pins, for **both** arms. It used to pin the
+Every cell above is a clause the instrument itself pins, for **both** arms. **What that does
+and does not buy:** the digits can no longer be kept while the verb is flipped in place, which is
+a real narrowing. It is not protection from an inversion — a review kept all four clauses
+byte-identical and still in this file, relabelled them as a retracted draft, and asserted the
+opposite around them, with every gate green. A clause is checked for PRESENCE, and presence cannot
+distinguish a statement from a quotation of one; nothing in this repository reads meaning. See
+`docs/limits.md`. It used to pin the
 left column only — `headline_claims` read `rows[0]` — so a review could rewrite the entire
 right-hand column, or swap the two, with every gate green. Bare table cells were worse than
-unpinned: a one-digit figure like `9` occurs in 62 of this repository's artefacts, so no
-exclusion list can protect it, and the fix is to publish a clause instead of a number.
+unpinned: a one-digit figure like `9` occurs in all but a handful of this repository's
+artefacts, so no exclusion list can protect it, and the fix is to publish a clause instead of a
+number. (That claim deliberately carries no count. An earlier draft said "62 artefacts", measured
+over a corpus that was not the one the gate searches -- the same commit excluded
+`samples/raw-payloads/` from the search -- and no pattern reads it, so nothing would have caught
+the drift.)
 
 **Only the first row is an observation.** Every other row is computed over a re-serialisation of
 the parsed body with `json.dumps`' default separators, and a client that writes `{"a":1}` where
@@ -365,8 +375,8 @@ The controls are pinned the same way `flags.py`'s are, by reverting each fix and
 control to turn RED:
 
 ```
-REVERT-EACH-FIX GATE (request construction) -- 35 cases
-PASSED -- all 35 fixes are pinned: reverting any one of them turns a control RED.
+REVERT-EACH-FIX GATE (request construction) -- 41 cases
+PASSED -- all 41 fixes are pinned: reverting any one of them turns a control RED.
 ```
 
 Twenty-two of those thirty-five were added after two independent reviews of this branch
@@ -615,8 +625,9 @@ survived the whole preflight. Three are worth stating because of *where* they we
   same round* as finding 15's fix — a verbatim payload trace, not a fixture — so the table could
   still claim it.
   Verbatim traces now live in `samples/raw-payloads/`, excluded for the same reason. The other
-  half has no exclusion-list answer at all: a one-digit figure like `9` occurs in 62 artefacts
-  here, so a bare table cell is unpinnable, and the fix is to publish a *clause* instead.
+  half has no exclusion-list answer at all: a one-digit figure like `9` occurs in all but a
+  handful of the artefacts here, so a bare table cell is unpinnable, and the fix is to publish a
+  *clause* instead.
 - **`capture_proxy.py` is where the observation is made, and it had no protection.** Its captures
   are committed as inputs, so `check_fixtures_fresh.sh` never re-runs the recorder, and its own
   self-test checked `raw_bytes` against `len(json.dumps(body).encode())` — which is exactly what a
@@ -626,6 +637,47 @@ survived the whole preflight. Three are worth stating because of *where* they we
   reader-side refusal can see a line that was never written. The self-test now sends *compact*
   bytes and compares against the length it knows it sent, sends a body that cannot be parsed, and
   sends nothing at all.
+
+A third review was asked to lead with the regressions round 2's fixes had introduced, because
+round 1's fixes had already introduced one. It found two, plus four more mutations that survived
+both self-tests and the whole preflight. Three are worth stating:
+
+- **The joiner that fixed wrapped spans could HIDE a figure the per-line extractor caught.**
+  Joining re-*pairs* backticks: a span left open on one line swallows the opening backtick of the
+  next line's span, and that line's figure ends up between two backticks that are no longer a
+  delimiter pair. The demonstration published a five-digit `fixed` figure in README — present in
+  no artefact — with this gate and the whole preflight green. (Not quoted here, for the reason
+  `samples/raw-payloads/README.md` gives: an exemption for a laundered figure re-opens the hole
+  the paragraph is describing.) The fix is not a smarter joiner, which would still
+  be one re-pairing away from the same thing: the joined copy is now read **in addition to** the
+  file as written, and no arrangement of line breaks can subtract from a union.
+- **The empty-POST fix turned a loud refusal into a silent startup probe.** `if not raw: body =
+  None` cannot tell *the client sent no body* from *this recorder never read the body it was
+  sent*, and `do_POST` framed every request by `int(Content-Length or 0)` — so a **chunked** POST
+  read zero bytes and was recorded as a request that carried none. A review put 40391 real bytes
+  through it and got `1 measurable, 1 startup probes` at exit 0. Before the fix the same request
+  was refused, so the round traded a false refusal for a silent misclassification, which this
+  repository's own notes call the worse of the two. Chunked bodies are now de-chunked and
+  measured; a body that genuinely cannot be framed is marked with a null length, because length
+  unknown is not length zero, and the reader refuses it by name.
+- **The overrun note had no ceiling, so it explained away a 2.9x lie.** One word of the recorder
+  (`utf-8` → `ascii`) survived both self-tests and the whole preflight, because every body the
+  self-test sent was ASCII — while `samples/fixtures/request_construction.hermes.jsonl` already is
+  not. On a CJK payload the replacement characters tripled the measured body, and the only visible
+  symptom was round 1's overrun note *telling the reader it was normal*. A normalised split can
+  legitimately exceed the wire figure, but only by one byte per separator; past that it is not a
+  re-serialisation of those bytes at all. That bound is now computed per body and printed, an
+  overrun beyond it is refused, and the self-test's two fixtures either side of the line differ by
+  **one byte** of wire.
+
+The other three: a six-character mutation (`parts.append(instr[:1])`) dropped every instruction
+message after the first from four published columns at exit 0, because no fixture carried two of
+them and the leg asserted `system_bytes > 5000` where the exact value was available; two captures
+sharing an arm label collapsed into one row, which is round 2's own "one engine pinned by nothing"
+reached by label collision instead of by `rows[0]`; and one of round 2's own gate cases was
+arbitrary damage rather than a revert — it neutered the first of four checks and left the rest, so
+the mutant refused everything with a body and went RED for a reason the case does not name. A
+control that goes red for the wrong reason reads exactly like one that works.
 
 `scripts/preflight.sh` runs `--self-test` for every instrument that offers the flag, picking them
 up with no list to maintain — which means an instrument *without* the flag is silently not
