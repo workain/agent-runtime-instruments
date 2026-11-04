@@ -87,8 +87,8 @@ CASES = [
      "the other, and the two arms are no longer comparable.",
      '''    sysm, convo = [], []                        # OpenAI chat completions
     for m in msgs:
-        tgt = sysm if isinstance(m, dict) and m.get("role") == "system" else convo
-        tgt.append(m)
+        is_instr = isinstance(m, dict) and m.get("role") in INSTRUCTION_ROLES
+        (sysm if is_instr else convo).append(m)
     return (sysm or None), tools, convo''',
      '''    return None, tools, list(msgs)'''),
 
@@ -149,6 +149,113 @@ CASES = [
      "publishable.",
      '        "header_names": sorted(headers.keys()),',
      '        "header_names": sorted(headers.items()),'),
+
+    # ---------------------------------------------------------------------------
+    # C14-C23 pin the fixes made after an independent review of this branch returned
+    # BLOCK. Every one of them is a revert to the code that was really there, or to the
+    # obvious implementation the review substituted and found the whole preflight green
+    # against. They are listed in the order the findings were reported.
+    ("C14-no-shape-check-at-the-door", "measure_request_construction",
+     "appending whatever parsed, which is the obvious implementation and was the real "
+     "one: a capture line that is valid JSON but a LIST or a STRING then died with "
+     "`AttributeError: 'list' object has no attribute 'get'` inside is_probe -- a "
+     "traceback naming a dict method, with no capture file, no line number, and exit 1, "
+     "which is not in this instrument's documented set of exit codes.",
+     """            fault = structural_fault(rec)
+            if fault:
+                return None, ("capture line %d of %s %s. The whole capture is refused "
+                              "rather than measured around it: skipping the line would "
+                              "shrink every total silently."
+                              % (n, path, fault))
+            recs.append(rec)""",
+     """            recs.append(rec)"""),
+
+    ("C15-shape-fault-skips-the-line", "measure_request_construction",
+     "skipping the unreadable record and measuring the rest -- the SOFTER revert, and "
+     "the more tempting one, because it still produces a table. It is the C8 failure "
+     "with a different cause: the dropped record shrinks every total, and a total that "
+     "came out smaller is the one wrong answer nobody goes looking for.",
+     """            if fault:
+                return None, ("capture line %d of %s %s. The whole capture is refused "
+                              "rather than measured around it: skipping the line would "
+                              "shrink every total silently."
+                              % (n, path, fault))""",
+     """            if fault:
+                continue"""),
+
+    ("C16-duplicate-keys-lost-silently", "measure_request_construction",
+     "parsing with a plain json.loads, which keeps the LAST value for a repeated key and "
+     "drops the rest without a word. `{\"system\": <10 KB>, \"system\": \"x\"}` then "
+     "measured a 3-byte system prompt, the coverage invariant held because the PARSED "
+     "body really is self-consistent, and the published fixed-per-turn cost was 10 KB "
+     "too low with no symptom.",
+     """                rec = json.loads(line,
+                                 object_pairs_hook=lambda p: duplicate_keys(p, dups))""",
+     """                rec = json.loads(line)"""),
+
+    ("C17-unparseable-measured-around", "measure_request_construction",
+     "measuring a capture that contains requests the RECORDER could not parse. They "
+     "carry no `tools` and no `messages`, so they were filed as startup probes: a review "
+     "fed in three 48 KB records and got `3 startup probes`, a 100% coverage banner and "
+     "exit 0. 144 KB of real traffic not omitted but MISLABELLED, which is worse, "
+     "because the count looks accounted for.",
+     """        unp = [(i, r) for i, r in enumerate(recs, 1)
+               if UNPARSEABLE in (r.get("body") or {})]""",
+     """        unp = []"""),
+
+    ("C18-unparseable-is-a-probe", "measure_request_construction",
+     "the one-line classification the refusal above rests on. Reverting it alone is "
+     "quieter than C17 and that is exactly why it is a separate case: with is_probe "
+     "calling an unparseable body a probe again, any future code path that trusts "
+     "is_probe rather than re-scanning for the marker silently inherits the old bug.",
+     """    if UNPARSEABLE in body:""",
+     """    if False:"""),
+
+    ("C19-coverage-allows-a-deficit", "measure_request_construction",
+     "the headline invariant's comparison, `==` relaxed to `<=`. One character, and it "
+     "passes every DEFICIT -- the only direction a dropped field can go. A review "
+     "mutated it and the entire preflight stayed green, because every other control "
+     "feeds a complete split, where the two operators agree.",
+     """    return summed + framing == whole""",
+     """    return summed + framing <= whole"""),
+
+    ("C20-framing-ignores-key-escaping", "measure_request_construction",
+     "framing predicted as `len(key) + 2` instead of over the SERIALIZED key. The two "
+     "agree for every short ASCII key, which is what every fixture used, so a review "
+     "mutated this and nothing noticed. A multibyte key costs more bytes than "
+     "characters and a key needing escapes costs more serialized than raw, so on a real "
+     "non-English payload the coverage invariant would start failing for no visible "
+     "reason -- or worse, be relaxed to make it pass.",
+     """    per_key = sum(len(ser(k).encode("utf-8")) + len(": ".encode("utf-8")) for k in body)""",
+     """    per_key = sum(len(k) + 2 + len(": ".encode("utf-8")) for k in body)"""),
+
+    ("C21-developer-role-as-conversation", "measure_request_construction",
+     "recognising only `role: system` on the OpenAI side. `developer` is what OpenAI "
+     "RENAMED it to and both are live, so a 12 KB instruction block landed in the "
+     "conversation column and the instrument published `fixed B = 49`. This is case C6's "
+     "defect exactly, for the spelling the provider documents today.",
+     """        is_instr = isinstance(m, dict) and m.get("role") in INSTRUCTION_ROLES""",
+     '        is_instr = isinstance(m, dict) and m.get("role") == "system"'),
+
+    ("C22-tokeniser-guard-not-consulted", "measure_request_construction",
+     "loading an encoder without putting it past the bytes/4 guard. tiktoken is not a "
+     "dependency here and is not installed, so the token path has no executed coverage "
+     "at all: a review replaced the encoder with `len(bytes)//4` and every gate stayed "
+     "green while the output still called itself `tiktoken:cl100k_base`.",
+     """    bad = looks_like_bytes_over_4(count)
+    if bad:
+        return None, bad
+    return count, label""",
+     """    return count, label"""),
+
+    ("C23-wire-bytes-re-derived", "measure_request_construction",
+     "deriving the wire figure from the parsed body instead of reading what the recorder "
+     "OBSERVED. `wire_bytes` is documented here as the only direct observation in the "
+     "whole report, and it was untestable until recently because the fixture helper set "
+     "raw_bytes to the body's own length -- making the two equal by construction, so the "
+     "substitution changed nothing any control could see.",
+     """        "wire_bytes": rec.get("raw_bytes", 0),""",
+     """        "wire_bytes": whole,"""),
 
     ("C13-recorder-keepalive-sse", "capture_proxy",
      "answering an event stream under keep-alive. With no Content-Length the client "

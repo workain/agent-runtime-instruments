@@ -28,6 +28,7 @@ FIRST REQUEST -- arm 'dsh', endpoint /v1/messages, model named 'deepseek-flash'
     stream                          4 B
     (json framing)                155 B  (braces, quoted keys, separators)
     TOTAL                        8680 B  = the whole body, with nothing unaccounted
+    3 tool schema(s) exposed, 1 message(s) in the conversation
     wire 8225 B vs normalised body 8680 B (ratio 0.948). The split above is of the NORMALISED serialization:
       a per-field share of the raw wire bytes is not well defined without re-parsing, and the two differ by the
       client's own separator and escaping choices. Quote `wire B` for what the network paid.
@@ -44,9 +45,12 @@ FIRST REQUEST -- arm 'hermes', endpoint /v1/chat/completions, model named 'captu
     stream                          4 B
     (json framing)                 90 B  (braces, quoted keys, separators)
     TOTAL                       49655 B  = the whole body, with nothing unaccounted
+    20 tool schema(s) exposed, 1 message(s) in the conversation
     wire 48820 B vs normalised body 49655 B (ratio 0.983). The split above is of the NORMALISED serialization:
       a per-field share of the raw wire bytes is not well defined without re-parsing, and the two differ by the
       client's own separator and escaping choices. Quote `wire B` for what the network paid.
+    NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%). Not an error: this client serialises more
+      compactly than json.dumps' default separators, so the normalised split is larger than what was sent. `wire B` is the observation; the rest is a re-serialisation.
     provider metadata 0 B: this client sends none, so model input and whole body are the SAME number here
     MODEL INPUT 49655 B -- the quantity a per-token bill is computed from
     tokens: NOT MEASURED -- no tokeniser given (bytes are exact and need none)

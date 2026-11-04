@@ -28,21 +28,60 @@ PAIRS=(
   # ARI#28, measure_request_construction.py. Its own revert-each-fix gate, pinned the same
   # way -- and its FIRST run was RED on 3 of 13, which is the only evidence a gate of this
   # kind can offer that it is able to fail at all.
-  'REVERT-EACH-FIX GATE (request construction) -- 13 cases|samples/test_request_construction_controls.out'
-  'PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
+  'REVERT-EACH-FIX GATE (request construction) -- 23 cases|samples/test_request_construction_controls.out'
+  'PASSED -- all 23 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
   # Every state this instrument can END in needs an artefact a reader can tell from the
   # others, for the same reason the loop flags do: the dangerous output is not a zero, it
   # is a complete-looking decomposition that is simply too small.
+  #
+  # Each claim is pinned as the WHOLE CLAUSE, direction words included, not as a bare
+  # figure. A review kept every digit in this README byte-identical and inverted the
+  # sentence around them -- metadata declared BILLED rather than unbilled, which is the
+  # error that flipped the source study's sign -- and every gate stayed green, because a
+  # figure-substring check reads digits and not meaning. Pinning the clause means an
+  # inversion has to DELETE the correct statement to make room for itself.
   '8225 bytes on the wire|samples/measure_request_construction.claims.out'
-  'fixed 1665 bytes|samples/measure_request_construction.claims.out'
-  'model input 2161 bytes|samples/measure_request_construction.claims.out'
-  '6519 bytes (75.1%) of provider metadata|samples/measure_request_construction.claims.out'
+  'fixed 1665 bytes, paid again on every later turn|samples/measure_request_construction.claims.out'
+  'model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from|samples/measure_request_construction.claims.out'
+  '6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO model-input tokens|samples/measure_request_construction.claims.out'
   'every figure measured here is quoted in the prose|samples/measure_request_construction.claims.out'
+  # The normalised split can legitimately EXCEED the observed wire figure, and unflagged
+  # that reads as a broken instrument. Pinned because README's table now says so.
+  'NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%)|samples/measure_request_construction.hermes.out'
+  'normalised body 8680 B|samples/measure_request_construction.dsh.out'
+  'normalised body 49655 B|samples/measure_request_construction.hermes.out'
+  '3 tool schema(s) exposed|samples/measure_request_construction.dsh.out'
+  '20 tool schema(s) exposed|samples/measure_request_construction.hermes.out'
+  'provider metadata 6519 B (75.1% of the body)|samples/measure_request_construction.dsh.out'
+  'provider metadata 0 B|samples/measure_request_construction.hermes.out'
   'NONE is measurable|samples/measure_request_construction.probes-only-NO-MEASUREMENT.out'
   'UNKNOWN BODY FIELD(S): totally_new_vendor_field|samples/measure_request_construction.unknown-field-REFUSED.out'
   'REPRODUCTION FAILED|samples/measure_request_construction.faithfulness-FAILED.out'
   'DRIFT: a figure above is not in the prose|samples/measure_request_construction.claims-drift-FAILED.out'
   'NOT MEASURED -- no tokeniser given|samples/measure_request_construction.tokeniser-unavailable.out'
+  # The three refusals added after the review. Each was a SILENT wrong answer before:
+  # a traceback with no file or line, a 10 KB system prompt reduced to 3 bytes with the
+  # coverage banner still printing, and 144 KB of real traffic filed as startup probes.
+  'is JSON but not an object (it is a list)|samples/measure_request_construction.not-an-object-REFUSED.out'
+  'repeats the JSON key(s) system|samples/measure_request_construction.duplicate-key-REFUSED.out'
+  '144000 raw bytes between them|samples/measure_request_construction.unparseable-REFUSED.out'
+  # Both captures taken TWICE, from separate processes, and compared by --reference. The
+  # passing side and the failing side are both pinned: a faithfulness check is only worth
+  # anything if it can refuse, and this is the run where it did.
+  'every field reproduces to the digit|samples/measure_request_construction.hermes-rerun-faithful.out'
+  'provider_metadata_bytes            6515         6519  -4|samples/measure_request_construction.dsh-rerun-REPRODUCTION-FAILED.out'
+  'model_input_bytes                  2161         2161  MATCH|samples/measure_request_construction.dsh-rerun-REPRODUCTION-FAILED.out'
+  # Both densities, because the claim the README makes is the COMPARISON between them:
+  # over the whole body the two engines look ~30% apart and over model input ~3%, and
+  # only the second answers a question about cost.
+  '3.24 bytes/token over the whole body|samples/measure_request_construction.tokens.out'
+  '4.11 bytes/token over MODEL INPUT|samples/measure_request_construction.tokens.out'
+  '4.23 bytes/token over MODEL INPUT|samples/measure_request_construction.tokens.out'
+  # The engine adapters' STORAGE claims, which a review found asserted with no artefact
+  # while the verified=True flag was set. The adapter-note leg below only requires a note
+  # to name SOME tracked .out; these pin the specific facts the notes state.
+  'session.v4.jsonl|samples/engine_evidence.dsh-hermes-storage.out'
+  'state.db|samples/engine_evidence.dsh-hermes-storage.out'
   'PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.|samples/test_flags_controls.out'
   'session trees: 20|samples/measure_session_footprint.out'
   'summed RSS: 7483 MB|samples/measure_session_footprint.out'
@@ -143,6 +182,12 @@ if [ "${#PAIRS[@]}" -lt "$MIN_PAIRS" ]; then
   exit 2
 fi
 
+# One flattened copy of every prose file, for the citation guard below. Built once: the
+# alternative is re-flattening four files per pinned figure.
+prose_flat="$(mktemp)"
+trap 'rm -f "$prose_flat"' EXIT
+cat "${PROSE[@]}" 2>/dev/null | tr '\n' ' ' | tr -s ' ' > "$prose_flat"
+
 fail=0; verified=0
 for entry in "${PAIRS[@]}"; do
   fig="${entry%%|*}"; file="${entry#*|}"
@@ -155,8 +200,17 @@ for entry in "${PAIRS[@]}"; do
     echo "      artefact: $file"
     fail=1; continue
   fi
-  # guard 1: the figure must actually be cited in the prose, or this entry checks nothing
-  if ! grep -qrF -- "$fig" "${PROSE[@]}" 2>/dev/null; then
+  # guard 1: the figure must actually be cited in the prose, or this entry checks nothing.
+  #
+  # WHITESPACE-INSENSITIVE on the prose side only. The artefact check above stays exact --
+  # the artefact's own spelling is the thing being pinned -- but a claim in a markdown
+  # file WRAPS, and a 100-character pinned clause always wraps. This is the same lesson
+  # measure_request_construction.py's --check-claims carries in its own docstring: that
+  # gate once failed purely because a claim had broken across a line, the number was
+  # right, and a gate that cries wolf at reflow is a gate that gets switched off. Pinning
+  # whole clauses rather than bare figures (so an inversion cannot keep the digits and
+  # flip the meaning) made every long claim hit this, which is how it was found again.
+  if ! grep -qF -- "$(printf '%s' "$fig" | tr '\n' ' ' | tr -s ' ')" "$prose_flat"; then
     echo "FAIL: figure is in its artefact but cited NOWHERE in the prose -- this entry is"
     echo "      coverage theatre. Either cite it or remove it deliberately."
     echo "      figure: $fig"
@@ -198,11 +252,22 @@ done
 # deliberate trade -- paid once, after which a stale figure cannot enter silently in any
 # shape.
 #
-# samples/gate-evidence/ is EXCLUDED from the search. See the note at that directory:
-# it records what a GATE printed, including the stale figures a round was fixing, so
-# searching it makes every previously-wrong figure permanently findable. Measured: with
-# it included, both `spread=0.85s` and `activity in 7d: 35` passed this leg on the
-# strength of a file whose purpose is to record them as WRONG.
+# TWO directories under samples/ are EXCLUDED from the search, for the same reason.
+#
+# samples/gate-evidence/ records what a GATE printed, including the stale figures a round
+# was fixing, so searching it makes every previously-wrong figure permanently findable.
+# Measured: with it included, both `spread=0.85s` and `activity in 7d: 35` passed this
+# leg on the strength of a file whose purpose is to record them as WRONG.
+#
+# samples/fixtures/ is the other direction: it holds instrument INPUTS -- captured JSON
+# request bodies, and a markdown file whose entire purpose is to contain a WRONG figure
+# for a drift gate to catch. An artefact is a thing an instrument PRINTED; an input is
+# not evidence of anything. A review demonstrated the cost of not excluding it: with
+# 66 KB of JSON in the searched corpus, the README's engine-comparison table -- this
+# branch's headline deliverable -- could be rewritten to say `256000` wire bytes (a
+# `max_tokens` value occurring inside the dsh fixture), `9` fixed bytes and `1` tool,
+# and both this gate and the whole preflight stayed green. Near-miss digit flips were
+# still caught, so the gate had teeth only against values adjacent to the truth.
 EXEMPT=(
   # --- not measurements: versions, env vars, parameters, mount options ---
   '2.1.197' '2.1.221' '0.147.0' 'SELF_TEST=0' 'SKIP_PAID=1' 'min_age=1' 'hidepid=2'
@@ -274,11 +339,60 @@ EXEMPT=(
   # --- the engine-adapter leg below is what checks that note names a tracked artefact. ---
   '--tokeniser tiktoken:cl100k_base' 'argv[0]' '${BASH_SOURCE[0]}'
   '$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl'
+  # --- the WRONG denominator, quoted in README as the error an earlier draft published
+  # --- (6519/8225 = 79.3%, against a figure computed over the 8680-byte body). Same rule
+  # --- as '103 transcripts': it must NOT match an artefact, or the correction could not
+  # --- be written down.
+  '79.3%'
+  # --- JSON literals illustrating what a compact serialization looks like next to
+  # --- json.dumps' default separators. Not readings of anything.
+  '{"a":1}' '{"a": 1}'
+  # --- a CODE EXPRESSION, quoted as the shortcut a mutation reverts framing to. Not a
+  # --- reading; it could not appear in an artefact.
+  'len(key) + 2'
+  # --- the WRONG figure, quoted beside its correction ((3.65-1.96)/1.96 = 86.2%, not 87%).
+  # --- Must NOT match an artefact: naming it is how the correction gets written down.
+  '87%'
+  # --- ARI#28, surfaced by the percentage and `N requests`/`N tools` patterns added to
+  # --- the extractor above, which nothing had matched before.
+  # --- A COST ESTIMATE for a paid benchmark (how many requests it spends), not a reading
+  '6 requests'
+  # --- a figure about a PAST DEFECT: how wrong a reviewer found one sentence to be. Same
+  # --- rule as '103 transcripts' -- it must NOT match an artefact, that is the point.
+  '38%'
+  # --- gloss of the pinned `min=1.96s  max=3.65s`. (3.65-1.96)/1.96 = 86.2%. The prose
+  # --- said 87% until this extractor learned to read percentages, on its first run.
+  '86%'
 )
 is_exempt() {
   local f="$1" n
   for n in "${EXEMPT[@]}"; do [ "$f" = "$n" ] && return 0; done
   return 1
+}
+
+# The extractor, as ONE function, because it now has two callers: the prose files below
+# and every instrument's own --help-blind answer further down. Two copies would drift,
+# and the copy that drifted would be the one guarding the newer surface.
+extract_figures() {
+  local pf="$1"
+  { grep -ohE '`[^`]*[0-9][^`]*`' "$pf" | sed 's/^`//; s/`$//'
+    grep -ohE '[A-Za-z][A-Za-z0-9_ ()<=-]{2,34}[:=] ?[0-9][0-9.,/]*' "$pf"
+    grep -ohE '\b[0-9][0-9.,]* ?(MB|MiB|GB|KB|ms|bytes)\b' "$pf"
+    grep -ohE '\b[0-9]+[0-9.,]* ?s\b' "$pf"
+    # PERCENTAGES. Added after a review kept every digit in a headline intact and moved
+    # its DENOMINATOR: the prose said "8225 bytes on the wire, of which 6519 bytes
+    # (75.1%)", and 6519/8225 is 79.3% -- the sentence named one denominator and quoted
+    # the other's answer. No pattern here matched a bare percentage, so nothing could
+    # see it. No trailing \b, because `%` is already a non-word character and a word
+    # boundary after it never matches.
+    grep -ohE '\b[0-9][0-9.,]*%' "$pf"
+    # NUMBER-FIRST counts, e.g. `103 transcripts`. Restricted to the nouns the
+    # instruments actually report, rather than any `<digits> <word>`: the generic form
+    # returned 25 spans of pure prose noise ("0 makes", "13 that") and an exemption list
+    # of that shape rots into a dumping ground. Naming the quantities keeps every entry
+    # meaningful. This is the shape that let `103 transcripts` survive four commits.
+    grep -ohE '\b[0-9][0-9.,]* (transcripts|sessions|session trees|trees|cgroups|processes|procs|lines|tools|requests)\b' "$pf"
+  } 2>/dev/null | sed 's/^ *//; s/ *$//' | sort -u
 }
 
 for pf in "${PROSE[@]}"; do
@@ -289,25 +403,102 @@ for pf in "${PROSE[@]}"; do
     # each one exists and is tracked. Exempting them by name here would need an edit
     # every time a sample is added, which is how an exemption list rots.
     case "$fig" in *.out) continue;; esac
-    if ! grep -rqF --exclude-dir=gate-evidence -- "$fig" samples/ 2>/dev/null; then
+    if ! grep -rqF --exclude-dir=gate-evidence --exclude-dir=fixtures \
+         -- "$fig" samples/ 2>/dev/null; then
       echo "FAIL: $pf states '$fig' which appears in NO artefact under samples/."
       echo "      Either it drifted, or it is not a measurement and belongs in EXEMPT"
       echo "      in this script WITH A REASON."
       fail=1
     fi
-  done < <( { grep -ohE '`[^`]*[0-9][^`]*`' "$pf" | sed 's/^`//; s/`$//'
-              grep -ohE '[A-Za-z][A-Za-z0-9_ ()<=-]{2,34}[:=] ?[0-9][0-9.,/]*' "$pf"
-              grep -ohE '\b[0-9][0-9.,]* ?(MB|MiB|GB|KB|ms|bytes)\b' "$pf"
-              grep -ohE '\b[0-9]+[0-9.,]* ?s\b' "$pf"
-              # NUMBER-FIRST counts, e.g. `103 transcripts`. Restricted to the nouns the
-              # instruments actually report, rather than any `<digits> <word>`: the
-              # generic form returned 25 spans of pure prose noise ("0 makes", "13 that")
-              # and an exemption list of that shape rots into a dumping ground. Naming
-              # the quantities keeps every entry meaningful. This is the shape that let
-              # `103 transcripts` survive four commits with no gate noticing.
-              grep -ohE '\b[0-9][0-9.,]* (transcripts|sessions|session trees|trees|cgroups|processes|procs|lines)\b' "$pf"
-            } 2>/dev/null | sed 's/^ *//; s/ *$//' | sort -u )
+  done < <( extract_figures "$pf" )
 done
+
+# EVERY INSTRUMENT'S `--help-blind` ANSWER IS PROSE, and is checked like prose.
+#
+# docs/method.md rule 1 rests on that answer: "what would this print if it were blind?"
+# is the first thing a reader is told to ask, and the text that answers it is published
+# by `--help-blind`. It was not in PROSE, so no figure in it was checked by anything.
+#
+# A review found what that costs. measure_request_construction.py's blind answer stated
+# its central finding as `79.3% of the body (6,522 of 8,228 bytes)` and reasoned "wrong by
+# a factor of five" from it. Those are the SOURCE study's figures, not this repository's:
+# the committed capture measures 6519 of 8680 body bytes. All three numbers were absent
+# from every artefact and every prose file here, three bytes from the real ones in both
+# numerator and total -- close enough to read as a transcription of this repo's own
+# measurement, which is exactly why nobody re-derived them.
+#
+# Only the MODULE DOCSTRING is read, because that is what --help-blind prints. Scanning
+# whole source files would make every literal in the code a claim about an artefact.
+BLIND_EXEMPT=(
+  # --- HYPOTHETICAL blind output: these passages exist to say "this is what a blind run
+  # --- prints". They MUST NOT exist in an artefact. Same rule as the EXEMPT block above.
+  'requests: 0' 'mean=0.00' 'session trees: 0' 'transcripts found: 0' 'busy_minutes=0'
+  'sidechain_turns: 0' 'read=0,' 'read=0, creation=76443' 'creation=76443'
+  'LIVE sessions owning background work older than Ns: 0'
+  'wning background work older than Ns: 0' '{"verdict": "drove a turn", "notifications": 0}'
+  # --- API SURFACE: parameter names, defaults and signatures. Not readings.
+  'last_turns=40' 'agent_gap_threshold=30' 'batchable_threshold=2,' 'repeated_threshold=4,'
+  'DEFAULT_MAX_TURNS = 10' 'max_iterations: int | None = 15' 'None = 15'
+  '--tokeniser tiktoken:cl100k_base' '/v1/models' 'sess-<8 hex>'
+  './roast-hc9999-fake-example' 'x2,' 'reports size 0, so' 'processes (hidepid=2,'
+  "tests the FILTER, i.e. v2's" 'Treating n=2' '30 s'
+  'ch of the session it is NOT reading: 40'
+  # --- HISTORICAL readings, labelled as such in the docstring that quotes them
+  '0.65 s' '1.15 s' '1.16 s' '3.16 s' '3.48 s' '4.04 s' '3.53 s' '3.74 s'
+  # --- third-party / stat figures, attributed at the use site (docs/citations.md)
+  '323,021,104 bytes'
+  # --- ILLUSTRATIVE figures inside a blind answer's own explanation: an example of what
+  # --- a misleading output would LOOK like ("mean 0.43 sessions" over an empty corpus),
+  # --- and a round proportion standing for "nearly all" ("a corpus that was 99%
+  # --- skipped"). Neither is a reading, and neither should match an artefact.
+  '0.43 sessions' '99%'
+  # --- the SOURCE STUDY's own published figures, named in the paragraph that explains
+  # --- how counting provider metadata as model input inverted their sign. Same rule as
+  # --- '146 transcripts'/'97 sessions' in EXEMPT: another corpus, no artefact here.
+  '20%' '44%'
+  # --- the WRONG figures, quoted in that same paragraph as the ones an earlier draft of
+  # --- it published by mistake. They must NOT match an artefact -- naming them is the
+  # --- whole point, exactly like '103 transcripts' in EXEMPT. A gate that demanded an
+  # --- artefact for them would force the correction to be deleted to pass.
+  '79.3%' '8,228 bytes'
+  # --- quoted from a cited third-party paper (the MAST failure taxonomy), attributed at
+  # --- the use site. Another corpus; no artefact of ours can contain them.
+  '15.7%' '13.2%'
+)
+blind_fail=0; blind_files=0; blind_figs=0
+for inst in instruments/*.py; do
+  grep -q -- '"--help-blind"' "$inst" || continue
+  doc=$(mktemp); python3 - "$inst" >"$doc" <<'PY'
+import ast, io, sys
+print(ast.get_docstring(ast.parse(io.open(sys.argv[1], encoding="utf-8").read())) or "")
+PY
+  blind_files=$((blind_files+1))
+  while IFS= read -r fig; do
+    [ -z "$fig" ] && continue
+    case "$fig" in *.out) continue;; esac
+    is_exempt "$fig" && continue
+    skip=0
+    for n in "${BLIND_EXEMPT[@]}"; do [ "$fig" = "$n" ] && skip=1 && break; done
+    [ "$skip" -eq 1 ] && continue
+    if ! grep -rqF --exclude-dir=gate-evidence --exclude-dir=fixtures \
+         -- "$fig" samples/ 2>/dev/null; then
+      echo "FAIL: $inst --help-blind states '$fig' which appears in NO artefact under"
+      echo "      samples/. A blind answer is published prose: either it drifted, or it"
+      echo "      is not a measurement and belongs in BLIND_EXEMPT WITH A REASON."
+      blind_fail=1; fail=1
+    else
+      blind_figs=$((blind_figs+1))
+    fi
+  done < <( extract_figures "$doc" )
+  rm -f "$doc"
+done
+if [ "$blind_files" -lt 10 ]; then
+  echo "SCRUB-ERROR: only $blind_files instruments were scanned for --help-blind prose;"
+  echo "this repository has more than that. The extractor or the grep broke." >&2
+  fail=1
+elif [ "$blind_fail" -eq 0 ]; then
+  echo "all $blind_figs figures in $blind_files --help-blind answers exist in an artefact"
+fi
 
 # Every engine adapter claiming verified=True must name a tracked sample. Without this,
 # flipping one flag makes provenance_banner() assert "VERIFIED (run and output kept)"

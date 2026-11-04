@@ -11,8 +11,8 @@ PUBLISHED-CLAIM CHECK against samples/fixtures/request_construction.claims-drift
   (whitespace-insensitive: a claim that wrapped across a line break is
    still the same claim, and failing on reflow is how a gate loses trust)
   first-request wire bytes           FOUND   8225 bytes on the wire
-  first-request fixed overhead       FOUND   fixed 1665 bytes
-  first-request model input          DRIFTED  model input 2161 bytes
-  provider metadata share            FOUND   6519 bytes (75.1%) of provider metadata
+  fixed part, paid every turn        DRIFTED  fixed 1665 bytes, paid again on every later turn
+  model input, and what it is        DRIFTED  model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from
+  provider metadata, and its direction DRIFTED  6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO model-input tokens
   -> DRIFT: a figure above is not in the prose
 exit=6

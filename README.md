@@ -240,16 +240,34 @@ non-repository working directory on one box:
 
 | | DeepSeek Harness (`sdk-minimal`) | Hermes (custom OpenAI provider) |
 |---|---|---|
-| wire bytes, first request | `8225` | `48820` |
-| fixed per-turn part (system + tools) | `fixed 1665 bytes` | `49426` B |
-| tools exposed | 3 | 20 |
-| model-input bytes | `model input 2161 bytes` | `49655` B |
-| provider metadata | `6519 bytes (75.1%) of provider metadata` | none at all |
+| wire bytes, first request — *observed* | `8225` | `48820` |
+| normalised body — *re-serialised* | `normalised body 8680 B` | `normalised body 49655 B` |
+| fixed per-turn part (system + tools) | `fixed 1665 bytes` | `49426` |
+| tool schemas exposed | `3 tool schema(s) exposed` | `20 tool schema(s) exposed` |
+| model-input bytes | `MODEL INPUT 2161 B` | `MODEL INPUT 49655 B` |
+| provider metadata | `provider metadata 6519 B (75.1% of the body)` | `provider metadata 0 B` |
 
-In the one sentence the instrument's own `--check-claims` pins: the dsh arm's first request put
-`8225 bytes on the wire`, of which `fixed 1665 bytes` is the system prompt plus three tool schemas
-that every later turn pays again, `model input 2161 bytes` is what a per-token bill is computed
-from, and `6519 bytes (75.1%) of provider metadata` is charged to the network and to nothing else.
+**Only the first row is an observation.** Every other row is computed over a re-serialisation of
+the parsed body with `json.dumps`' default separators, and a client that writes `{"a":1}` where
+`json.dumps` writes `{"a": 1}` sends fewer bytes than the split accounts for. On the Hermes
+capture that difference is large enough to invert the comparison a reader would expect:
+`NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%)`. The instrument prints
+that line itself rather than leaving a reader to find a `fixed` figure larger than the request and
+distrust the whole table. Quote the wire row for what the network paid.
+
+In the four claims the instrument's own `--check-claims` pins — each one carrying the *direction*
+of its figure and not only the digits — the dsh arm's first request put `8225 bytes on the wire`;
+`fixed 1665 bytes, paid again on every later turn` is the system prompt plus three tool schemas;
+`model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from`; and
+`6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO
+model-input tokens`.
+
+Each of those claims used to be a bare figure, and the first published version of the sentence
+joining them was **wrong**: it named `8225 bytes on the wire` and then divided by it, while the
+`75.1%` had been computed over the 8680-byte body. 6519/8225 is 79.3%, so the sentence named one
+denominator and quoted the other's answer, and the gate passed because it only ever asked whether
+each figure *string* occurred in the prose. A review did the division. Both halves are fixed: the
+claim now says *of the body*, and `scripts/check_figures.sh` learned to read percentages at all.
 
 **The right-hand column of that table is why the instrument exists.** `dsh` sends two top-level
 fields that are not part of the Anthropic API — `dsh_session_log` and `dsh_plugin_packages` — and
@@ -265,7 +283,7 @@ instrument therefore checks its own split against the JSON structure: per-field 
 framing predicted from the keys** must equal the whole body exactly, and an unknown top-level field
 exits 4 naming itself rather than vanishing into a `.get()`.
 
-Three things it refuses to do, each with a committed artefact:
+Seven things it refuses to do, each with a committed artefact:
 
 | Sample | What it shows |
 |---|---|
@@ -273,6 +291,31 @@ Three things it refuses to do, each with a committed artefact:
 | `samples/measure_request_construction.unknown-field-REFUSED.out` | `UNKNOWN BODY FIELD(S): totally_new_vendor_field` — named, not dropped, exit 4 |
 | `samples/measure_request_construction.faithfulness-FAILED.out` | `--reference` against the wrong arm's capture: `REPRODUCTION FAILED`, with the field that differs named, exit 5 |
 | `samples/measure_request_construction.claims-drift-FAILED.out` | `DRIFT: a figure above is not in the prose`, exit 6 |
+| `samples/measure_request_construction.corrupt-REFUSED.out` | one unreadable line refuses the whole capture — a partial read shrinks every total, which is the one failure that looks like good news |
+| `samples/measure_request_construction.not-an-object-REFUSED.out` | a line that is valid JSON but the wrong shape: `is JSON but not an object (it is a list)`, naming the file and the line. It used to raise `AttributeError: 'list' object has no attribute 'get'` from `is_probe` and exit 1, which is not in this instrument's documented set of exit codes |
+| `samples/measure_request_construction.duplicate-key-REFUSED.out` | `repeats the JSON key(s) system` — `json.loads` keeps the last value, so a long system prompt silently became three bytes while the coverage invariant still held, because the *parsed* body really is self-consistent |
+| `samples/measure_request_construction.unparseable-REFUSED.out` | three requests the recorder could not parse, with their `144000 raw bytes between them` named. They carry no `tools` and no `messages`, so they were being filed as startup probes: real traffic not omitted but **mislabelled**, under a 100%-coverage banner, at exit 0 |
+
+**Both captures were taken twice, from separate processes, and `--reference` compared the second
+run against the committed first.** Hermes reproduced byte for byte: the second capture file is
+identical to the committed one, and `samples/measure_request_construction.hermes-rerun-faithful.out`
+ends `every field reproduces to the digit` at exit 0.
+
+dsh **failed the check**, at exit 5, and the failure is the more useful half
+(`samples/measure_request_construction.dsh-rerun-REPRODUCTION-FAILED.out`). Exactly two of the
+eight compared fields differ, by the same four bytes:
+
+```
+  provider_metadata_bytes            6515         6519  -4  <-- DIFFERS
+  model_input_bytes                  2161         2161  MATCH
+```
+
+The cause is `dsh_session_log`, which embeds the session id, and the two runs chose ids four
+characters apart. Everything else — `system_bytes`, `tools_bytes`, `conversation_bytes`,
+`n_tools`, and the model-input figure above — reproduces exactly. So the quantity a bill is
+computed from is stable across runs while the payload carrying it is not, which is the same
+distinction the provider-metadata split exists to make. The check refuses anyway, rather than
+calling four bytes close enough, and that is the behaviour worth having.
 
 `--reference` is the ported discipline that nothing built on a capture is believable until a fresh
 capture reproduces a stored one to the digit (`samples/measure_request_construction.faithful.out`
@@ -290,18 +333,43 @@ tokeniser would be both a dependency and a guess at the provider's own. Pass
 `NOT MEASURED -- no tokeniser given` rather than a byte/4 estimate
 (`samples/measure_request_construction.tokeniser-unavailable.out`). **Bytes are a proxy for tokens
 and the proxy is not uniform** — a tool-schema array is dense in JSON punctuation — so a bytes
-ratio between two arms is not their token ratio. Measured on these two captures with an externally
-installed tokeniser (`samples/measure_request_construction.tokens.out`), dsh's payload runs at
-`3.24 bytes/token` and Hermes's at `4.23 bytes/token`: a 30% difference in the proxy itself, which
-is exactly why the instrument will not apply it on your behalf.
+ratio between two arms is not their token ratio.
+
+Measured on these two captures with an externally installed tokeniser
+(`samples/measure_request_construction.tokens.out`), that non-uniformity is worth being careful
+about in a specific way. Over the **whole body** the two engines run at
+`3.24 bytes/token over the whole body` and `4.23 bytes/token over the whole body` — but three
+quarters of the dsh body is provider metadata and none of the Hermes body is, so most of that gap
+is the metadata's own density and not the engines'. Over **model input**, the quantity a bill is
+actually computed from, they are `4.11 bytes/token over MODEL INPUT` and
+`4.23 bytes/token over MODEL INPUT`. The instrument prints both, labelled, because a review found
+the whole-body pair quoted in a paragraph that was arguing about cost — where the model-input pair
+is the one that answers the question.
+
+That path has a limit worth stating plainly: `tiktoken` is deliberately not a dependency and is
+not installed on the box this was written on, so **no gate here executes the token code**. A
+review replaced the encoder with `len(bytes)//4` and every check in the repository stayed green
+while the output still called itself `tiktoken:cl100k_base`. What now runs is the one check that
+can run without the dependency — at load time the encoder is asked to count three probe strings,
+and if it returns exactly `len(bytes)//4` for all of them it is refused rather than labelled as a
+tokeniser. The sample itself is listed unreproducible in `scripts/regen_samples.sh` for the same
+reason, with the command that produced it recorded in its header.
 
 The controls are pinned the same way `flags.py`'s are, by reverting each fix and requiring a
 control to turn RED:
 
 ```
-REVERT-EACH-FIX GATE (request construction) -- 13 cases
-PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+REVERT-EACH-FIX GATE (request construction) -- 23 cases
+PASSED -- all 23 fixes are pinned: reverting any one of them turns a control RED.
 ```
+
+Ten of those twenty-three were added after an independent review of this branch returned
+**BLOCK**. Each reverts a fix to the implementation the review substituted and found the entire
+preflight green against — including `coverage_ok`'s `==` relaxed to `<=` (one character, and it
+passes every deficit, which is the only direction a dropped field can go), framing predicted as
+`len(key) + 2` (indistinguishable from the real thing for every short ASCII key, which is what
+every fixture used), and deriving the wire figure from the parsed body instead of reading what the
+recorder observed.
 
 That gate's **own first run was RED on 3 of its 13 cases**, and the run is kept at
 `samples/gate-evidence/test_request_construction_controls.RED.out`. One of the three is worth
@@ -343,6 +411,25 @@ fixtures above. Four things that verification established, none of which the doc
   while a session runs — matching the launcher name alone finds nothing. It also runs a *shared*
   gateway process that the same pattern matches, so for Hermes a tree **count** is session
   processes plus one gateway, not a session count. Both are said in the adapter's own note.
+
+The storage claims in those two notes are evidenced by
+`samples/engine_evidence.dsh-hermes-storage.out` — the on-disk tree, the two transcript schemas'
+record keys side by side, the empty Hermes sessions directory, and `state.db`'s table list with
+row counts — rather than asserted in a comment. A review found that the notes stated where each
+engine keeps its history while the only committed artefacts were about processes and request
+bytes, and that `check_figures.sh`'s adapter leg was satisfied by *any* tracked sample a note
+happened to name. The specific facts are now pinned to the file that shows them.
+
+**Both adapters match only the shape each engine was observed to have, and deliberately
+under-match.** Each originally carried a second, bare-name alternative — `dsh` or `hermes` as a
+word — to cover a launcher install that was never exercised here. As substrings those fired on
+ordinary command lines: `rm -rf /tmp/dsh`, `du -sh /mnt/data/dsh`, `ls -la /srv/hermes`,
+`tar -czf backup.tgz /var/lib/hermes`. Every one would have been reported as a live agent
+session, which is defect v3 in `docs/method.md` recreated in a new adapter, against that
+document's own rule to match structurally rather than by substring. The unexercised alternatives
+were removed rather than caveated: a launcher install is simply not matched, and
+`measure_session_footprint.py --list-unmatched` is how you find that out. Dropping them changed
+nothing about the committed run, whose `dsh` row was matched by the package's `bin.js` path.
 
 One thing that verification found about the *other* instruments, worth knowing before you trust a
 zero: `measure_session_footprint.py` folds a session into the tree of any matched engine that is
@@ -435,6 +522,15 @@ Two more things about those two lines, both found by running them (ARI#28):
   and failed on the very first gate — so that hook could never have passed, which is the
   less dangerous half of the same bug.
 
+- **Interrupting the suite can leave a mutating gate's subject replaced.**
+  `scripts/test_fixture_freshness.sh` swaps `scripts/regen_samples.sh` for a stub, checks that
+  the freshness gate notices, and restores it. Killed mid-run — a timeout, a `Ctrl-C` — it
+  restores nothing, and the *next* run of the suite fails with a confusing wall of "these
+  tracked samples are in neither list", because the table it reads is a seven-line stub. It
+  refuses to start if that file is already modified, which is the right guard and is also why
+  the recovery is easy: `git checkout -- scripts/regen_samples.sh`. Worth knowing before
+  debugging the wrong thing; it cost a detour here.
+
 Install both hooks, not just the first. A pre-commit run **cannot** see a new commit's
 author identity or its blobs in history, because neither exists yet when it runs — and a
 commit was pushed twice here carrying an identity the pre-commit run had no way to
@@ -472,6 +568,42 @@ run that exited 3, a census self-test that missed its decoys, the MCP counterfac
 a server which never connected, and `samples/gate-evidence/check_figures.RED.out` — the figure
 gate observed failing before the figures were corrected, because a gate whose first run is green
 tells you nothing.
+
+`scripts/check_figures.sh` itself got three changes out of the same review, each because the gate
+was demonstrated unable to fail:
+
+- **`samples/fixtures/` is excluded from the artefact search**, alongside
+  `samples/gate-evidence/`. Fixtures are instrument *inputs* — captured JSON bodies, and a
+  markdown file whose entire purpose is to hold a wrong figure for a drift gate to catch — and an
+  input is not evidence of anything. With this branch's two capture fixtures in the
+  searched corpus, the
+  engine-comparison table could be rewritten to claim `256000` wire bytes (a `max_tokens` value
+  inside the dsh fixture) with this gate and the whole preflight still green. Near-miss digit
+  flips were caught, so the gate had teeth only against values adjacent to the truth.
+- **Every instrument's `--help-blind` answer is now read as prose.** `docs/method.md`'s first rule
+  rests on that answer, and nothing checked the figures in it. One instrument's blind answer
+  stated its central finding using the *source study's* numbers — three bytes from this
+  repository's own in both numerator and total, and present in no artefact here — and reasoned a
+  factor-of-five conclusion from them. Thirteen instruments' answers are scanned now; the figures
+  that are not measurements are listed with reasons, same as the prose exemptions.
+- **The extractor reads percentages, and the citation guard ignores line breaks.** No pattern
+  matched a bare `75.1%` before, which is how a sentence that named one denominator and quoted
+  another's answer survived. Adding the pattern immediately surfaced a second, unrelated published
+  error — an `87%` swing that is 86% — which is the gate working on its first run. The
+  whitespace tolerance is the other half: pinning whole *clauses* rather than bare figures (so an
+  inversion cannot keep the digits and flip the verb) means every long claim wraps in markdown,
+  and a gate that fires on reflow is one that gets switched off.
+
+`scripts/preflight.sh` runs `--self-test` for every instrument that offers the flag, picking them
+up with no list to maintain — which means an instrument *without* the flag is silently not
+covered. `drive_dsh.py` was the only one in that position and now has nine checks, over the
+discovery logic where its real traps are: an explicitly-chosen node that is missing, one below the
+floor, one exactly *at* the floor, an unparseable version, and a launcher shim whose own node
+choice would make the version gate decide nothing. What it cannot cover — the handshake, the
+notification reader, the no-turn exit — needs a real Node ≥ 24.9.0 and the real package, so the
+evidence for those is the live run plus its verbatim event log
+(`samples/drive_dsh.live-events-redacted.out`), which makes that run's `"notifications": 16`
+countable rather than a verdict the file asserts about itself.
 
 ### Merging a reviewed branch into `main`
 

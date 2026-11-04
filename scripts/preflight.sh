@@ -38,6 +38,11 @@ if [ -z "$root" ] || [ ! -f "$root/scripts/check_figures.sh" ]; then
   exit 2
 fi
 cd "$root"
+# Say WHICH tree is being gated. A review's point, and it is this repo's own rule applied
+# to its own gate runner: "make a probe state its own ground". Run from a cwd inside a
+# different checkout, this would gate that checkout and print `preflight: OK` naming
+# nothing -- indistinguishable from having gated the tree you were looking at.
+echo "preflight: gating $root ($(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no branch'))"
 echo "preflight: figures"   && bash scripts/check_figures.sh    >/dev/null
 echo "preflight: scrub"     && bash scripts/scrub_check.sh --all >/dev/null
 echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null

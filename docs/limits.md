@@ -254,6 +254,51 @@ Stated so the gaps are visible rather than implied absent.
   state change" is the signal the literature actually names, and this instrument cannot see it
   yet.
 
+### `measure_request_construction.py` and `capture_proxy.py`
+
+- **Only the wire figure is an observation.** Every other column is computed over a
+  re-serialisation of the parsed body with `json.dumps`' default separators, and a client that
+  serialises compactly sends fewer bytes than the split accounts for. On the Hermes capture the
+  instrument prints `NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%)`
+  for exactly that reason. A per-field share of the raw wire bytes is not well defined without
+  re-parsing, so the split is of the normalisation and says so.
+- **This is the FIRST request of a run, which is the fixed cost — not a session.** The stub never
+  answers with anything the client can work from, so nothing requiring real model progress is
+  measurable here: no compaction, no context growth, no tool-use loop.
+- **A capture needs the client pointed at a non-first-party base URL, and for Claude Code that is
+  not a neutral act.** It disables tool-search deferral, measured in the source study at +49.5%
+  tokens. A proxied arm is a different configuration, not the same one observed.
+- **Some clients embed live git state in their own system prompt.** Hermes embeds cwd, branch,
+  status and recent commit subjects, so a Hermes capture is not reproducible across commits:
+  committing changes the payload. Freeze one git state for a batch, or capture outside a
+  repository, and say which you did. The committed fixture was taken outside one.
+- **`--check-claims` checks digits and the words around them, never meaning.** It asserts each
+  claim is PRESENT in the prose. Pinning whole clauses rather than bare figures raises the bar —
+  an inversion now has to delete the correct sentence to make room for itself, where before it
+  could keep every digit and flip the verb — but prose that keeps the correct sentence and adds a
+  contradicting gloss beside it still passes. A review demonstrated the bare-figure version of
+  this attack and it worked; nothing here reads meaning, and no gate in this repository does.
+- **The token columns have no executed coverage in this repository.** `tiktoken` is deliberately
+  not a dependency and is not installed on the box this was written on, so no gate runs the
+  encoding path. A review replaced the encoder with `len(bytes)//4` and every check stayed green
+  while the label still read `tiktoken:cl100k_base`. What runs now is a load-time guard that
+  refuses an encoder returning exactly `len(bytes)//4` on three probe strings; that rejects
+  division, and nothing more. The published bytes/token figures come from one externally
+  installed tiktoken, with the command recorded in the sample's own header.
+- **Whole-body bytes/token is not an engine property when the bodies differ in kind.** Three
+  quarters of the dsh body is provider metadata and none of the Hermes body is, so most of the
+  ~30% whole-body gap is the metadata's own density. On model input the two are within ~3%. Both
+  are printed, labelled; only the second is about cost.
+- **`capture_proxy.py` records header NAMES and never header values.** That is deliberate and it
+  is the one irreversible mistake available in that file, so it is pinned by a control. It does
+  mean a capture cannot tell you which credential a run used — by design.
+- **The engine adapters match the shape each engine was OBSERVED to have, and nothing else.** A
+  `dsh` installed as a launcher on PATH is not matched by the dsh adapter, and neither is the
+  `hermes` launcher: both were tried as bare-name patterns and both fired on unrelated command
+  lines mentioning a directory of that name (`rm -rf /tmp/dsh`, `ls -la /srv/hermes`). The
+  unexercised alternatives were removed rather than kept and caveated, so the adapters under-match
+  rather than over-match. `measure_session_footprint.py --list-unmatched` is how you find out.
+
 ## Not evaluated at all
 
 No sandbox or microVM platform was measured. No hosted agent rail was called. Nothing here

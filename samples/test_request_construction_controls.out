@@ -1,4 +1,4 @@
-REVERT-EACH-FIX GATE (request construction) -- 13 cases
+REVERT-EACH-FIX GATE (request construction) -- 23 cases
 Each reverts one fix to the simpler code somebody would really write; a control must turn RED.
 
 baseline: the unmutated copies of both files PASS their self-tests, so a RED below is caused by the mutation
@@ -15,7 +15,17 @@ C9-claims-whitespace-exact         RED   -- FAIL  the gate fired on reflowed pro
 C10-faithfulness-always-ok         RED   -- FAIL  faithfulness passed against a different capture
 C11-empty-reference-passes         RED   -- FAIL  a probe-only reference was treated as checkable
 C12-recorder-logs-header-values    RED   -- FAIL  an Authorization header VALUE reached the capture file
+C14-no-shape-check-at-the-door     RED   -- FAIL  a record that is a list raised AttributeError instead of refusing
+C15-shape-fault-skips-the-line     RED   -- FAIL  a record that is a list -> exit 2, errors=['capture file is empty (0 requests): /t
+C16-duplicate-keys-lost-silently   RED   -- FAIL  duplicate key -> exit 0, errors=[]
+C17-unparseable-measured-around    RED   -- FAIL  unparseable records -> exit 0, probes=0, errors=[]
+C18-unparseable-is-a-probe         RED   -- FAIL  is_probe() still calls an unparseable body a startup probe
+C19-coverage-allows-a-deficit      RED   -- FAIL  coverage_holds admits an inequality: deficit=True surplus=False
+C20-framing-ignores-key-escaping   RED   -- FAIL  awkward keys: coverage_ok=False residual=15 framing=69 naive=69
+C21-developer-role-as-conversation RED   -- FAIL  role=developer treated as conversation: system=0 (vs 46 for role=system), msgs=2
+C22-tokeniser-guard-not-consulted  RED   -- FAIL  len(bytes)//4 passed as a tokeniser: fn=<function make_counter.<locals>.count at 0
+C23-wire-bytes-re-derived          RED   -- FAIL  published columns disagree with hand arithmetic: got {'system_bytes': 12, 'tools_b
 C13-recorder-keepalive-sse         RED   -- FAIL  streaming reply did not terminate with message_stop
 
-PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+PASSED -- all 23 fixes are pinned: reverting any one of them turns a control RED.
 exit=0

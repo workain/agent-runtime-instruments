@@ -1,0 +1,51 @@
+CONFOUNDS -- printed every run, because each of these makes this number true about the RUN and false about the ENGINE:
+  * A capture needs the client pointed at a NON-FIRST-PARTY base URL, and for Claude Code that is not a neutral act: it DISABLES tool-search deferral, which the source study measured at +49.5% tokens. A proxied Claude Code arm is a different configuration from a first-party one, not the same one observed.
+  * Some clients embed LIVE GIT STATE in their own system prompt -- Hermes embeds cwd, branch, status and recent commit SUBJECTS. Such a capture is NOT reproducible across commits: committing changes the payload. Freeze one git state for a batch, or capture outside a repository, and say which you did.
+  * A field PRESENT in a payload is not necessarily billed as model input. Check the vendor's own documentation per field before counting it; see PROVIDER_METADATA in this file for the two that are documented at zero.
+  * The model never answers, so nothing that needs real model progress is measurable here: no compaction, no context growth across turns, no tool-use loop. This is the FIRST request, which is the fixed cost -- not a whole session.
+
+tokens:    NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
+requests: 4 captured, 2 measurable, 2 startup probes (a probe is not a turn)
+100% field coverage verified on all 2 measurable requests
+
+arm / first request        wire B     body B   fixed B   convo B    meta B   tools   msgs
+-----------------------------------------------------------------------------------------
+hermes                      48820      49655     49426        84         0      20      1
+  fixed B = system + tools, the part paid on EVERY turn; convo B = everything else in `messages`.
+
+FIRST REQUEST -- arm 'hermes', endpoint /v1/chat/completions, model named 'capture-proxy-stub'
+    tools                       37439 B
+    messages                    12071 B
+    stream_options                 23 B
+    model                          20 B
+    reasoning_effort                8 B
+    stream                          4 B
+    (json framing)                 90 B  (braces, quoted keys, separators)
+    TOTAL                       49655 B  = the whole body, with nothing unaccounted
+    20 tool schema(s) exposed, 1 message(s) in the conversation
+    wire 48820 B vs normalised body 49655 B (ratio 0.983). The split above is of the NORMALISED serialization:
+      a per-field share of the raw wire bytes is not well defined without re-parsing, and the two differ by the
+      client's own separator and escaping choices. Quote `wire B` for what the network paid.
+    NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%). Not an error: this client serialises more
+      compactly than json.dumps' default separators, so the normalised split is larger than what was sent. `wire B` is the observation; the rest is a re-serialisation.
+    provider metadata 0 B: this client sends none, so model input and whole body are the SAME number here
+    MODEL INPUT 49655 B -- the quantity a per-token bill is computed from
+    tokens: NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
+PER MODEL NAMED IN THE REQUEST ITSELF -- never one assumed model for the whole capture:
+  capture-proxy-stub           2 request(s)  model input     51061 B  provider metadata        0 B
+
+FAITHFULNESS of this capture against samples/fixtures/request_construction.hermes.jsonl
+  (first measurable request of each; a fresh capture that cannot reproduce
+   a stored one to the digit makes everything built on it unbelievable)
+  field                              this    reference
+  system_bytes                      11987        11987  MATCH
+  tools_bytes                       37439        37439  MATCH
+  conversation_bytes                   84           84  MATCH
+  provider_metadata_bytes               0            0  MATCH
+  model_input_bytes                 49655        49655  MATCH
+  body_bytes                        49655        49655  MATCH
+  n_tools                              20           20  MATCH
+  n_messages                            1            1  MATCH
+  -> every field reproduces to the digit

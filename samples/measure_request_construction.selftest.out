@@ -17,6 +17,7 @@
   PASS  with no metadata present, model input == the whole body (no phantom deduction)
 == 7. both protocols normalise into the same columns ==
   PASS  an Anthropic top-level `system` and an OpenAI role=system message both land in the system column, and neither is counted as conversation
+  PASS  a `role: developer` message lands in the SAME column as `role: system` (49 B vs 46 B, the 3-byte difference being the role NAME) and the conversation column is identical -- the spelling OpenAI documents today
 == 8. the model is read per request, not assumed for the capture ==
   PASS  three requests naming two models and no model -> three groups, including <ABSENT> rather than a default
 == 9. faithfulness: reproducing passes, substituting another arm FAILS ==
@@ -27,11 +28,31 @@
   PASS  every claim found even though one WRAPPED across a line break -- the gate is whitespace-insensitive, which is why it does not cry wolf at reflow
   PASS  a changed digit IS caught -- so the whitespace tolerance did not cost the gate its teeth
   PASS  a missing prose file is CANNOT CHECK, not a pass
-== 11. a corrupt capture line is refused, not partially measured ==
+== 11. a capture line this reader cannot READ is refused, not measured around ==
   PASS  one unreadable line refuses the whole capture (a partial read would silently shrink every total)
+  PASS  a record that is a list -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  a record that is a string -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  a `body` that is a list -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  a `body` that is a string -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  `body: null` is still a PROBE, not a structural fault -- the check refuses the wrong shape without refusing a legitimate record
+  PASS  a REPEATED top-level key is named and refused (json.loads keeps the last value, so a 10 KB system prompt silently became 3 bytes with coverage green)
+== 11b. the four columns the README publishes, against hand arithmetic ==
+  PASS  hand-computed columns all match: system 12 + tools 15 = fixed 27 B, 1 tool, 1 message, and wire 12345 B read from the RECORD (not re-derived from the body, which is 113 B here -- so the two are now distinguishable)
+  PASS  no overrun note when model input is below the wire figure
+  PASS  when the normalised split EXCEEDS the wire figure, the report says so (unflagged, `fixed B` larger than `wire B` reads as a broken instrument)
 == 12. an unavailable tokeniser is a reported state, never a crash ==
   PASS  a malformed --tokeniser spec is refused with a reason
   PASS  an unsupported tokeniser module is refused with a reason
+  PASS  an encoder that is really len(bytes)//4 is REFUSED by the LOAD PATH rather than labelled tiktoken:cl100k_base -- the guard and its call site, not just the predicate
+  PASS  ...and the predicate itself says so when called directly
+  PASS  a function that is NOT division passes the same guard (it rejects bytes/4, not every tokeniser it has not seen)
+== 13. an UNPARSEABLE recorded body is refused, never filed as a probe ==
+  PASS  3 unparseable records refuse the capture and their 144000 raw bytes are NAMED (they used to be reported as startup probes, with exit 0)
+  PASS  is_probe() says an unparseable body is NOT a probe, which is the one-line distinction the whole refusal rests on
+== 14. the coverage invariant's own COMPARISON, pinned ==
+  PASS  coverage_holds is exact equality: a 10-byte DEFICIT fails and a 10-byte SURPLUS fails (`<=` would pass the deficit, which is the dropped-field case)
+== 15. framing is right for keys that are not plain ASCII words ==
+  PASS  multibyte and escape-needing keys: coverage still exact, and framing 84 B differs from the len(key)+2 shortcut's 69 B -- so the shortcut is a DETECTABLE revert
 
-self-test: 22 pass, 0 fail
+self-test: 39 pass, 0 fail
 exit=0
