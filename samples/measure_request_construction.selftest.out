@@ -1,0 +1,37 @@
+== 1. nothing to measure must NOT render as a plausible zero ==
+  PASS  a missing capture -> exit 2 and NO-MEASUREMENT
+  PASS  an EMPTY capture -> exit 2 and NO-MEASUREMENT
+== 2. a capture of nothing but startup probes is NO MEASUREMENT ==
+  PASS  2 probes, 0 turns -> exit 2, and the probe COUNT is reported (counting lines would have called this a measurement)
+== 3. the measurement discriminates: a known delta is reported as that delta ==
+  PASS  +500 content bytes measured as exactly +500 (220 -> 720)
+== 4. 100% field coverage, and it must BITE when a field is dropped ==
+  PASS  fields + predicted framing == whole body, exactly
+  PASS  the split NAMES every top-level field (5 of 5) -- a narrowed system/tools/messages decomposition fails here even if its own arithmetic closes
+  PASS  framing is a function of the KEYS alone (60 B either way) -- it cannot absorb a dropped field, which is what makes the invariant falsifiable
+  PASS  dropping `tools` from the split BREAKS the invariant (50 + 60 != 125)
+== 5. an UNKNOWN top-level field fails LOUDLY and names itself ==
+  PASS  unknown field -> exit 4 and the field is named
+== 6. provider metadata is EXCLUDED from model input, and the split bites ==
+  PASS  model input == body - provider metadata, and the metadata is non-zero (759 B) so the fixture can tell the two apart
+  PASS  with no metadata present, model input == the whole body (no phantom deduction)
+== 7. both protocols normalise into the same columns ==
+  PASS  an Anthropic top-level `system` and an OpenAI role=system message both land in the system column, and neither is counted as conversation
+== 8. the model is read per request, not assumed for the capture ==
+  PASS  three requests naming two models and no model -> three groups, including <ABSENT> rather than a default
+== 9. faithfulness: reproducing passes, substituting another arm FAILS ==
+  PASS  a capture checked against ITSELF reproduces every field
+  PASS  checked against a DIFFERENT arm's capture it fails and names the field (so the check can fail, which is the only reason to trust it passing)
+  PASS  a reference with no measurable request is CANNOT CHECK, not a pass
+== 10. claim drift, and it must NOT fire on reflowed prose ==
+  PASS  every claim found even though one WRAPPED across a line break -- the gate is whitespace-insensitive, which is why it does not cry wolf at reflow
+  PASS  a changed digit IS caught -- so the whitespace tolerance did not cost the gate its teeth
+  PASS  a missing prose file is CANNOT CHECK, not a pass
+== 11. a corrupt capture line is refused, not partially measured ==
+  PASS  one unreadable line refuses the whole capture (a partial read would silently shrink every total)
+== 12. an unavailable tokeniser is a reported state, never a crash ==
+  PASS  a malformed --tokeniser spec is refused with a reason
+  PASS  an unsupported tokeniser module is refused with a reason
+
+self-test: 22 pass, 0 fail
+exit=0

@@ -1,0 +1,44 @@
+engine adapters VERIFIED (run and output kept): claude-code, claude-code-acp, codex, dsh, hermes
+engine adapters UNTESTED (believed, not measured): goose, aider, opencode, cursor-agent
+  -> for an UNTESTED engine, a zero here means 'this adapter found nothing', which is NOT evidence the engine was absent. See instruments/engines.py.
+
+root pid procs   RSS MB   PSS MB     cpu_s kind                                     tag
+ 3653539     3      513      383         5 claude-code                              
+ 3651706     3      512      382         5 claude-code                              
+ 3652115     3      512      382         5 claude-code                              
+ 3653883     3      510      380         6 claude-code                              
+ 3654175     3      469      342         5 claude-code                              
+ 3636543     1      254      242        13 hermes                                   
+ 3632311     1      250      240        26 hermes                                   
+ 3654826     1      133      128         1 dsh                                      
+ 3655206     1       66       54         0 hermes                                   
+ 3614736     8      511      377        38 claude-code-acp                          
+ 3287272     6      397      313       300 claude-code-acp                          
+ 3276401     6      406      326       267 claude-code-acp                          
+ 3023906     6      341      268       356 claude-code-acp                          
+ 1368571     6      109       63       952 claude-code-acp                          
+ 2475441     6      207      142      1330 claude-code-acp                          
+ 2709320     6      264      200      1806 claude-code-acp                          
+ 1176430     6      201      138      1639 claude-code-acp                          
+ 2799600     6      204      145      2029 claude-code-acp                          
+ 4171907     6      196      134      1730 claude-code-acp                          
+  317487     6      106       64      2625 claude-code-acp                          
+  317921     6      102       60      2562 claude-code-acp                          
+  319121     6      100       59      2521 claude-code-acp                          
+  318922     6      172      129      2493 claude-code-acp                          
+  318574     6      169      125      2507 claude-code-acp                          
+  318915     6      166      123      2522 claude-code-acp                          
+  478713     6      192      138      2467 claude-code-acp                          
+  500253     6      208      154      2627 claude-code-acp                          
+
+session trees: 27
+summed RSS: 7269 MB   summed PSS: 5490 MB (PSS/RSS = 0.76)
+per-session RSS  p50=207 MB  max=513 MB
+per-session PSS  p50=145 MB  max=383 MB
+procs per session p50=6
+
+MemTotal: 15987 MB
+MemAvailable: 7507 MB
+SwapTotal: 32768 MB
+SwapFree: 25112 MB
+Committed_AS: 21612 MB

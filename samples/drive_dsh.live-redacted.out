@@ -1,0 +1,52 @@
+This is a LIVE dsh run, committed with this box's absolute paths replaced post-hoc by
+<REDACTED-ABSOLUTE-PATH> and message ids by <redacted-identifier>. It is therefore NOT output of
+the current code verbatim, and not reproducible: `elapsed_s` is a live timing and the paths are
+this machine's. It is kept as the evidence that a dsh turn was really driven here -- 16 server
+notifications over the SDK stdio JSON-RPC rail, on node v24.21.0 -- which is what
+instruments/engines.py's honesty rule requires before dsh may be marked verified=True.
+
+The request that this turn constructed is committed unredacted-in-figures as
+samples/fixtures/request_construction.dsh.jsonl (same treatment: placeholders are the SAME BYTE
+LENGTH as what they replace, so every byte count is the real one).
+
+--- verbatim, paths redacted ---
+{
+  "node": "v24.21.0",
+  "dsh": "<REDACTED-ABSOLUTE-PATH>/@deepseek-ai/dsh/lib/bin.js",
+  "profile": "sdk-minimal",
+  "model": "deepseek-flash",
+  "provider": "deepseek-official",
+  "cwd": "/tmp/ari28/cwd",
+  "dsh_home": "/tmp/ari28/dshhome/j",
+  "session_id": "ari28-J",
+  "initialize": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "serverInfo": {
+        "name": "deepseek-harness-sdk-runtime",
+        "version": "0.0.1"
+      }
+    }
+  },
+  "prompt": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "messageId": "<redacted-identifier>"
+    }
+  },
+  "wait": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {}
+  },
+  "held_seconds": 180,
+  "elapsed_s": 181.2,
+  "notifications": 16,
+  "methods": [
+    "session.event",
+    "session.status"
+  ],
+  "verdict": "drove a turn"
+}

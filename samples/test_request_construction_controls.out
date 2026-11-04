@@ -1,0 +1,21 @@
+REVERT-EACH-FIX GATE (request construction) -- 13 cases
+Each reverts one fix to the simpler code somebody would really write; a control must turn RED.
+
+baseline: the unmutated copies of both files PASS their self-tests, so a RED below is caused by the mutation
+
+C1-three-columns-and-remainder-framing RED   -- FAIL  the split omits ['model', 'stream']
+C2-coverage-three-columns          RED   -- FAIL  coverage invariant did not hold on a clean fixture
+C3-probe-counts-as-turn            RED   -- FAIL  probe-only capture -> exit 4, probes=0
+C4-unknown-field-ignored           RED   -- FAIL  unknown field -> exit 0, unknown=[]
+C5-metadata-billed-as-input        RED   -- FAIL  provider-metadata split wrong: meta=759 reported=759
+C6-openai-system-as-conversation   RED   -- FAIL  protocol normalisation failed: anth system=13 oai system=0, msgs 1/2
+C7-one-assumed-model               RED   -- FAIL  per-model grouping wrong: ['model-a']
+C8-corrupt-line-skipped            RED   -- FAIL  a corrupt capture was measured anyway: exit 0
+C9-claims-whitespace-exact         RED   -- FAIL  the gate fired on reflowed prose: PUBLISHED-CLAIM CHECK against /tmp/ari-mrc-selft
+C10-faithfulness-always-ok         RED   -- FAIL  faithfulness passed against a different capture
+C11-empty-reference-passes         RED   -- FAIL  a probe-only reference was treated as checkable
+C12-recorder-logs-header-values    RED   -- FAIL  an Authorization header VALUE reached the capture file
+C13-recorder-keepalive-sse         RED   -- FAIL  streaming reply did not terminate with message_stop
+
+PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+exit=0

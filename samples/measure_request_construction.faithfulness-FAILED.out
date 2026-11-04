@@ -1,0 +1,23 @@
+CONFOUNDS -- printed every run, because each of these makes this number true about the RUN and false about the ENGINE:
+  * A capture needs the client pointed at a NON-FIRST-PARTY base URL, and for Claude Code that is not a neutral act: it DISABLES tool-search deferral, which the source study measured at +49.5% tokens. A proxied Claude Code arm is a different configuration from a first-party one, not the same one observed.
+  * Some clients embed LIVE GIT STATE in their own system prompt -- Hermes embeds cwd, branch, status and recent commit SUBJECTS. Such a capture is NOT reproducible across commits: committing changes the payload. Freeze one git state for a batch, or capture outside a repository, and say which you did.
+  * A field PRESENT in a payload is not necessarily billed as model input. Check the vendor's own documentation per field before counting it; see PROVIDER_METADATA in this file for the two that are documented at zero.
+  * The model never answers, so nothing that needs real model progress is measurable here: no compaction, no context growth across turns, no tool-use loop. This is the FIRST request, which is the fixed cost -- not a whole session.
+
+tokens:    NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
+
+FAITHFULNESS of this capture against samples/fixtures/request_construction.hermes.jsonl
+  (first measurable request of each; a fresh capture that cannot reproduce
+   a stored one to the digit makes everything built on it unbelievable)
+  field                              this    reference
+  system_bytes                         48        11987  -11939  <-- DIFFERS
+  tools_bytes                        1617        37439  -35822  <-- DIFFERS
+  conversation_bytes                  278           84  +194  <-- DIFFERS
+  provider_metadata_bytes            6519            0  +6519  <-- DIFFERS
+  model_input_bytes                  2161        49655  -47494  <-- DIFFERS
+  body_bytes                         8680        49655  -40975  <-- DIFFERS
+  n_tools                               3           20  -17  <-- DIFFERS
+  n_messages                            1            1  MATCH
+  -> REPRODUCTION FAILED: see CONFOUNDS above before concluding the engine changed
+exit=5

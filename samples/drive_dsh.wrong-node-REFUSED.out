@@ -1,0 +1,2 @@
+CANNOT DRIVE: ARI_DSH_NODE=/nonexistent/node24/bin/node is not a file. Refusing rather than falling back to the node on PATH: an explicitly chosen interpreter that is wrong must not be silently replaced, because dsh on the wrong node produces ZERO output and exits 0.
+exit=2

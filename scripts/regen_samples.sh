@@ -81,6 +81,24 @@ flags.threshold-zero-REFUSED.out	instruments/flags.py	refu	--flag-repeated-calls
 bench_window_read.selftest.out	instruments/bench_window_read.py	refu	--self-test
 test_flags_controls.out	scripts/test_flags_controls.py	refu	
 bench_window_read.empty-corpus-REFUSED.out	instruments/bench_window_read.py	env	ROOTS=/nonexistent/ari24 --top 3
+measure_request_construction.dsh.out	instruments/measure_request_construction.py	run	samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.hermes.out	instruments/measure_request_construction.py	run	samples/fixtures/request_construction.hermes.jsonl
+measure_request_construction.both.out	instruments/measure_request_construction.py	run	samples/fixtures/request_construction.dsh.jsonl samples/fixtures/request_construction.hermes.jsonl
+measure_request_construction.json.out	instruments/measure_request_construction.py	run	--json samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.faithful.out	instruments/measure_request_construction.py	run	--reference samples/fixtures/request_construction.dsh.jsonl samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.claims.out	instruments/measure_request_construction.py	run	--check-claims README.md samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.tokeniser-unavailable.out	instruments/measure_request_construction.py	run	--tokeniser tiktoken:cl100k_base samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.selftest.out	instruments/measure_request_construction.py	refu	--self-test
+measure_request_construction.no-args-REFUSED.out	instruments/measure_request_construction.py	refu	
+measure_request_construction.no-capture-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.missing.jsonl
+measure_request_construction.probes-only-NO-MEASUREMENT.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.probes-only.jsonl
+measure_request_construction.unknown-field-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.unknown-field.jsonl
+measure_request_construction.corrupt-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.corrupt.jsonl
+measure_request_construction.faithfulness-FAILED.out	instruments/measure_request_construction.py	refu	--reference samples/fixtures/request_construction.hermes.jsonl samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.claims-drift-FAILED.out	instruments/measure_request_construction.py	refu	--check-claims samples/fixtures/request_construction.claims-drifted.md samples/fixtures/request_construction.dsh.jsonl
+capture_proxy.selftest.out	instruments/capture_proxy.py	refu	--self-test
+drive_dsh.wrong-node-REFUSED.out	instruments/drive_dsh.py	env	ARI_DSH_NODE=/nonexistent/node24/bin/node --prompt-file README.md --cwd . --patch README.md --events /dev/null --stderr /dev/null --dsh-home /tmp/ari-dsh-refused
+test_request_construction_controls.out	scripts/test_request_construction_controls.py	refu	
 EOF
 )
 
@@ -105,6 +123,10 @@ measure_session_footprint.out	live RSS/PSS and pids read from /proc
 bench_window_read.out	reads the running machine's own transcript roots, and reports wall-clock; both the corpus and the timings differ on every run (the files grow while the fleet works, including this session's own)
 bench_window_read.first-chunk-sweep.out	same live corpus as bench_window_read.out -- the byte totals move as the transcripts grow
 gate-evidence/check_figures.RED.out	not output of the current code at all: it records what check_figures.sh PRINTED while RED, stale figures included. See that directory's own header -- an artefact of a FAILURE is not an artefact of a MEASUREMENT
+measure_session_footprint.dsh-hermes.out	live RSS/PSS and pids of real dsh and hermes process trees, read from /proc while they ran
+drive_dsh.live-redacted.out	a live dsh run: embeds this box's absolute node/package paths, so it is committed with those paths replaced post-hoc (see its own header). Its elapsed time is a live timing too
+measure_request_construction.tokens.out	needs a tiktoken install, which is deliberately NOT a dependency of this repository -- the reproducible counterpart is measure_request_construction.tokeniser-unavailable.out
+gate-evidence/test_request_construction_controls.RED.out	not output of the current code at all: it records what the controls gate printed on its FIRST run, while 3 of 13 fixes were still unprotected. See that directory's own header
 EOF
 )
 

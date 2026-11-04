@@ -1,0 +1,2 @@
+{"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "raw_bytes": 125, "header_names": ["content-type"], "body": {"model": "m", "system": "SYS", "tools": [{"name": "t"}], "messages": [{"role": "user", "content": "hello"}], "stream": true}}
+{not json at all

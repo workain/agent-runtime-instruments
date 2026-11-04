@@ -72,9 +72,14 @@ with the reproduction for each.
 | `measure_token_breakdown.py` | where a session's tokens went, by tool / subagent / subsession, plus mechanical loop flags | free, reads transcripts |
 | `flags.py` | the same detectors as **named, callable flag functions** over a *recent window* of one transcript, for a caller polling a live session | free, reads part of one transcript |
 | `bench_window_read.py` | what that windowed read actually costs vs parsing the whole file | free, reads transcripts |
+| `measure_request_construction.py` | what a client **puts in every request** — the fixed per-turn part, and which of it is billed | free, reads a capture |
 
 `instruments/echo_mcp_server.py` is a 60-line stdio MCP server with one tool, so
 `bench_mcp_connect.py` runs out of the box without access to anyone's private servers.
+`instruments/capture_proxy.py` is the same idea for `measure_request_construction.py`: a
+loopback endpoint that records what a client sends and never calls a provider, so a capture
+costs $0.00 by construction. `instruments/drive_dsh.py` drives one DeepSeek Harness turn
+headlessly, which nothing else can do — see the engine table below for why.
 `instruments/engines.py` is the engine adapter table — see below.
 
 All take `--help` and `--help-blind`; most take `--anonymise`, which hashes session identifiers
@@ -222,15 +227,128 @@ Extending the buffer rather than re-reading has since flattened that curve, so t
 and markedly more expensive in syscalls; 1 MB is kept for the property that is stable. It is a per-call parameter, because
 the optimum is a property of how many bytes a turn takes in your own corpus.
 
+### `measure_request_construction.py` — what the client *constructs*, not what the transcript says
+
+Everything above reads a session after the fact. This reads the other end: the request bodies a
+client actually puts on the wire, captured by `instruments/capture_proxy.py` before any provider
+sees them. No upstream call is ever made, so a capture costs nothing — and nothing that needs the
+model to make progress (compaction, context growth) is measurable this way. What *is* measurable
+is the **fixed part of every turn**: the system prompt plus the tool schemas.
+
+Two real captures are committed as fixtures, one per newly-verified engine, measured at a
+non-repository working directory on one box:
+
+| | DeepSeek Harness (`sdk-minimal`) | Hermes (custom OpenAI provider) |
+|---|---|---|
+| wire bytes, first request | `8225` | `48820` |
+| fixed per-turn part (system + tools) | `fixed 1665 bytes` | `49426` B |
+| tools exposed | 3 | 20 |
+| model-input bytes | `model input 2161 bytes` | `49655` B |
+| provider metadata | `6519 bytes (75.1%) of provider metadata` | none at all |
+
+In the one sentence the instrument's own `--check-claims` pins: the dsh arm's first request put
+`8225 bytes on the wire`, of which `fixed 1665 bytes` is the system prompt plus three tool schemas
+that every later turn pays again, `model input 2161 bytes` is what a per-token bill is computed
+from, and `6519 bytes (75.1%) of provider metadata` is charged to the network and to nothing else.
+
+**The right-hand column of that table is why the instrument exists.** `dsh` sends two top-level
+fields that are not part of the Anthropic API — `dsh_session_log` and `dsh_plugin_packages` — and
+on this capture they are **75.1% of the body**. The vendor's own installed documentation says both
+cost *"Zero model-input tokens"* and *"only increase HTTP request bytes"*; those quotations are in
+`instruments/measure_request_construction.py` beside the set that encodes them. Counting them as
+model input is not a rounding error: in the study this was ported from it inverted the published
+headline's sign, from *cheaper* to *more expensive*, on identical bytes.
+
+So a decomposition that knows only `system`/`tools`/`messages` would have reported a quarter of
+that payload as the whole request, printing a complete-looking table with no symptom. The
+instrument therefore checks its own split against the JSON structure: per-field bytes **plus
+framing predicted from the keys** must equal the whole body exactly, and an unknown top-level field
+exits 4 naming itself rather than vanishing into a `.get()`.
+
+Three things it refuses to do, each with a committed artefact:
+
+| Sample | What it shows |
+|---|---|
+| `samples/measure_request_construction.probes-only-NO-MEASUREMENT.out` | a **real** capture of a run in which the agent never constructed a turn — only Hermes's two startup probes. Counting capture *lines* would have called that a measurement; it says `NONE is measurable` and exits 2. |
+| `samples/measure_request_construction.unknown-field-REFUSED.out` | `UNKNOWN BODY FIELD(S): totally_new_vendor_field` — named, not dropped, exit 4 |
+| `samples/measure_request_construction.faithfulness-FAILED.out` | `--reference` against the wrong arm's capture: `REPRODUCTION FAILED`, with the field that differs named, exit 5 |
+| `samples/measure_request_construction.claims-drift-FAILED.out` | `DRIFT: a figure above is not in the prose`, exit 6 |
+
+`--reference` is the ported discipline that nothing built on a capture is believable until a fresh
+capture reproduces a stored one to the digit (`samples/measure_request_construction.faithful.out`
+is the passing side). `--check-claims` is its prose counterpart — every headline figure measured
+must be quoted in a prose file — and it compares **whitespace-insensitively**, because the gate it
+came from once failed purely on a claim that had wrapped across a markdown line break.
+`samples/measure_request_construction.claims.out` checks this README and ends
+`every figure measured here is quoted in the prose`; the RED side's fixture gets one digit wrong
+*and* wraps a correct claim across a line break, so the only thing the gate can be firing on is the
+drift.
+
+Bytes, not tokens, are the measured unit: this repository has no dependencies and a bundled
+tokeniser would be both a dependency and a guess at the provider's own. Pass
+`--tokeniser tiktoken:cl100k_base` and tokens appear; without it the token column says
+`NOT MEASURED -- no tokeniser given` rather than a byte/4 estimate
+(`samples/measure_request_construction.tokeniser-unavailable.out`). **Bytes are a proxy for tokens
+and the proxy is not uniform** — a tool-schema array is dense in JSON punctuation — so a bytes
+ratio between two arms is not their token ratio. Measured on these two captures with an externally
+installed tokeniser (`samples/measure_request_construction.tokens.out`), dsh's payload runs at
+`3.24 bytes/token` and Hermes's at `4.23 bytes/token`: a 30% difference in the proxy itself, which
+is exactly why the instrument will not apply it on your behalf.
+
+The controls are pinned the same way `flags.py`'s are, by reverting each fix and requiring a
+control to turn RED:
+
+```
+REVERT-EACH-FIX GATE (request construction) -- 13 cases
+PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.
+```
+
+That gate's **own first run was RED on 3 of its 13 cases**, and the run is kept at
+`samples/gate-evidence/test_request_construction_controls.RED.out`. One of the three is worth
+reading: defining JSON framing as `whole - sum(fields)` is *arithmetically identical* to predicting
+it from the keys whenever the split is complete, so reverting that alone changes nothing — it is
+only the enabler. The case now reverts it **together** with the narrowed split, which is the
+implementation somebody would really write, and a new control requires the split to NAME every
+top-level field.
+
 ### Which engines are actually supported
 
 `instruments/engines.py` holds one adapter per engine, and **every instrument prints which
 adapters are measured and which are guesses, on every run**:
 
-- **Verified** (run, with output kept in `samples/`): Claude Code, its ACP host, Codex.
+- **Verified** (run, with output kept in `samples/`): Claude Code, its ACP host, Codex,
+  **DeepSeek Harness (`dsh`)** and **Hermes**.
 - **Untested adapters** — patterns we believe from documentation, *not* measurements: goose,
   aider, opencode, cursor-agent. Each says in the file why it may be wrong (opencode is
   client/server, so its sessions are probably not separate processes at all).
+
+`dsh` and `hermes` were added by running them, on one box, against `capture_proxy.py` — no
+credential, no spend. The process evidence is `samples/measure_session_footprint.dsh-hermes.out`,
+a live snapshot in which both appear as matched trees; the request evidence is the two capture
+fixtures above. Four things that verification established, none of which the documentation says:
+
+- **`dsh` needs Node ≥ 24.9.0 and on an older node it produces zero output and exits 0** — no
+  error, nothing to grep. `drive_dsh.py` therefore refuses up front rather than launching it, and
+  an explicitly-named node that is wrong is refused instead of being silently replaced by whatever
+  is on `PATH` (`samples/drive_dsh.wrong-node-REFUSED.out`).
+- **`dsh`'s transcript lives at `$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl`**,
+  read off disk rather than from documentation. It is *not* the Claude Code transcript schema, so
+  this repo's transcript readers cannot parse it; the path is recorded because that is where the
+  data is, not because they can.
+- **Hermes has no transcript files at all**, so its adapter's `transcripts` is `None` rather than a
+  directory that is always empty: a session's history goes into `$HERMES_HOME/state.db` (SQLite,
+  tables `sessions`/`messages`), and `$HERMES_HOME/sessions` stayed empty across a verified run.
+  Every transcript-reading instrument here is therefore structurally inapplicable to Hermes.
+- **Hermes's launcher `exec`s into an inline Python bootstrap**, so `argv[0]` stops being `hermes`
+  while a session runs — matching the launcher name alone finds nothing. It also runs a *shared*
+  gateway process that the same pattern matches, so for Hermes a tree **count** is session
+  processes plus one gateway, not a session count. Both are said in the adapter's own note.
+
+One thing that verification found about the *other* instruments, worth knowing before you trust a
+zero: `measure_session_footprint.py` folds a session into the tree of any matched engine that is
+its **ancestor**. A `dsh` launched from inside a Claude Code shell is counted under Claude Code and
+no `dsh` row appears at all — which looks exactly like an adapter that does not match. Launch it
+detached (`setsid`) when the per-engine row is what you want.
 
 For an untested engine, a zero means "this adapter found nothing", which is **not** evidence the
 engine was absent. If you run one and it works, flipping that flag and adding your output is the
@@ -299,6 +417,23 @@ Verify both symlinks resolve. A **dangling** hook symlink is silently skipped by
 `git push` exits 0 with no warning — so a reader following these two lines against a file
 that isn't in the repo installs nothing while being told they are covered. That happened
 here.
+
+Two more things about those two lines, both found by running them (ARI#28):
+
+- **In a linked worktree the `ln` fails outright**, because `.git` there is a *file*. Hooks
+  live in the main checkout's `.git/hooks`, which every worktree shares — so install the
+  symlink there and let `preflight.sh` work out which tree is being committed, which it now
+  does. Resolving by the script's own location would gate the **main checkout's** files
+  while you commit a worktree's.
+- **Run as a hook, these gates used to recurse infinitely.** git exports `GIT_DIR` into a
+  hook, and `GIT_DIR` overrides directory discovery for every later `git` call — including
+  the real commits `scripts/test_identity_allowlist.sh` plants inside its own throwaway
+  clones. With `GIT_DIR` still set those commits land in *this* repository, firing the
+  pre-commit hook, which runs the suite, which plants again. Observed at ~36 nested runs
+  before it was killed. `preflight.sh` now unsets the exported git variables first. The
+  same `${BASH_SOURCE[0]}` problem also meant a symlinked hook resolved its root to `.git`
+  and failed on the very first gate — so that hook could never have passed, which is the
+  less dangerous half of the same bug.
 
 Install both hooks, not just the first. A pre-commit run **cannot** see a new commit's
 author identity or its blobs in history, because neither exists yet when it runs — and a

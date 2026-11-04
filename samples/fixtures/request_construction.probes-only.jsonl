@@ -1,0 +1,2 @@
+{"arm": "hermes", "endpoint": "/api/show", "ts": 0, "raw_bytes": 29, "header_names": ["Accept", "Accept-Encoding", "Authorization", "Connection", "Content-Length", "Content-Type", "Host", "User-Agent"], "body": {"name": "capture-proxy-stub"}}
+{"arm": "hermes", "endpoint": "/api/show", "ts": 0, "raw_bytes": 29, "header_names": ["Accept", "Accept-Encoding", "Authorization", "Connection", "Content-Length", "Content-Type", "Host", "User-Agent"], "body": {"name": "capture-proxy-stub"}}

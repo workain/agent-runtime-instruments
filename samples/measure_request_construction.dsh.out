@@ -1,0 +1,38 @@
+CONFOUNDS -- printed every run, because each of these makes this number true about the RUN and false about the ENGINE:
+  * A capture needs the client pointed at a NON-FIRST-PARTY base URL, and for Claude Code that is not a neutral act: it DISABLES tool-search deferral, which the source study measured at +49.5% tokens. A proxied Claude Code arm is a different configuration from a first-party one, not the same one observed.
+  * Some clients embed LIVE GIT STATE in their own system prompt -- Hermes embeds cwd, branch, status and recent commit SUBJECTS. Such a capture is NOT reproducible across commits: committing changes the payload. Freeze one git state for a batch, or capture outside a repository, and say which you did.
+  * A field PRESENT in a payload is not necessarily billed as model input. Check the vendor's own documentation per field before counting it; see PROVIDER_METADATA in this file for the two that are documented at zero.
+  * The model never answers, so nothing that needs real model progress is measurable here: no compaction, no context growth across turns, no tool-use loop. This is the FIRST request, which is the fixed cost -- not a whole session.
+
+tokens:    NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
+requests: 1 captured, 1 measurable, 0 startup probes (a probe is not a turn)
+100% field coverage verified on all 1 measurable requests
+
+arm / first request        wire B     body B   fixed B   convo B    meta B   tools   msgs
+-----------------------------------------------------------------------------------------
+dsh                          8225       8680      1665       278      6519       3      1
+  fixed B = system + tools, the part paid on EVERY turn; convo B = everything else in `messages`.
+
+FIRST REQUEST -- arm 'dsh', endpoint /v1/messages, model named 'deepseek-flash'
+    dsh_session_log              4172 B  <-- provider metadata: ZERO model-input tokens per vendor
+    dsh_plugin_packages          2347 B  <-- provider metadata: ZERO model-input tokens per vendor
+    tools                        1617 B
+    messages                      278 B
+    system                         48 B
+    thinking                       19 B
+    output_config                  18 B  <-- engine-specific, no counterpart in the comparators
+    model                          16 B
+    max_tokens                      6 B
+    stream                          4 B
+    (json framing)                155 B  (braces, quoted keys, separators)
+    TOTAL                        8680 B  = the whole body, with nothing unaccounted
+    wire 8225 B vs normalised body 8680 B (ratio 0.948). The split above is of the NORMALISED serialization:
+      a per-field share of the raw wire bytes is not well defined without re-parsing, and the two differ by the
+      client's own separator and escaping choices. Quote `wire B` for what the network paid.
+    provider metadata 6519 B (75.1% of the body): HTTP bytes, and ZERO model-input tokens per the vendor
+    MODEL INPUT 2161 B -- the quantity a per-token bill is computed from
+    tokens: NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
+PER MODEL NAMED IN THE REQUEST ITSELF -- never one assumed model for the whole capture:
+  deepseek-flash               1 request(s)  model input      2161 B  provider metadata     6519 B

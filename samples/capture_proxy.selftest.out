@@ -1,0 +1,13 @@
+  PASS  capture file exists and is EMPTY before any request (a missing file would mean the recorder never started)
+  PASS  Anthropic /v1/messages answered with a valid message object
+  PASS  OpenAI /v1/chat/completions answered with a valid completion object
+  PASS  the STREAMING reply terminates -- a stub that never ends its own event stream hangs the client and reads as a client that never arrived
+  PASS  3 requests sent -> 3 captured (a recorder that drops one reports a cheaper client than the real one)
+  PASS  the captured body is VERBATIM equal to what was sent
+  PASS  raw_bytes equals the exact serialized length on the wire
+  PASS  header NAMES recorded, header VALUES not -- the Authorization value sent above is absent from the capture
+  PASS  both protocols landed on one capture, each tagged with its endpoint
+  PASS  the arm label is carried onto every record
+
+self-test: 10 pass, 0 fail
+exit=0

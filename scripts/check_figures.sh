@@ -25,6 +25,24 @@ MIN_PAIRS=30
 # figure-string | sample file it must appear in
 PAIRS=(
   'REVERT-EACH-FIX GATE -- 13 cases|samples/test_flags_controls.out'
+  # ARI#28, measure_request_construction.py. Its own revert-each-fix gate, pinned the same
+  # way -- and its FIRST run was RED on 3 of 13, which is the only evidence a gate of this
+  # kind can offer that it is able to fail at all.
+  'REVERT-EACH-FIX GATE (request construction) -- 13 cases|samples/test_request_construction_controls.out'
+  'PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
+  # Every state this instrument can END in needs an artefact a reader can tell from the
+  # others, for the same reason the loop flags do: the dangerous output is not a zero, it
+  # is a complete-looking decomposition that is simply too small.
+  '8225 bytes on the wire|samples/measure_request_construction.claims.out'
+  'fixed 1665 bytes|samples/measure_request_construction.claims.out'
+  'model input 2161 bytes|samples/measure_request_construction.claims.out'
+  '6519 bytes (75.1%) of provider metadata|samples/measure_request_construction.claims.out'
+  'every figure measured here is quoted in the prose|samples/measure_request_construction.claims.out'
+  'NONE is measurable|samples/measure_request_construction.probes-only-NO-MEASUREMENT.out'
+  'UNKNOWN BODY FIELD(S): totally_new_vendor_field|samples/measure_request_construction.unknown-field-REFUSED.out'
+  'REPRODUCTION FAILED|samples/measure_request_construction.faithfulness-FAILED.out'
+  'DRIFT: a figure above is not in the prose|samples/measure_request_construction.claims-drift-FAILED.out'
+  'NOT MEASURED -- no tokeniser given|samples/measure_request_construction.tokeniser-unavailable.out'
   'PASSED -- all 13 fixes are pinned: reverting any one of them turns a control RED.|samples/test_flags_controls.out'
   'session trees: 20|samples/measure_session_footprint.out'
   'summed RSS: 7483 MB|samples/measure_session_footprint.out'
@@ -249,6 +267,13 @@ EXEMPT=(
   "| one identical tool+arguments signature, over and over | this repo's own signal 2 in"
   'v1 | "0 of 16 sessions own background work" | Its filter discarded'
   'v3 | "15 live session cgroups" | Discovery used the broad "is this agent-internal?" pattern, which matches a bare'
+  # --- ARI#28. API surface and on-disk layout, not measurements: a tokeniser spec, an
+  # --- argv index, and the dsh session-log PATH (which contains `v4` and so trips the
+  # --- backticked-span-with-a-digit matcher). A path is a claim about a filesystem, and
+  # --- the adapter's own note in instruments/engines.py is where it is accountable --
+  # --- the engine-adapter leg below is what checks that note names a tracked artefact. ---
+  '--tokeniser tiktoken:cl100k_base' 'argv[0]' '${BASH_SOURCE[0]}'
+  '$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl'
 )
 is_exempt() {
   local f="$1" n
