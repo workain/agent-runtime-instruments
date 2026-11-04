@@ -1,0 +1,1 @@
+{"arm": "dsh", "endpoint": "/v1/messages", "ts": 0, "raw_bytes": null, "header_names": ["Connection", "Content-Type", "Host", "Transfer-Encoding"], "body": {"__unread__": "`Transfer-Encoding: gzip`, which this recorder cannot decode"}}

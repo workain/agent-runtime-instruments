@@ -63,7 +63,11 @@
   PASS  wire 102 B against a 113 B body (overrun 11, separators explain 11) -> measured, with the note
 == 11j. two captures under ONE arm label are refused, not merged ==
   PASS  two captures sharing one arm label -> exit 2, naming both files (they used to collapse into one row, with the second capture pinned by nothing)
+  PASS  two captures sharing an arm but hitting DIFFERENT endpoints are refused too -- the key is the arm alone, and keying it on (arm, endpoint) silently merged them again
   PASS  two requests in ONE capture are still measured (2 rows) -- the refusal is about two FILES claiming one label, not about a capture with history
+== 11k. what the RECORDER could not read or encode is refused BY NAME ==
+  PASS  a body the recorder could not read -> exit 2, refused on 'never READ' (not on a true-but-useless reason, and not with a traceback)
+  PASS  a body that cannot be encoded as UTF-8 -> exit 2, refused on 'cannot be encoded as UTF-8' (not on a true-but-useless reason, and not with a traceback)
 == 12. an unavailable tokeniser is a reported state, never a crash ==
   PASS  a malformed --tokeniser spec is refused with a reason
   PASS  an unsupported tokeniser module is refused with a reason
@@ -78,5 +82,5 @@
 == 15. framing is right for keys that are not plain ASCII words ==
   PASS  multibyte and escape-needing keys: coverage still exact, and framing 84 B differs from the len(key)+2 shortcut's 69 B -- so the shortcut is a DETECTABLE revert
 
-self-test: 55 pass, 0 fail
+self-test: 58 pass, 0 fail
 exit=0

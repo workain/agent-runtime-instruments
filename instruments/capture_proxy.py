@@ -73,14 +73,21 @@ def record(capture, arm, endpoint, headers, raw, unread=None):
     line in this file whose mistake is irreversible: a capture is meant to be
     publishable, and `.items()` here instead of `.keys()` would put the Authorization /
     x-api-key value of a misconfigured run into it.
+
+    There is exactly ONE such line, and exactly one `_write` call, on purpose. A branch
+    added for the `__unread__` case once carried its own copy: C12 anchors on one of
+    them, so mutating the other to `.items()` leaked credentials into a capture with
+    both self-tests, the controls gate and the whole preflight green. The branches below
+    decide only what was OBSERVED; the record is built once, after them.
     """
+    header_names = sorted(headers.keys())       # KEYS only -- see above. One site.
     if unread is not None:
         # The body was never read, so its length is UNKNOWN -- not zero. `raw_bytes` is
         # null rather than 0 for exactly that reason: 0 is an observation, and this is
         # the absence of one. The measuring instrument refuses the capture by name.
         return _write(capture, {
             "arm": arm, "endpoint": endpoint, "ts": time.time(),
-            "raw_bytes": None, "header_names": sorted(headers.keys()),
+            "raw_bytes": None, "header_names": header_names,
             "body": {UNREAD: unread},
         })
     if not raw:
@@ -105,15 +112,41 @@ def record(capture, arm, endpoint, headers, raw, unread=None):
         "endpoint": endpoint,
         "ts": time.time(),
         "raw_bytes": len(raw),
-        "header_names": sorted(headers.keys()),
+        "header_names": header_names,
         "body": body,
     })
 
 
 def _write(capture, rec):
-    """Append one record. `ensure_ascii=False` is load-bearing: see record()'s own note."""
+    """Append one record, and NEVER lose one.
+
+    `ensure_ascii=False` is the preferred spelling, not a load-bearing one: the wire
+    carries UTF-8 and a capture is nicer to read that way, but the measurer reads either
+    spelling back to the same object and no figure moves. An earlier version of this
+    docstring called it load-bearing and pointed at a note in record() that says nothing
+    about it; a review flipped the flag with every gate green, which is what a false
+    claim about a gate looks like from outside.
+
+    The fallback is the part that matters. A lone surrogate -- what a client emits when
+    it truncates a string mid-character, e.g. `JSON.stringify` of a sliced emoji giving
+    `\\ud83d` -- is valid JSON on the wire and cannot be encoded as UTF-8. This used to
+    raise, kill the handler, and leave the request in the capture NOT AT ALL: no record,
+    no reply, nothing to notice. Now the record is written with the surrogate escaped,
+    and the measurer refuses that body by name rather than counting it -- recorded but
+    unmeasurable, which is a finding; silently absent, which is not.
+    """
+    line = json.dumps(rec, ensure_ascii=False)
+    try:
+        # json.dumps does NOT raise on a lone surrogate -- it returns a str carrying one,
+        # and the error surfaces two lines later inside fh.write(), where it is an
+        # exception from the FILE rather than from the record. Checked here so the
+        # fallback is reached: that distinction is exactly what made the original bug
+        # look like an I/O failure rather than an encodable-record question.
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        line = json.dumps(rec, ensure_ascii=True)
     with open(capture, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        fh.write(line + "\n")
         fh.flush()
     return rec
 
@@ -169,6 +202,12 @@ class Handler(BaseHTTPRequestHandler):
             if size == 0:
                 while True:                       # trailers, then the terminating blank
                     t = self.rfile.readline(65537)
+                    # `b""` is EOF and is NOT optional. Without it, a client that closes
+                    # after the last chunk without sending the final CRLF leaves this
+                    # loop spinning forever: the recorder hangs, records nothing, and
+                    # reads from outside as a client that never arrived -- the failure
+                    # this file's own streaming leg already exists to prevent. A review
+                    # deleted the `b""` and every gate stayed green.
                     if t in (b"\r\n", b"\n", b""):
                         break
                 return b"".join(out), None
@@ -183,6 +222,10 @@ class Handler(BaseHTTPRequestHandler):
         probe downstream -- 40391 real bytes reported as `1 measurable, 1 startup
         probes` at exit 0 in a review's demonstration.
         """
+        # RFC 7230 s3.3.1: a comma-separated LIST of case-insensitive tokens, and
+        # `chunked` is the last one when present. `identity, chunked` is legal and a
+        # proxy in the path produces it; `Chunked` is the same token. Both are pinned by
+        # a self-test leg now rather than by one gate case's anchor text.
         te = (self.headers.get("Transfer-Encoding") or "").strip().lower()
         if te:
             if "chunked" in te:
@@ -200,6 +243,9 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return b"", ("a `Content-Length` of %r, which is not a byte count" % cl[:40])
         if n < 0:
+            # Not pedantry: `rfile.read(-1)` reads to EOF, so the body would be recorded
+            # with no framing at all and the reply never delivered. A review deleted this
+            # check and every gate stayed green.
             return b"", "a negative `Content-Length` (%d)" % n
         return (self.rfile.read(n) if n else b""), None
 
@@ -414,11 +460,19 @@ def self_test():
     # survived both self-tests and the whole preflight.
     #
     # They are SENT here, before the shutdown, and asserted at the end with the rest.
-    def post_raw(request_bytes):
-        """Send a hand-built HTTP/1.1 request, so framing itself can be the subject."""
+    def post_raw(request_bytes, half_close=False):
+        """Send a hand-built HTTP/1.1 request, so framing itself can be the subject.
+
+        `half_close` shuts the write side after sending, which is the only way to
+        express "the client stopped talking here" -- the condition one leg below is
+        entirely about. Never raises: a leg whose server HANGS must report a missing
+        record, not take the whole self-test down with it.
+        """
         c = socket.create_connection(("127.0.0.1", port), timeout=10)
         try:
             c.sendall(request_bytes)
+            if half_close:
+                c.shutdown(socket.SHUT_WR)
             c.settimeout(10)
             buf = b""
             while b"\r\n\r\n" not in buf:
@@ -427,6 +481,8 @@ def self_test():
                     break
                 buf += d
             return buf
+        except OSError:
+            return b""
         finally:
             c.close()
 
@@ -460,6 +516,46 @@ def self_test():
            "messages": [{"role": "user", "content": "\u30c6\u30b9\u30c8" * 100}]}
     cjk_bytes = json.dumps(cjk, ensure_ascii=False).encode("utf-8")
     post_bytes("/v1/messages", cjk_bytes)
+    # 10. `Transfer-Encoding: identity, Chunked` -- a comma-separated LIST (RFC 7230
+    #     s3.3.1) of CASE-INSENSITIVE tokens, which a proxy in the path really produces.
+    #     `te == "chunked"` passed every gate, and would have turned this legal request
+    #     into a fatal refusal; `.lower()` was pinned only by one gate case's anchor text.
+    combined = json.dumps({"model": "m", "tools": [{"name": "t"}],
+                           "messages": [{"role": "user", "content": "L" * 120}]}).encode()
+    #     The stream also carries a STRAY BLANK LINE between its chunks -- a client that
+    #     sends its terminator twice -- which `if not field: continue` absorbs. Deleting
+    #     that line raises ValueError on the empty chunk size and turns a perfectly
+    #     de-chunkable body into a refusal; it survived every gate until this leg sent one.
+    half_c = len(combined) // 2
+    post_raw(b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+             b"Content-Type: application/json\r\n"
+             b"Transfer-Encoding: identity, Chunked\r\nConnection: close\r\n\r\n"
+             + b"%x\r\n%s\r\n\r\n" % (half_c, combined[:half_c])
+             + b"%x\r\n%s\r\n0\r\n\r\n"
+             % (len(combined) - half_c, combined[half_c:]))
+    # 11. `Content-Length: -1`. Without the `n < 0` check this is `rfile.read(-1)`, which
+    #     reads to EOF: the body is recorded with no framing and the reply never arrives.
+    post_raw(b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+             b"Content-Type: application/json\r\nContent-Length: -1\r\n"
+             b"Connection: close\r\n\r\n" + b'{"model": "m"}')
+    # 12. A chunked body whose FINAL CRLF never arrives, with the client then closing.
+    #     The trailer loop's `b""` (EOF) case is what makes this terminate; without it the
+    #     recorder spins in readline() forever, records nothing, and reads from outside as
+    #     a client that never arrived. Sent with a half-close, which is what makes it EOF.
+    trunc = json.dumps({"model": "m", "tools": [{"name": "t"}],
+                        "messages": [{"role": "user", "content": "T" * 60}]}).encode()
+    post_raw(b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+             b"Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n"
+             b"Connection: close\r\n\r\n"
+             + b"%x\r\n%s\r\n0\r\n" % (len(trunc), trunc), half_close=True)
+    # 13. A LONE SURROGATE -- what a client emits when it truncates a string
+    #     mid-character (`JSON.stringify` of a sliced emoji gives `\ud83d`). Valid JSON on
+    #     the wire, impossible to encode as UTF-8, and it used to raise inside _write and
+    #     leave the request in the capture NOT AT ALL.
+    surrogate = b'{"model": "m", "messages": [{"role": "user", "content": "hi \\ud83d"}]}'
+    post_raw(b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+             b"Content-Type: application/json\r\nContent-Length: %d\r\n"
+             b"Connection: close\r\n\r\n" % len(surrogate) + surrogate)
     srv.shutdown()
     captured = [json.loads(l) for l in open(cap, encoding="utf-8") if l.strip()]
     # The legs below index the first six requests from the END, so the three sent above
@@ -518,11 +614,11 @@ def self_test():
         no("arm label missing or wrong")
 
     # --- and the three sent just before the shutdown ---------------------------------
-    if len(extra) == 3:
-        ch, un, nz = extra
+    if len(extra) == 7:
+        ch, un, nz = extra[0], extra[1], extra[2]
     else:
         ch = un = nz = {}
-        no("3 requests sent after the six above -> %d recorded" % len(extra))
+        no("7 requests sent after the six above -> %d recorded" % len(extra))
     if (ch.get("raw_bytes") == len(chunked_body)
             and isinstance(ch.get("body"), dict) and ch["body"].get("messages")):
         ok("a CHUNKED POST is de-chunked and recorded with its real length (%d B in 2 "
@@ -550,6 +646,40 @@ def self_test():
         no("non-ASCII body: raw_bytes=%r (sent %d B), system round-trip %s"
            % (nz.get("raw_bytes"), len(cjk_bytes),
               (nz.get("body") or {}).get("system") == cjk["system"]))
+    # --- and the four framing/encoding cases sent beside them -------------------------
+    if len(extra) == 7:
+        cb, cl, tr, sg = extra[3], extra[4], extra[5], extra[6]
+    else:
+        cb = cl = tr = sg = {}
+    if (cb.get("raw_bytes") == len(combined)
+            and (cb.get("body") or {}).get("messages")):
+        ok("`Transfer-Encoding: identity, Chunked` is de-chunked, stray blank line "
+           "between its chunks and all -- a comma-separated LIST of case-insensitive "
+           "tokens, which `te == \"chunked\"` would have refused outright (%d B "
+           "recovered)" % len(combined))
+    else:
+        no("combined/capitalised Transfer-Encoding: raw_bytes=%r (sent %d B)"
+           % (cb.get("raw_bytes"), len(combined)))
+    if cl.get("raw_bytes") is None and UNREAD in (cl.get("body") or {}):
+        ok("a NEGATIVE Content-Length is refused as unread, not handed to "
+           "rfile.read(-1), which would read to EOF and frame the body by nothing")
+    else:
+        no("Content-Length: -1 recorded as %r" % cl)
+    if tr.get("raw_bytes") == len(trunc) and (tr.get("body") or {}).get("messages"):
+        ok("a chunked body whose final CRLF never arrives is still recorded in full "
+           "(%d B) once the client closes -- without the EOF case in the trailer loop "
+           "the recorder hangs here forever and records nothing" % len(trunc))
+    else:
+        no("truncated-trailer chunked body recorded as raw_bytes=%r (sent %d B)"
+           % (tr.get("raw_bytes"), len(trunc)))
+    if sg.get("raw_bytes") == len(surrogate):
+        ok("a body carrying a LONE SURROGATE is still recorded with its real length "
+           "(%d B) -- it cannot be encoded as UTF-8, and it used to take the handler "
+           "down and leave the request in the capture not at all" % len(surrogate))
+    else:
+        no("lone-surrogate body recorded as %r (sent %d B)"
+           % (sg.get("raw_bytes"), len(surrogate)))
+
 
 
     print()

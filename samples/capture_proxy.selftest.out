@@ -15,6 +15,10 @@
   PASS  a CHUNKED POST is de-chunked and recorded with its real length (387 B in 2 chunks, no Content-Length header at all) -- it used to record `raw_bytes: 0, body: null` and be counted downstream as a startup probe
   PASS  a body this recorder could not FRAME is marked `__unread__` with a NULL length and the reason -- not `raw_bytes: 0`, which would read as an observation that nothing was sent
   PASS  a NON-ASCII body keeps its exact UTF-8 length (2201 B, not the 801 characters it decodes to) and round-trips unchanged -- decoding it as ascii replaces every multibyte character and inflated one real payload 2.9x
+  PASS  `Transfer-Encoding: identity, Chunked` is de-chunked, stray blank line between its chunks and all -- a comma-separated LIST of case-insensitive tokens, which `te == "chunked"` would have refused outright (207 B recovered)
+  PASS  a NEGATIVE Content-Length is refused as unread, not handed to rfile.read(-1), which would read to EOF and frame the body by nothing
+  PASS  a chunked body whose final CRLF never arrives is still recorded in full (147 B) once the client closes -- without the EOF case in the trailer loop the recorder hangs here forever and records nothing
+  PASS  a body carrying a LONE SURROGATE is still recorded with its real length (70 B) -- it cannot be encoded as UTF-8, and it used to take the handler down and leave the request in the capture not at all
 
-self-test: 17 pass, 0 fail
+self-test: 21 pass, 0 fail
 exit=0

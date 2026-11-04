@@ -375,12 +375,12 @@ The controls are pinned the same way `flags.py`'s are, by reverting each fix and
 control to turn RED:
 
 ```
-REVERT-EACH-FIX GATE (request construction) -- 41 cases
-PASSED -- all 41 fixes are pinned: reverting any one of them turns a control RED.
+REVERT-EACH-FIX GATE (request construction) -- 50 cases
+PASSED -- all 50 fixes are pinned: reverting any one of them turns this gate RED.
 ```
 
-Twenty-two of those thirty-five were added after two independent reviews of this branch
-returned **BLOCK**. Each reverts a fix to the implementation the review substituted and found the entire
+All but thirteen of them -- the gate's original set, below -- were added after four
+independent reviews of this branch returned **BLOCK**. Each reverts a fix to the implementation the review substituted and found the entire
 preflight green against — including `coverage_ok`'s `==` relaxed to `<=` (one character, and it
 passes every deficit, which is the only direction a dropped field can go), framing predicted as
 `len(key) + 2` (indistinguishable from the real thing for every short ASCII key, which is what
@@ -678,6 +678,49 @@ reached by label collision instead of by `rows[0]`; and one of round 2's own gat
 arbitrary damage rather than a revert — it neutered the first of four checks and left the rest, so
 the mutant refused everything with a body and went RED for a reason the case does not name. A
 control that goes red for the wrong reason reads exactly like one that works.
+
+A fourth review was given the same brief as the third, and found that round 3's own fix for the
+first of those regressions had introduced the next one. Both blocking findings were in that
+commit:
+
+- **Reading each prose file as written *as well as* joined fixed hiding and started inventing.**
+  On the continuation line of a legitimate wrapped span, the same mis-pairing that hides a figure
+  *emits the prose between one span's closer and the next one's opener* — so an ordinary sentence
+  in this branch's own style failed the gate with `-- 6519 of 8680 B -- while hermes publishes` as
+  its "figure". A contributor is told a figure drifted when no figure exists, and the only ways
+  out are reflowing a line or an exemption for a sentence fragment. Both directions have one root:
+  per-line backtick pairing is ambiguous and no arrangement of greps resolves it. The span leg
+  reads the joined copy only now — code spans as markdown defines them — and the hidden-span case
+  is covered where nothing is ambiguous, by a bare-`B` unit pattern over the file as written. That
+  pattern turned out to be reading **15** figures in the blind answers where 13 were read before,
+  and twelve published byte figures in README and `docs/limits.md` that only the span leg had
+  seen.
+- **There were suddenly two places that write header names, and the gate case anchored on one of
+  them.** The `__unread__` branch carried its own copy of `sorted(headers.keys())` — the line this
+  file's own docstring calls "the one line in this file whose mistake is irreversible". Mutating
+  the *new* copy to `.items()` wrote a real `Bearer` value into a capture with both self-tests,
+  the 50-case controls gate and the whole preflight green. Fixed by having one write site again
+  rather than by adding a second gate case: there is nothing left for a future branch to forget to
+  copy.
+
+It also found **nine of thirteen** one-point mutations surviving the full preflight, seven of them
+in code round 3 had just added. Three were real defects rather than gaps: dropping the EOF case
+from the chunked trailer loop makes the recorder **hang forever** and record nothing (a hang reads
+from outside as a client that never arrived); reading `Transfer-Encoding` as a single token instead
+of a list turns the legal `identity, chunked` into a fatal refusal; and `_write`'s docstring called
+`ensure_ascii=False` "load-bearing" while pointing at a note that says nothing about it — the flag
+changes no figure, and what it actually did was **lose a whole request**, because a lone surrogate
+(what a client emits when it truncates a string mid-character, and `JSON.stringify` of a sliced
+emoji really does) cannot be encoded as UTF-8 and took the handler down before anything was
+written. That request now records with the surrogate escaped, and the reader refuses it by name:
+recorded but unmeasurable is a finding, silently absent is not.
+
+The recorder has now been the weak file three rounds running, for a structural reason worth
+naming: its captures are committed as *inputs*, so `check_fixtures_fresh.sh` never re-runs it, and
+its own `--self-test` is the only thing standing behind every byte in the report. Four of the
+round-4 legs needed a hand-built HTTP request, because `urllib` cannot construct a chunked body, a
+negative `Content-Length`, a half-closed stream or a stray blank line between chunks — which is
+exactly why none of those behaviours had ever been exercised.
 
 `scripts/preflight.sh` runs `--self-test` for every instrument that offers the flag, picking them
 up with no list to maintain — which means an instrument *without* the flag is silently not

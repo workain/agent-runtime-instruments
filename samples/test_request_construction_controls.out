@@ -1,4 +1,4 @@
-REVERT-EACH-FIX GATE (request construction) -- 41 cases
+REVERT-EACH-FIX GATE (request construction) -- 50 cases
 Each reverts one fix to the simpler code somebody would really write; a control must turn RED.
 
 baseline: the unmutated copies of both files PASS their self-tests, so a RED below is caused by the mutation
@@ -7,7 +7,7 @@ C1-three-columns-and-remainder-framing RED   -- FAIL  the split omits ['model', 
 C2-coverage-three-columns          RED   -- FAIL  coverage invariant did not hold on a clean fixture
 C3-probe-counts-as-turn            RED   -- FAIL  probe-only capture -> exit 4, probes=0
 C4-unknown-field-ignored           RED   -- FAIL  unknown field -> exit 0, unknown=[]
-C5-metadata-billed-as-input        RED   -- FAIL  provider-metadata split wrong: meta=759 reported=759
+C5-metadata-billed-as-input        RED   -- FAIL  provider-metadata split wrong: metadata in the fixture 759 B, reported as 759 B, M
 C6-openai-system-as-conversation   RED   -- FAIL  protocol normalisation failed: anth system=13 oai system=0, msgs 1/2
 C7-one-assumed-model               RED   -- FAIL  per-model grouping wrong: ['model-a']
 C8-corrupt-line-skipped            RED   -- FAIL  a corrupt capture was measured anyway: exit 0
@@ -43,7 +43,16 @@ C38-chunked-body-never-read        RED   -- FAIL  chunked POST recorded as raw_b
 C39-unframeable-body-posed-as-empty RED   -- FAIL  an unframeable body was not marked unread: {'arm': 'selftest-arm', 'endpoint': '/v
 C40-overrun-note-without-a-ceiling RED   -- FAIL  wire 101 B -> exit 0, errors=[]
 C41-two-captures-one-arm-label     RED   -- FAIL  arm collision -> exit 0, rows=2, errors=[]
+C42-recorder-loses-an-unencodable-record RED   -- exit 1 (no FAIL line; a raise or a hang, which still counts)
+C43-transfer-encoding-read-as-one-token RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
+C44-transfer-encoding-case-sensitive RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
+C45-negative-content-length        RED   -- FAIL  Content-Length: -1 recorded as {'arm': 'selftest-arm', 'endpoint': '/v1/messages',
+C46-chunked-trailer-never-ends     RED   -- FAIL  7 requests sent after the six above -> 6 recorded
+C47-arm-collision-keyed-on-the-endpoint-too RED   -- FAIL  arm collision across endpoints -> exit 0, rows=2, errors=[]
+C48-unread-refusal-loses-its-reason RED   -- FAIL  a body the recorder could not read -> exit 2, errors=['capture line 1 of <tmp>/rec
+C49-unencodable-body-raises-in-the-reader RED   -- FAIL  a body that cannot be encoded as UTF-8 raised UnicodeEncodeError instead of refusi
+C50-stray-blank-chunk-line         RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
 C13-recorder-keepalive-sse         RED   -- FAIL  streaming reply did not terminate with message_stop
 
-PASSED -- all 41 fixes are pinned: reverting any one of them turns a control RED.
+PASSED -- all 50 fixes are pinned: reverting any one of them turns this gate RED.
 exit=0

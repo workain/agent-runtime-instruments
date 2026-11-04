@@ -326,12 +326,20 @@ Stated so the gaps are visible rather than implied absent.
   `measurable` and appear in no row and in no claim. Refused rather than auto-renamed: the arm is
   the label the operator chose at capture time. Use `--reference` to compare a rerun against the
   capture it is meant to reproduce.
-- **The figure gate reads each prose file twice — as written, and with inline spans reunited
-  across line breaks — and takes the union.** Reading only the reunited copy is not safe: joining
-  re-pairs backticks, so a span left open on one line can swallow the next line's opening
-  backtick and hide that line's figure. A review published a five-digit `fixed` figure that way
-  with the whole preflight green. The union cannot lose a span to any arrangement of line breaks;
-  a joiner alone, however careful, is one re-pairing away from the same defect.
+- **The backticked-span leg reads code spans as markdown defines them, and that leaves one
+  shape unchecked.** Two reviews attacked this from opposite sides. Joining a wrapped span's two
+  halves re-pairs backticks, so a figure typed on the continuation line can land between two
+  backticks that are no longer a delimiter pair and be missed; reading the file as written *as
+  well* then emits the prose between one span's closer and the next one's opener, so an ordinary
+  wrapped sentence failed the gate with `-- 6519 of 8680 B -- while hermes publishes` as its
+  "figure". Per-line backtick pairing is ambiguous and no arrangement of greps resolves it. The
+  span leg therefore reads the joined copy only, and the missed case is covered where nothing is
+  ambiguous: the unit patterns read the file **as written**, so a planted five-digit byte
+  figure is caught whatever its backticks are doing. (Not quoted, for the reason
+  `samples/raw-payloads/README.md` gives -- and the bare-`B` pattern is now the thing that
+  catches it, so an exemption for that value would re-open this hole and not merely describe it.) **Still uncovered:** a figure between two mis-paired
+  backticks carrying no unit these patterns know. It is not a published code span — it renders as
+  mangled prose — and no gate here reads it.
 - **The engine adapters match the shape each engine was OBSERVED to have, and nothing else.** A
   `dsh` installed as a launcher on PATH is not matched by the dsh adapter, and neither is the
   `hermes` launcher: both were tried as bare-name patterns and both fired on unrelated command

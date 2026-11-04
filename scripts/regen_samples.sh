@@ -97,6 +97,7 @@ measure_request_construction.corrupt-REFUSED.out	instruments/measure_request_con
 measure_request_construction.not-an-object-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.not-an-object.jsonl
 measure_request_construction.duplicate-key-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.duplicate-key.jsonl
 measure_request_construction.unparseable-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.unparseable.jsonl
+measure_request_construction.unread-REFUSED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.unread.jsonl
 measure_request_construction.hermes-rerun-faithful.out	instruments/measure_request_construction.py	run	samples/fixtures/request_construction.hermes-rerun.jsonl --reference samples/fixtures/request_construction.hermes.jsonl
 measure_request_construction.dsh-rerun-REPRODUCTION-FAILED.out	instruments/measure_request_construction.py	refu	samples/fixtures/request_construction.dsh-rerun.jsonl --reference samples/fixtures/request_construction.dsh.jsonl
 measure_request_construction.faithfulness-FAILED.out	instruments/measure_request_construction.py	refu	--reference samples/fixtures/request_construction.hermes.jsonl samples/fixtures/request_construction.dsh.jsonl

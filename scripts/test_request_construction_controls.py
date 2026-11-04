@@ -148,9 +148,12 @@ CASES = [
     ("C12-recorder-logs-header-values", "capture_proxy",
      "recording header VALUES as well as names. The Authorization / x-api-key value of a "
      "misconfigured run then lands in a capture file whose whole purpose is to be "
-     "publishable.",
-     '        "header_names": sorted(headers.keys()),',
-     '        "header_names": sorted(headers.items()),'),
+     "publishable. This anchors the ONE site that builds the list -- a round-3 branch "
+     "added a second copy of it, and because this case anchored on the other one, "
+     "mutating the new copy leaked a real `Bearer` value into a capture with every gate "
+     "green. The duplication was removed rather than given a second gate case.",
+     '    header_names = sorted(headers.keys())       # KEYS only -- see above. One site.',
+     '    header_names = sorted(headers.items())'),
 
     # ---------------------------------------------------------------------------
     # C14-C23 pin the fixes made after an independent review of this branch returned
@@ -398,6 +401,59 @@ CASES = [
      '            if first_seen != p:',
      '            if False:'),
 
+    # ---------------------------------------------------------------------------
+    # C42-C49 pin the fixes made after a FOURTH review, which found that round 3's own
+    # R1 fix (reading each prose file as written AS WELL AS joined) false-alarmed on
+    # ordinary prose, and that round 3 had added a SECOND copy of the one line in
+    # capture_proxy.py whose mistake is irreversible -- so C12 anchored on one of them
+    # while the other leaked a real credential with every gate green. Six of these eight
+    # are in capture_proxy.py, which is now the third round running that the recorder has
+    # been the file where a defect cannot be seen from the reader side.
+    ("C42-recorder-loses-an-unencodable-record", "capture_proxy",
+     'letting a record that cannot be encoded as UTF-8 take the handler down. A lone surrogate -- what a client emits when it truncates a string mid-character, and JSON.stringify of a sliced emoji really does -- is valid JSON on the wire and raised inside fh.write(), so the request appeared in the capture NOT AT ALL: no record, no reply, nothing to notice. The omission that looks like good news, in the one file whose output is the evidence for everything else. json.dumps does not raise on it, which is why the encodability check has to be explicit.',
+     '    line = json.dumps(rec, ensure_ascii=False)\n    try:',
+     '    line = json.dumps(rec, ensure_ascii=False)\n    if True:\n        pass\n    elif False:'),
+
+    ("C43-transfer-encoding-read-as-one-token", "capture_proxy",
+     'comparing the whole Transfer-Encoding value to `chunked` instead of looking for the token in it. RFC 7230 s3.3.1 makes it a comma-separated LIST, and a proxy in the path really sends `identity, chunked` -- which then stops being de-chunked and becomes a FATAL refusal of the whole capture. A false refusal, from a fix for a missed measurement.',
+     '            if "chunked" in te:',
+     '            if te == "chunked":'),
+
+    ("C44-transfer-encoding-case-sensitive", "capture_proxy",
+     "dropping .lower() on the Transfer-Encoding value. The token is case-insensitive, so `Transfer-Encoding: Chunked` stops being de-chunked. Until a self-test leg sent a capitalised one, the only thing that killed this mutation was ANOTHER gate case's anchor text -- unpinned behaviour protected by a string literal in a different file, which is not protection.",
+     '.strip().lower()',
+     '.strip()'),
+
+    ("C45-negative-content-length", "capture_proxy",
+     'handing a negative Content-Length to rfile.read(-1), which reads to EOF. The body is then recorded framed by nothing at all and the reply is never delivered.',
+     '        if n < 0:',
+     '        if False:'),
+
+    ("C46-chunked-trailer-never-ends", "capture_proxy",
+     "dropping the EOF case from the chunked trailer loop. A client that closes after its last chunk without sending the final CRLF then leaves the recorder spinning in readline() FOREVER: it records nothing and reads from outside as a client that never arrived, which is the failure this file's own streaming leg already exists to prevent.",
+     '                    if t in (b"\\r\\n", b"\\n", b""):',
+     '                    if t in (b"\\r\\n", b"\\n"):'),
+
+    ("C47-arm-collision-keyed-on-the-endpoint-too", "measure_request_construction",
+     "keying the arm collision on `(arm, endpoint)` rather than on the arm. Two captures of the SAME engine that hit different endpoints then merge into one row again, and one of them is back outside every gate's reach -- round-2 finding 3 for the third time, now through the fix for its second form.",
+     '            first_seen = arm_source.setdefault(row["arm"], p)',
+     '            first_seen = arm_source.setdefault((row["arm"], row["endpoint"]), p)'),
+
+    ("C48-unread-refusal-loses-its-reason", "measure_request_construction",
+     "deleting the reader's branch for a body the recorder could not READ. It still exits 2 -- on `has no raw_bytes`, which is true, useless, and about the wrong thing. That is why this survived every gate: nothing asserted WHICH refusal fires, and a refusal that cannot name the request sends an operator to re-capture instead of to the client.",
+     '    if isinstance(body, dict) and UNREAD in body:',
+     '    if False:'),
+
+    ("C49-unencodable-body-raises-in-the-reader", "measure_request_construction",
+     "measuring a body that cannot be encoded as UTF-8. Every byte count here is taken over a UTF-8 encoding, so a lone surrogate reached UnicodeEncodeError inside nbytes() and exited 1 -- against decompose()'s own documented promise, `Raises nothing; errors are fields`, and outside this instrument's documented exit set.",
+     '            ser(body).encode("utf-8")',
+     '            pass'),
+
+    ("C50-stray-blank-chunk-line", "capture_proxy",
+     'deleting the empty-chunk-size tolerance from the de-chunker. A client that sends its terminator twice then raises ValueError on the blank line, and a perfectly de-chunkable body becomes a refusal of the whole capture. It survived every gate until a self-test leg sent a stream with a stray blank line in it -- the same shape of gap as C44: real behaviour nothing exercised.',
+     '            if not field:\n                continue',
+     '            if False:\n                continue'),
+
     ("C13-recorder-keepalive-sse", "capture_proxy",
      "answering an event stream under keep-alive. With no Content-Length the client "
      "cannot tell the body ended and blocks until its own timeout -- and a recorder that "
@@ -411,10 +467,16 @@ def run_selftest(base, module):
     """-> (returncode, [FAIL/PASS-absent lines]). Reads the mutant's own self-test."""
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    p = subprocess.run([sys.executable,
-                        os.path.join(base, "instruments", module + ".py"),
-                        "--self-test"],
-                       capture_output=True, text=True, cwd=base, env=env, timeout=600)
+    try:
+        p = subprocess.run([sys.executable,
+                            os.path.join(base, "instruments", module + ".py"),
+                            "--self-test"],
+                           capture_output=True, text=True, cwd=base, env=env,
+                           timeout=600)
+    except subprocess.TimeoutExpired:
+        # A mutant that HANGS is red, not a crashed gate. One of these cases removes the
+        # EOF guard from a read loop, and the honest outcome of that is no outcome.
+        return 124, ["FAIL  the mutant's own self-test did not finish in 600 s"]
     fails = [l.strip() for l in (p.stdout + p.stderr).splitlines()
              if l.strip().startswith("FAIL")]
     return p.returncode, fails
@@ -494,7 +556,12 @@ def main():
         return 1
     if errors:
         return 1
-    print("PASSED -- all %d fixes are pinned: reverting any one of them turns a control "
+    # "turns this gate RED" rather than "turns a control RED": two cases kill the
+    # recorder so thoroughly that its self-test cannot reach the leg that would name the
+    # defect, and go red on a non-zero exit instead. Each such case says so on its own
+    # line. A review pointed out that the summary was claiming a named control for all
+    # of them, which is a small overclaim about the one thing this gate exists to say.
+    print("PASSED -- all %d fixes are pinned: reverting any one of them turns this gate "
           "RED." % len(cases))
     return 0
 

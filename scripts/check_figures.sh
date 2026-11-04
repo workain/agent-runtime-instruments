@@ -28,8 +28,8 @@ PAIRS=(
   # ARI#28, measure_request_construction.py. Its own revert-each-fix gate, pinned the same
   # way -- and its FIRST run was RED on 3 of 13, which is the only evidence a gate of this
   # kind can offer that it is able to fail at all.
-  'REVERT-EACH-FIX GATE (request construction) -- 41 cases|samples/test_request_construction_controls.out'
-  'PASSED -- all 41 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
+  'REVERT-EACH-FIX GATE (request construction) -- 50 cases|samples/test_request_construction_controls.out'
+  'PASSED -- all 50 fixes are pinned: reverting any one of them turns this gate RED.|samples/test_request_construction_controls.out'
   # Every state this instrument can END in needs an artefact a reader can tell from the
   # others, for the same reason the loop flags do: the dangerous output is not a zero, it
   # is a complete-looking decomposition that is simply too small.
@@ -354,6 +354,11 @@ EXEMPT=(
   # --- the output the DEFECTIVE recorder produced for 40391 real bytes, quoted as the
   # --- finding. It must not match an artefact: the artefacts now show it de-chunked. ---
   '1 measurable, 1 startup probes'
+  # --- ARI#28 round 4. The "figure" the reverted union leg INVENTED out of an ordinary
+  # --- wrapped sentence, quoted in docs/limits.md as the false alarm it was. It is a
+  # --- fragment of prose, not a reading, and it must not match an artefact -- that is
+  # --- the point of quoting it. Same rule as '103 transcripts'. ---
+  '-- 6519 of 8680 B -- while hermes publishes'
   # --- ARI#28 round 3. ILLUSTRATIONS in docs/limits.md, not readings: a float raw_bytes
   # --- some producers emit, and the number spelling whose re-serialisation is the second
   # --- cause the overrun refusal cannot distinguish from a mis-decoded body. Each is an
@@ -430,15 +435,27 @@ extract_figures() {
   # backticks, which re-pairs every span in the file and produced 400-character "figures"
   # of ordinary prose.
   #
-  # THE JOINED COPY IS READ IN ADDITION TO THE FILE, NOT INSTEAD OF IT -- and the next
-  # review showed why that has to be spelled out. Joining re-PAIRS backticks: a span left
-  # open on one line swallows the opening backtick of the next line's span, and that
-  # line's figure lands between two backticks that are no longer a delimiter pair. The
-  # demonstration published `fixed 99999 B` in README, present in no artefact, with this
-  # gate and the whole preflight green -- a figure the PER-LINE extractor this one
-  # replaced had caught. Reading both copies is a union, and no arrangement of line
-  # breaks can subtract from a union; a smarter joiner would still have been one
-  # re-pairing away from hiding something.
+  # Joining re-PAIRS backticks, and that cuts BOTH ways -- two reviews, one each way. A
+  # span left open on one line swallows the opening backtick of the next line's span, so
+  # a figure typed on that line lands between two backticks that are no longer a
+  # delimiter pair: `fixed 99999 B` was published in README that way, present in no
+  # artefact, with the whole preflight green. The answer looked like reading the file as
+  # written TOO and taking the union -- which the next review broke immediately, because
+  # on the continuation line of a legitimate wrapped span the same mis-pairing EMITS the
+  # prose between one span's closer and the next one's opener. An ordinary sentence in
+  # this branch's own style failed the gate with '-- 6519 of 8680 B -- while hermes
+  # publishes' as its "figure".
+  #
+  # Both directions have the same root: per-line backtick pairing is ambiguous, and no
+  # arrangement of greps resolves it. So the span leg reads the JOINED copy only -- code
+  # spans as markdown defines them -- and the hidden-span case is covered where there is
+  # no ambiguity at all: the `B` unit pattern below reads the file AS WRITTEN, so the
+  # planted `fixed 99999 B` is caught as `99999 B` whatever its backticks are doing.
+  #
+  # WHAT THAT LEAVES UNCOVERED, stated rather than implied absent: a figure typed between
+  # two backticks that are not a delimiter pair, carrying NO unit this file's patterns
+  # know. It is not a published code span (it renders as mangled prose, backticks and
+  # all), and no gate here reads it. `docs/limits.md` says so too.
   local joined
   joined="$(mktemp)"
   awk '
@@ -458,10 +475,17 @@ extract_figures() {
       if (o == 0) { print b; b = ""; p = 0 } else p = 1 }
     END { if (p) print b }' "$pf" > "$joined"
   { grep -ohE '`[^`]*[0-9][^`]*`' "$joined" | sed 's/^`//; s/`$//'
-    # the same pattern on the file AS WRITTEN -- the union leg described above
-    grep -ohE '`[^`]*[0-9][^`]*`' "$pf" | sed 's/^`//; s/`$//'
     grep -ohE '[A-Za-z][A-Za-z0-9_ ()<=-]{2,34}[:=] ?[0-9][0-9.,/]*' "$pf"
     grep -ohE '\b[0-9][0-9.,]* ?(MB|MiB|GB|KB|ms|bytes)\b' "$pf"
+    # BARE `B` for bytes -- the spelling every column of this branch's own tables uses
+    # (`wire 8225 B`, `provider metadata 0 B`). Read over the file AS WRITTEN, which is
+    # what makes it the answer to the hidden-span case the union leg was reverted for: a
+    # five-digit figure planted inside mis-paired backticks is still `99999 B` here.
+    # Measured when added: 12 published byte figures across README and docs/limits.md
+    # that only the span leg had been reading, every one of them already in an artefact,
+    # and no new exemption needed. `238 MB` does not match it (the character before `B`
+    # is not a digit or a space), and `6519 bytes` does not either (case-sensitive).
+    grep -ohE '\b[0-9][0-9.,]* ?B\b' "$pf"
     grep -ohE '\b[0-9]+[0-9.,]* ?s\b' "$pf"
     # PERCENTAGES. Added after a review kept every digit in a headline intact and moved
     # its DENOMINATOR: the prose said "8225 bytes on the wire, of which 6519 bytes

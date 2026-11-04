@@ -433,9 +433,19 @@ def decompose(rec, tok=None):
         "coverage_residual": whole - (summed + framing),
         # The most a NORMALISED serialisation can legitimately exceed the compact bytes
         # a client sent: one byte per separator. `json.dumps` writes `", "`/`": "` where
-        # a compact client writes `,`/`:`, and nothing else about the same object can
-        # differ in length. Counted over the whole string, so string CONTENTS inflate it
-        # too -- deliberately generous, because this bound is used to REFUSE.
+        # a compact client writes `,`/`:`.
+        #
+        # That is not the same as "nothing else can differ", which is what an earlier
+        # version of this comment claimed and is false about JSON. Two other things
+        # differ, and the direction is what matters: ESCAPING choices (`\uXXXX` for
+        # non-ASCII, an escaped solidus, long escapes for backspace and form feed) make
+        # the CLIENT's bytes larger, which is safe here -- the refusal only fires when
+        # the normalised side is larger. NUMBER spelling can go the other way (`1E5`
+        # re-serialised as `100000.0`), and the refusal's own text names it, because this
+        # bound cannot distinguish that from a mis-decoded body.
+        #
+        # Counted over the whole string, so string CONTENTS inflate it too --
+        # deliberately generous, because this bound is used to REFUSE.
         "separator_slack": ser(body).count(", ") + ser(body).count(": "),
         "provider_metadata_bytes": meta,
         "model_input_bytes": whole - meta,
@@ -478,6 +488,21 @@ def structural_fault(rec):
         return ("has a `body` that is JSON but not an object (it is a %s). A body is "
                 "decomposed field by named field, which a %s has none of"
                 % (type(body).__name__, type(body).__name__))
+    # A body that cannot be encoded as UTF-8 -- a lone surrogate, from a client that
+    # truncated a string mid-character. It is valid JSON, so it parses and reaches here;
+    # every byte count below is taken over a UTF-8 encoding, so there is no honest length
+    # to report for it. Refused by name, because the alternative was a UnicodeEncodeError
+    # inside nbytes() and exit 1 -- against decompose()'s own "Raises nothing; errors are
+    # fields" -- which a review reproduced.
+    if body is not None:
+        try:
+            ser(body).encode("utf-8")
+        except UnicodeEncodeError as e:  # noqa: PERF203
+            return ("has a body that cannot be encoded as UTF-8 (%s). A client that "
+                    "truncates a string mid-character emits a lone surrogate, which is "
+                    "valid JSON and unmeasurable in bytes: there is no UTF-8 length to "
+                    "report. The recorder keeps such a request deliberately; this reader "
+                    "refuses it rather than inventing a length for it" % e.reason)
     # A body the RECORDER never read. Refused here, ahead of the `raw_bytes` legs,
     # because its `raw_bytes` is deliberately null -- an unframeable request has a body
     # of UNKNOWN length, and recording that as 0 is what turned 40391 chunked bytes into
@@ -634,6 +659,10 @@ def measure(paths, tok=None):
             rep["rows"].append(row)
             rep["measurable"] += 1
             # One arm label, two captures -- see this function's own note above.
+            # Keyed on the ARM ALONE. A review keyed it on `(arm, endpoint)` and
+            # survived every gate: two captures of the same engine hitting different
+            # endpoints would collapse into one row again, which is the whole defect
+            # C41 exists to catch. The table is keyed by arm and nothing else.
             first_seen = arm_source.setdefault(row["arm"], p)
             if first_seen != p:
                 dupe = ("captures %s and %s are both labelled arm %r. The table and the "
@@ -1154,8 +1183,10 @@ def self_test():
         ok("model input == body - provider metadata, and the metadata is non-zero "
            "(%d B) so the fixture can tell the two apart" % meta)
     else:
-        no("provider-metadata split wrong: meta=%d reported=%d"
-           % (meta, r["provider_metadata_bytes"]))
+        no("provider-metadata split wrong: metadata in the fixture %d B, reported as "
+           "%d B, MODEL INPUT %d B where body(%d) - metadata(%d) = %d"
+           % (meta, r["provider_metadata_bytes"], r["model_input_bytes"],
+              r["body_bytes"], meta, r["body_bytes"] - meta))
     # and the same fields must NOT be excluded when they are absent
     rep2, _ = measure([small])
     if rep2["rows"][0]["provider_metadata_bytes"] == 0 and \
@@ -1585,6 +1616,26 @@ def self_test():
     else:
         no("arm collision -> exit %d, rows=%d, errors=%r"
            % (cc, len(rc["rows"]), rc["errors"]))
+    # ...including when the two captures hit DIFFERENT endpoints. A review keyed the
+    # collision on `(arm, endpoint)` and survived every gate -- which puts the same
+    # engine's two captures back in one row whenever they differ that way, and one
+    # engine's figures back outside every gate's reach. The table is keyed by arm and by
+    # nothing else, so this is the shape that has to be refused too.
+    other_ep = dict(known)
+    oe_a = _fixture(tmp, "arm-ep-a.jsonl", [known], raw_bytes=400)
+    oe_b = os.path.join(tmp, "arm-ep-b.jsonl")
+    with open(oe_b, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"arm": "fx", "endpoint": "/v1/chat/completions", "ts": 0,
+                             "raw_bytes": 401, "header_names": [],
+                             "body": other_ep}) + "\n")
+    rg, cg = measure([oe_a, oe_b])
+    if cg == 2 and any("both labelled arm" in e for e in rg["errors"]):
+        ok("two captures sharing an arm but hitting DIFFERENT endpoints are refused too "
+           "-- the key is the arm alone, and keying it on (arm, endpoint) silently "
+           "merged them again")
+    else:
+        no("arm collision across endpoints -> exit %d, rows=%d, errors=%r"
+           % (cg, len(rg["rows"]), rg["errors"]))
     # ...and the same two records in ONE file are not a collision: that is an ordinary
     # multi-request capture, and refusing it would refuse every real one.
     twin = _fixture(tmp, "two-in-one-capture.jsonl", [known, known], raw_bytes=400)
@@ -1595,6 +1646,43 @@ def self_test():
     else:
         no("two records in one capture -> exit %d, measurable=%d rows=%d errors=%r"
            % (ct, rt["measurable"], len(rt["rows"]), rt["errors"]))
+
+    print("== 11k. what the RECORDER could not read or encode is refused BY NAME ==")
+    # Two record shapes capture_proxy.py writes deliberately, neither of which this
+    # reader could refuse informatively until a review pointed it out:
+    #
+    #  * `__unread__` -- a body whose framing the recorder could not follow, so its
+    #    length is UNKNOWN. Deleting this reader's branch for it still exits 2, but on
+    #    "has no `raw_bytes`" -- true, useless, and it survived every gate because
+    #    nothing asserted WHICH refusal fires. A refusal that cannot name the request is
+    #    how an operator ends up re-capturing instead of fixing the client.
+    #  * a lone surrogate -- valid JSON, unencodable as UTF-8, and every byte count here
+    #    is taken over a UTF-8 encoding. It used to raise inside nbytes() and exit 1,
+    #    against decompose()'s own "Raises nothing; errors are fields".
+    for name, rec, want in (
+        ("a body the recorder could not read",
+         {"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "raw_bytes": None,
+          "header_names": [], "body": {"__unread__": "`Transfer-Encoding: gzip`"}},
+         "never READ"),
+        ("a body that cannot be encoded as UTF-8",
+         {"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "raw_bytes": 70,
+          "header_names": [],
+          "body": {"model": "m",
+                   "messages": [{"role": "user", "content": "hi \ud83d"}]}},
+         "cannot be encoded as UTF-8")):
+        bad = os.path.join(tmp, "recorder-%s.jsonl" % want.split()[0])
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=True) + "\n")
+        try:
+            rr, rc = measure([bad])
+        except Exception as e:  # noqa: BLE001
+            no("%s raised %s instead of refusing" % (name, type(e).__name__))
+            continue
+        if rc == 2 and any(want in e for e in rr["errors"]):
+            ok("%s -> exit 2, refused on %r (not on a true-but-useless reason, and not "
+               "with a traceback)" % (name, want))
+        else:
+            no("%s -> exit %d, errors=%r" % (name, rc, rr["errors"]))
 
     print("== 12. an unavailable tokeniser is a reported state, never a crash ==")
     fn, why = load_tokeniser("nonsense")
