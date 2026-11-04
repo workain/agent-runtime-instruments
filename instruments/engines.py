@@ -63,6 +63,79 @@ ENGINES = [
              "and the transcript path has NOT been exercised with real sessions",
     ),
     dict(
+        name="dsh",
+        # The real command line measured on this box, from /proc, while a session was
+        # live: `<node> .../node_modules/@deepseek-ai/dsh/lib/bin.js --profile
+        # sdk-minimal --patch <file>`. That -- and ONLY that -- is what this pattern
+        # matches, deliberately.
+        #
+        # An earlier version also carried `(^|/)dsh(-headless)?(\s|$)`, to cover a `dsh`
+        # launcher on PATH, with a comment admitting that shape was never exercised here.
+        # A review pointed out both halves of what is wrong with that inside a
+        # verified=True adapter. It claims coverage this repository never demonstrated;
+        # and `dsh` is a THREE-LETTER token, so the pattern fired on any command line
+        # mentioning a directory of that name. Measured against realistic command lines,
+        # it matched `rm -rf /tmp/dsh`, `du -sh /mnt/data/dsh` and a docker run with
+        # `-v /opt/dsh:/opt/dsh`. Each would have been reported as a live dsh session --
+        # which is defect v3 in docs/method.md ("the build runners were reported as live
+        # agent sessions") recreated in a new adapter, against that document's own rule
+        # to match structurally rather than by substring.
+        #
+        # So the unexercised alternative is GONE rather than kept and caveated: a
+        # launcher install is not matched by this adapter, and the honest way to find
+        # that out is `measure_session_footprint.py --list-unmatched`, which prints the
+        # heaviest processes no adapter claimed. Dropping it changes nothing about the
+        # committed run: samples/measure_session_footprint.dsh-hermes.out's dsh row was
+        # matched by the bin.js path, which is why that row is still there.
+        entrypoint=r"@deepseek-ai/dsh/lib/bin\.js",
+        transcripts="~/.dsh/sessions",
+        verified=True,
+        note="DeepSeek Harness. MEASURED: samples/measure_session_footprint.dsh-hermes.out "
+             "(live process tree) and samples/measure_request_construction.dsh.out (a real "
+             "captured request). Transcript layout read off disk, not documentation: "
+             "$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl, and $DSH_HOME "
+             "defaults to ~/.dsh. TWO THINGS THAT WILL BITE: (1) it needs node >= 24.9.0 "
+             "and on an older node it produces ZERO output and exits 0, so an empty result "
+             "is the expected shape of the wrong-node failure; (2) its session.v4.jsonl is "
+             "NOT the Claude-Code transcript schema, so this repo's transcript-reading "
+             "instruments (measure_token_breakdown.py, flags.py) cannot parse it -- the "
+             "path is recorded because it is where the data is, not because those parse it. "
+             "The storage claims in this note are evidenced by "
+             "samples/engine_evidence.dsh-hermes-storage.out -- the on-disk tree, and the "
+             "two schemas' record keys side by side -- rather than asserted here; a review "
+             "found that this note's substantive claim had no artefact while the "
+             "verified=True flag did. instruments/drive_dsh.py is how a turn is driven "
+             "headlessly at all",
+    ),
+    dict(
+        name="hermes",
+        # Measured from /proc while a session was live. The launcher `hermes` execs into
+        # an inline python bootstrap, so argv[0] stops being `hermes` -- which is why
+        # matching the launcher name ALONE would have found nothing while a session ran.
+        #
+        # That observation is also why the launcher-name alternative is not here: it was
+        # never the shape a live session had, and as a bare substring it fired on
+        # `git clone https://github.com/NousResearch/hermes`, `ls -la /srv/hermes` and
+        # `tar -czf backup.tgz /var/lib/hermes` -- see the dsh entry above for the full
+        # reasoning and the review that prompted it.
+        entrypoint=r"hermes_cli[._]main",
+        transcripts=None,
+        verified=True,
+        note="MEASURED: samples/measure_session_footprint.dsh-hermes.out (live process "
+             "tree) and samples/measure_request_construction.hermes.out (a real captured "
+             "request). `transcripts` is None because it HAS none: a session's history "
+             "lives in $HERMES_HOME/state.db -- SQLite, tables `sessions`/`messages` -- "
+             "and $HERMES_HOME/sessions stayed EMPTY across a verified run. So every "
+             "transcript-reading instrument here is structurally inapplicable to hermes, "
+             "and None says that rather than naming a directory that is always empty. "
+             "Evidenced by samples/engine_evidence.dsh-hermes-storage.out: the empty "
+             "sessions directory, and state.db's table list with row counts for the two "
+             "tables named here. ALSO: hermes runs a SHARED gateway process "
+             "(`hermes_cli.main ... gateway run`) which this pattern matches too, so a "
+             "tree COUNT for hermes is session processes plus one gateway, not a session "
+             "count",
+    ),
+    dict(
         name="goose",
         entrypoint=r"(^|/)goosed?(\s|$)",
         transcripts="~/.local/share/goose/sessions",

@@ -8,10 +8,47 @@
 #
 # Install as a pre-commit hook:  ln -sf ../../scripts/preflight.sh .git/hooks/pre-commit
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+# Two things this file has to get right before any gate runs, and the obvious one-liner
+# (`cd "$(dirname "${BASH_SOURCE[0]}")/.."`) gets both wrong when run as a HOOK -- which
+# is the installation the lines above recommend.
+#
+# 1. git EXPORTS GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE into a hook, and GIT_DIR
+#    OVERRIDES directory discovery for every later git call. The gate suite makes real
+#    commits inside its own throwaway clones (scripts/test_identity_allowlist.sh plants
+#    one per control); with GIT_DIR still set, those land in THIS repository instead --
+#    which fires the pre-commit hook, which runs this file, which plants again. Observed
+#    as an infinite recursion that had to be killed, with ~36 nested runs.
+# 2. Invoked through a symlink, `${BASH_SOURCE[0]}` is the symlink's own path --
+#    `.git/hooks/pre-commit` -- so `dirname/..` is `.git`, and every gate below fails
+#    with "No such file or directory". That hook could never have passed. And in a linked
+#    WORKTREE the script's directory belongs to the MAIN checkout, so resolving by it
+#    would gate the wrong tree: a worktree's commit checked against another tree's files.
+#
+# So: ask git which tree is being committed, and fall back to the script's own directory
+# only when the current directory is not inside this repository at all.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_OBJECT_DIRECTORY GIT_QUARANTINE_PATH
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$root" ] || [ ! -f "$root/scripts/check_figures.sh" ]; then
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || true)"
+fi
+if [ -z "$root" ] || [ ! -f "$root/scripts/check_figures.sh" ]; then
+  echo "preflight: cannot find this repository's root, so no gate below can run." >&2
+  echo "  A gate that cannot locate what it checks does not get to pass. Exiting 2." >&2
+  exit 2
+fi
+cd "$root"
+# Say WHICH tree is being gated. A review's point, and it is this repo's own rule applied
+# to its own gate runner: "make a probe state its own ground". Run from a cwd inside a
+# different checkout, this would gate that checkout and print `preflight: OK` naming
+# nothing -- indistinguishable from having gated the tree you were looking at.
+echo "preflight: gating $root ($(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no branch'))"
 echo "preflight: figures"   && bash scripts/check_figures.sh    >/dev/null
 echo "preflight: scrub"     && bash scripts/scrub_check.sh --all >/dev/null
 echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null
+# The figure gate is the one with three consecutive regressions in its span
+# extraction, and until now the only gate here with no harness proving it can fail.
+echo "preflight: figure-gate" && bash scripts/test_figure_gate.sh >/dev/null
 echo "preflight: identity"  && bash scripts/test_identity_allowlist.sh >/dev/null
 echo "preflight: fixtures"  && bash scripts/check_fixtures_fresh.sh >/dev/null
 echo "preflight: fixtures-gate" && bash scripts/test_fixture_freshness.sh >/dev/null
@@ -20,6 +57,12 @@ echo "preflight: fixtures-gate" && bash scripts/test_fixture_freshness.sh >/dev/
 # the FIXES -- four changed behaviours were revertible with the suite green, two of them
 # losing data. This gate is what stops that recurring on the next fix.
 echo "preflight: revert-each-fix" && bash scripts/test_flags_controls.sh >/dev/null
+# The same gate for the request-construction pair. A second gate rather than a second
+# table inside the first: the two mutate different files and their baselines are
+# different self-tests, and a shared runner would have to be taught both before either
+# could be added -- which is how the newer one ends up unguarded.
+echo "preflight: revert-each-fix (request construction)" \
+  && bash scripts/test_request_construction_controls.sh >/dev/null
 # An instrument's own positive/negative controls are a gate, not documentation: they are
 # the only thing standing between a silently-wrong number and a published one. Every
 # instrument that ships a --self-test runs here. Add the flag to an instrument and it is

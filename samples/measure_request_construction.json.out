@@ -1,0 +1,67 @@
+{
+  "by_model": {
+    "deepseek-flash": {
+      "body_bytes": 8680,
+      "conversation_bytes": 278,
+      "fixed_bytes": 1665,
+      "model_input_bytes": 2161,
+      "provider_metadata_bytes": 6519,
+      "requests": 1,
+      "wire_bytes": 8225
+    }
+  },
+  "captures": [
+    "samples/fixtures/request_construction.dsh.jsonl"
+  ],
+  "confounds": [
+    "A capture needs the client pointed at a NON-FIRST-PARTY base URL, and for Claude Code that is not a neutral act: it DISABLES tool-search deferral, which the source study measured at +49.5% tokens. A proxied Claude Code arm is a different configuration from a first-party one, not the same one observed.",
+    "Some clients embed LIVE GIT STATE in their own system prompt -- Hermes embeds cwd, branch, status and recent commit SUBJECTS. Such a capture is NOT reproducible across commits: committing changes the payload. Freeze one git state for a batch, or capture outside a repository, and say which you did.",
+    "A field PRESENT in a payload is not necessarily billed as model input. Check the vendor's own documentation per field before counting it; see PROVIDER_METADATA in this file for the two that are documented at zero.",
+    "The model never answers, so nothing that needs real model progress is measurable here: no compaction, no context growth across turns, no tool-use loop. This is the FIRST request, which is the fixed cost -- not a whole session."
+  ],
+  "coverage_broken": [],
+  "errors": [],
+  "exit_code": 0,
+  "measurable": 1,
+  "probes": 0,
+  "requests": 1,
+  "rows": [
+    {
+      "arm": "dsh",
+      "body_bytes": 8680,
+      "capture": "samples/fixtures/request_construction.dsh.jsonl",
+      "conversation_bytes": 278,
+      "coverage_ok": true,
+      "coverage_residual": 0,
+      "endpoint": "/v1/messages",
+      "engine_specific_bytes": 6537,
+      "fields": {
+        "dsh_plugin_packages": 2347,
+        "dsh_session_log": 4172,
+        "max_tokens": 6,
+        "messages": 278,
+        "model": 16,
+        "output_config": 18,
+        "stream": 4,
+        "system": 48,
+        "thinking": 19,
+        "tools": 1617
+      },
+      "fixed_bytes": 1665,
+      "framing_bytes": 155,
+      "model_input_bytes": 2161,
+      "model_named": "deepseek-flash",
+      "n_messages": 1,
+      "n_tools": 3,
+      "provider_metadata_bytes": 6519,
+      "separator_slack": 473,
+      "summed_field_bytes": 8525,
+      "system_bytes": 48,
+      "tools_bytes": 1617,
+      "unknown_fields": [],
+      "wire_bytes": 8225
+    }
+  ],
+  "tokeniser": null,
+  "unknown_fields": []
+}

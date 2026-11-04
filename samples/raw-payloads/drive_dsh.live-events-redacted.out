@@ -1,0 +1,52 @@
+The EVENT LOG behind samples/drive_dsh.live-redacted.out -- the artefact that file's own
+summary line `"notifications": 16` is a claim about.
+
+It is here because a review made the right point about that summary: instruments/drive_dsh.py's
+docstring promises "every server notification is written verbatim to --events, so 'it ran' is an
+artefact a reader can count rather than a verdict this file asserts" -- and the events file was
+not committed, so the only evidence for the run WAS the asserted verdict. Now it can be counted.
+
+Not reproducible: it is one live dsh turn against a stub upstream, on node v24.21.0, from a
+throwaway DSH_HOME. The session id is the one this run chose (ari28-J), matching that sample.
+
+REDACTED, and every substitution is the SAME BYTE LENGTH as what it replaced, so no figure
+derived from this file can shift: this box's capture working directory, and 4 of dsh's own
+per-message UUIDs, which become `redacted-identifier-NNN` padded to a UUID's 36 characters --
+the same convention samples/fixtures/request_construction.dsh.jsonl already uses, so the two
+files read alike. No credential appears: the run's DEEPSEEK_API_KEY placeholder is assembled at
+runtime, never reaches the rail, and a grep for it here returns nothing.
+
+What the 16 notifications are, counted from the lines below:
+   2  session.event:agent/inbox/spliced
+   1  session.event:assistant/message
+   1  session.event:request/context
+   1  session.event:request/header
+   1  session.event:session-log-deepseek/delivery-accepted
+   1  session.event:session/title
+   1  session.event:step/end
+   1  session.event:step/start
+   1  session.event:system/message
+   1  session.event:turn/end
+   1  session.event:turn/start
+   2  session.event:user/message
+   2  session.status:-
+  Six independent runs of this same turn each produced exactly 16 notifications of this same
+  shape, which is why the count is quoted as a property of the turn and not of one run.
+
+--- verbatim ---
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "agent/inbox/spliced", "seq": 0, "time": 1793804900599, "data": {"target": "next-turn", "start": 0, "inserted": [{"content": [{"type": "text", "text": "List the files in the current directory, then stop.\n"}], "source": {"kind": "user"}, "role": "user", "id": "redacted-identifier-002-------------"}]}}}}
+{"jsonrpc": "2.0", "method": "session.status", "params": {"sessionId": "ari28-J", "status": "running"}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "turn/start", "seq": 1, "time": 1793804900604, "data": {"turn": 1}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "agent/inbox/spliced", "seq": 2, "time": 1793804900605, "data": {"target": "next-turn", "start": 0, "removedCount": 1, "inserted": []}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "step/start", "seq": 3, "time": 1793804900619, "data": {"turn": 1, "step": 1}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "system/message", "seq": 4, "time": 1793804900623, "data": {"turn": 1, "step": 1, "message": {"role": "system", "content": [{"type": "text", "text": "You are a helpful software engineer assistant."}], "source": {"kind": "system-prompt"}, "id": "redacted-identifier-001-------------"}}, "surfaceOp": "append"}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "user/message", "seq": 5, "time": 1793804900624, "data": {"content": [{"type": "text", "text": "List the files in the current directory, then stop.\n"}], "source": {"kind": "user"}, "role": "user", "id": "redacted-identifier-002-------------"}, "surfaceOp": "append"}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "user/message", "seq": 6, "time": 1793804900625, "data": {"content": [{"type": "text", "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"/tmp/XXXXX/cwd\"."}], "source": {"kind": "runtime-context", "form": "snapshot", "sections": [{"name": "working-directory:current", "text": "Current working directory: \"/tmp/XXXXX/cwd\"."}]}, "role": "user", "id": "redacted-identifier-003-------------"}, "surfaceOp": "append"}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "request/header", "seq": 7, "time": 1793804900626, "data": {"header": {"config": {"provider": "deepseek-official", "model": "deepseek-flash", "maxTokens": 256000, "reasoningEffort": "high"}, "adapterDefaults": {"reasoningEffort": true, "maxTokens": true}, "tools": [{"name": "bash", "description": "Run commands in a bash shell\n* When invoking this tool, the contents of the \"command\" parameter does NOT need to be XML-escaped.\n* Network access depends on the task environment. Prefer configured mirrors/proxies when they are available.\n* State is persistent across command calls and discussions with the user.\n* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.\n* Please avoid commands that may produce a very large amount of output.\n* Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The bash command to run. Relative path is preferred in the command."}}, "required": ["command"]}}, {"name": "read_image", "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string", "description": "Path to the image file, resolved by the filesystem backend."}}, "required": ["file_path"]}}, {"name": "working_directory", "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.", "parameters": {"type": "object", "properties": {"cd": {"type": "string", "description": "Existing directory to enter. Omit to read the current directory."}}}}]}, "reason": "initial"}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "request/context", "seq": 8, "time": 1793804900626, "data": {"provider": "deepseek-official", "model": "deepseek-flash", "contextWindow": 1048576, "systemPromptUpdate": "in-history"}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "session/title", "seq": 9, "time": 1793804900633, "data": {"title": "List the files in the", "messageSeqs": [5], "source": {"kind": "fallback"}}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "session-log-deepseek/delivery-accepted", "seq": 10, "time": 1793804900670, "data": {"sessionId": "ari28-J", "sessionFormatVersion": 4, "throughSeq": 9}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "assistant/message", "seq": 11, "time": 1793804900681, "data": {"turn": 1, "step": 1, "message": {"role": "assistant", "content": [{"type": "text", "text": "Acknowledged."}], "source": {"kind": "model", "provider": "deepseek-official", "model": "deepseek-flash", "replayState": {"response": {"kind": "deepseek-messages", "version": 1, "model": "deepseek-flash"}, "blocks": [{"type": "text"}]}}, "id": "redacted-identifier-004-------------"}, "usage": {"inputTokens": 1, "outputTokens": 1, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 2}, "stream": [{"type": "chunk", "time": 1793804900674, "chunk": {"type": "block-start", "index": 0, "blockType": "text"}}, {"type": "text-chunks", "time0": 1793804900675, "index": 0, "dt": [], "texts": ["Acknowledged."]}, {"type": "chunk", "time": 1793804900675, "chunk": {"type": "block-end", "index": 0, "block": {"type": "text", "text": "Acknowledged."}}}, {"type": "chunk", "time": 1793804900675, "chunk": {"type": "usage", "usage": {"inputTokens": 1, "outputTokens": 1, "cacheReadTokens": 0, "cacheWriteTokens": 0, "totalTokens": 2}}}, {"type": "chunk", "time": 1793804900675, "chunk": {"type": "finish", "reason": {"kind": "stop"}, "replayState": {"response": {"kind": "deepseek-messages", "version": 1, "model": "deepseek-flash"}, "blocks": [{"type": "text"}]}}}]}, "surfaceOp": "append"}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "step/end", "seq": 12, "time": 1793804900681, "data": {"turn": 1, "step": 1}}}}
+{"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": "ari28-J", "event": {"type": "turn/end", "seq": 13, "time": 1793804900682, "data": {"turn": 1, "reason": {"kind": "completed"}}}}}
+{"jsonrpc": "2.0", "method": "session.status", "params": {"sessionId": "ari28-J", "status": "idle"}}

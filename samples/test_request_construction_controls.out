@@ -1,0 +1,59 @@
+REVERT-EACH-FIX GATE (request construction) -- 51 cases
+Each reverts one fix to the simpler code somebody would really write; a control must turn RED.
+
+baseline: the unmutated copies of both files PASS their self-tests, so a RED below is caused by the mutation
+
+C1-three-columns-and-remainder-framing RED   -- FAIL  the split omits ['model', 'stream']
+C2-coverage-three-columns          RED   -- FAIL  coverage invariant did not hold on a clean fixture
+C3-probe-counts-as-turn            RED   -- FAIL  probe-only capture -> exit 4, probes=0
+C4-unknown-field-ignored           RED   -- FAIL  unknown field -> exit 0, unknown=[]
+C5-metadata-billed-as-input        RED   -- FAIL  provider-metadata split wrong: metadata in the fixture 759 B, reported as 759 B, M
+C6-openai-system-as-conversation   RED   -- FAIL  protocol normalisation failed: anth system=13 oai system=0, msgs 1/2
+C7-one-assumed-model               RED   -- FAIL  per-model grouping wrong: ['model-a']
+C8-corrupt-line-skipped            RED   -- FAIL  a corrupt capture was measured anyway: exit 0
+C9-claims-whitespace-exact         RED   -- FAIL  the gate fired on reflowed prose: PUBLISHED-CLAIM CHECK against <tmp>/ok.md |   (w
+C10-faithfulness-always-ok         RED   -- FAIL  faithfulness passed against a different capture
+C11-empty-reference-passes         RED   -- FAIL  a probe-only reference was treated as checkable
+C12-recorder-logs-header-values    RED   -- FAIL  an Authorization header VALUE reached the capture file
+C14-no-shape-check-at-the-door     RED   -- FAIL  a record that is a list raised AttributeError instead of refusing
+C15-shape-fault-skips-the-line     RED   -- FAIL  a record that is a list -> exit 2, errors=['capture file is empty (0 requests): <t
+C16-duplicate-keys-lost-silently   RED   -- FAIL  duplicate key -> exit 0, errors=[]
+C17-unparseable-measured-around    RED   -- FAIL  unparseable records -> exit 0, probes=0, errors=[]
+C18-unparseable-is-a-probe         RED   -- FAIL  is_probe() still calls an unparseable body a startup probe
+C19-coverage-allows-a-deficit      RED   -- FAIL  coverage_holds admits an inequality: deficit=True surplus=False
+C20-framing-ignores-key-escaping   RED   -- FAIL  awkward keys: coverage_ok=False residual=15 framing=69 naive=69
+C21-developer-role-as-conversation RED   -- FAIL  role=developer treated as conversation: system=0 (vs 46 for role=system), msgs=2
+C22-tokeniser-guard-not-consulted  RED   -- FAIL  len(bytes)//4 passed as a tokeniser: fn=<function make_counter.<locals>.count at 0
+C23-wire-bytes-re-derived          RED   -- FAIL  published columns disagree with hand arithmetic: got {'system_bytes': 12, 'tools_b
+C24-refusal-not-fatal-beside-a-good-capture RED   -- FAIL  a corrupt line beside a good capture -> exit 0
+C25-raw-bytes-unvalidated          RED   -- FAIL  raw_bytes absent -> exit 2, errors=['<tmp>/rawbytes-absent.jsonl request 1: the no
+C26-counted-containers-unchecked   RED   -- FAIL  `tools` as a dict -> exit 0, errors=[]
+C27-anthropic-branch-ignores-roles RED   -- FAIL  mixed scope shapes: exit 0, got {'system_bytes': 18, 'tools_bytes': 15, 'fixed_byt
+C28-divisor-guard-pins-one-spelling RED   -- FAIL  len(bytes)//4 passed as a tokeniser: fn=None why='it is exactly len(bytes)//4'
+C29-claims-pin-only-the-first-arm  RED   -- FAIL  claims cover only ['arm-one']
+C30-metadata-share-over-the-wire   RED   -- FAIL  metadata share '3011 bytes (3041.4% of the body) of provider metadata, which the v
+C31-probe-test-ignores-tools       RED   -- FAIL  tools-only request -> exit 2, measurable=0 probes=1
+C32-recorder-reserialises-wire-bytes RED   -- FAIL  raw_bytes 126 is a re-serialisation, not the wire length (compact 113, normalised 
+C33-recorder-blanks-unparseable    RED   -- FAIL  an unparseable body was not recorded with its marker and length: {'arm': 'selftest
+C34-recorder-drops-unparseable     RED   -- exit 1 (no FAIL line; a raise or a hang, which still counts)
+C35-empty-post-marked-unparseable  RED   -- FAIL  an empty POST was not recorded as a null body: {'arm': 'selftest-arm', 'endpoint':
+C36-only-the-first-instruction-message RED   -- FAIL  mixed scope shapes: exit 0, got {'system_bytes': 153, 'tools_bytes': 15, 'fixed_by
+C37-recorder-decodes-as-ascii      RED   -- FAIL  non-ASCII body: raw_bytes=2201 (sent 2201 B), system round-trip False
+C38-chunked-body-never-read        RED   -- FAIL  chunked POST recorded as raw_bytes=0 (sent 387 B), body keys []
+C39-unframeable-body-posed-as-empty RED   -- FAIL  an unframeable body was not marked unread: {'arm': 'selftest-arm', 'endpoint': '/v
+C40-overrun-note-without-a-ceiling RED   -- FAIL  wire 101 B -> exit 0, errors=[]
+C41-two-captures-one-arm-label     RED   -- FAIL  arm collision -> exit 0, rows=2, errors=[]
+C42-recorder-loses-an-unencodable-record RED   -- FAIL  7 requests sent after the six above -> 6 recorded
+C43-transfer-encoding-read-as-one-token RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
+C44-transfer-encoding-case-sensitive RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
+C45-negative-content-length        RED   -- FAIL  Content-Length: -1 recorded as {'arm': 'selftest-arm', 'endpoint': '/v1/messages',
+C46-chunked-trailer-never-ends     RED   -- FAIL  7 requests sent after the six above -> 6 recorded
+C47-arm-collision-keyed-on-the-endpoint-too RED   -- FAIL  arm collision across endpoints -> exit 0, rows=2, errors=[]
+C48-unread-refusal-loses-its-reason RED   -- FAIL  a body the recorder could not read -> exit 2, errors=['capture line 1 of <tmp>/rec
+C49-unencodable-body-raises-in-the-reader RED   -- FAIL  a body that cannot be encoded as UTF-8 raised UnicodeEncodeError instead of refusi
+C50-stray-blank-chunk-line         RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
+C51-unencodable-record-silently-mangled RED   -- FAIL  lone-surrogate body recorded as raw_bytes=70 (sent 70 B), content 'hi ?'
+C13-recorder-keepalive-sse         RED   -- FAIL  streaming reply did not terminate with message_stop
+
+PASSED -- all 51 fixes are pinned: reverting any one of them turns this gate RED.
+exit=0

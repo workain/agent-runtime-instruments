@@ -1,0 +1,73 @@
+This sample is EVIDENCE FOR AN ENGINE ADAPTER, not a measurement. It exists because a
+review found that both new verified=True adapters in instruments/engines.py asserted where
+each engine keeps a session's history -- the `transcripts` field, and the warning that
+dsh's file is not the Claude Code schema -- with no committed artefact behind either
+claim. `grep -rqF "state.db" samples/` and `grep -rqF "session.v4.jsonl" samples/` both
+returned 1. The engine-adapter leg of scripts/check_figures.sh only required each note to
+name SOME tracked .out, and two samples about processes and request bytes satisfied claims
+about on-disk storage.
+
+It cannot be regenerated: both runtime homes were throwaway directories under /tmp for
+the capture runs, and $HERMES_HOME in particular is ~700 MB of installed venv. Paths are
+shown relative to each engine's own home variable; a session id and the cwd slug derived
+from it are the only identifiers, and they name temp directories that no longer exist.
+
+--- verbatim ---
+### dsh: where a session's history actually lives
+$ find $DSH_HOME -maxdepth 4 | sed 's|^$DSH_HOME|$DSH_HOME|'
+$DSH_HOME
+$DSH_HOME/.anonymous-user-id
+$DSH_HOME/profiles
+$DSH_HOME/profiles/sdk-minimal
+$DSH_HOME/profiles/sdk-minimal/cordis.patch.yml
+$DSH_HOME/profiles/sdk-minimal/cordis.yml
+$DSH_HOME/profiles/sdk-minimal/package.json
+$DSH_HOME/profiles/sdk-minimal/pnpm-workspace.yaml
+$DSH_HOME/sessions
+$DSH_HOME/sessions/--tmp-ari28-cwd--
+$DSH_HOME/sessions/--tmp-ari28-cwd--/ari28-final
+$DSH_HOME/sessions/--tmp-ari28-cwd--/ari28-final/session.lock
+$DSH_HOME/sessions/--tmp-ari28-cwd--/ari28-final/session.v4.jsonl
+
+$ wc -c $DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl
+    5449 $DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl
+
+### ...and it is NOT the Claude Code transcript schema.
+Top-level keys of the first three records of each, side by side:
+  dsh session.v4.jsonl:
+    rec 1  ['createdAt', 'cwd', 'delegationDepth', 'id', 'isSeeded', 'type', 'version']
+    rec 2  ['data', 'seq', 'time', 'type']
+    rec 3  ['data', 'seq', 'time', 'type']
+  claude-code <uuid>.jsonl:
+    rec 1  ['mode', 'sessionId', 'type']
+    rec 2  ['permissionMode', 'sessionId', 'type']
+    rec 3  ['bridgeSessionId', 'lastSequenceNum', 'sessionId', 'type']
+
+  No key in common beyond none at all: dsh records are (type, seq, time, data)
+  with a header record carrying (id, cwd, version, createdAt, ...); Claude Code's
+  carry (type, sessionId, ...) and a `message` envelope. This is why the adapter's
+  `transcripts` path is NOT enough to make this repo's transcript readers work on
+  dsh -- measure_token_breakdown.py would read zero turns from a real session.
+
+### hermes: there is no transcript FILE to point an adapter at
+$ ls -A $HERMES_HOME/sessions   # the directory exists and stays empty
+  (no output above means: empty)
+
+$ sqlite3 $HERMES_HOME/state.db '.tables'   # history lives here instead
+  43 tables; the two the adapter's note names:
+    sessions   PRESENT
+      rows=6  columns=['id', 'runtime_revision', 'runtime_generation', 'source', 'created_source', 'user_id', 'session_key', 'chat_id', 'chat_type', 'thread_id', 'display_name', 'origin_json', 'expiry_finalized', 'model', 'model_config', 'system_prompt', 'system_prompt_hash', 'parent_session_id', 'started_at', 'ended_at', 'end_reason', 'message_count', 'tool_call_count', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'reasoning_tokens', 'cwd', 'git_branch', 'git_repo_root', 'git_metadata_generation', 'billing_provider', 'billing_base_url', 'billing_mode', 'estimated_cost_usd', 'actual_cost_usd', 'cost_status', 'cost_source', 'pricing_version', 'title', 'title_source', 'last_activity_at', 'last_activity_description', 'last_activity_provenance', 'api_call_count', 'handoff_state', 'handoff_platform', 'handoff_error', 'compression_failure_cooldown_until', 'compression_failure_error', 'compression_fallback_streak', 'compression_ineffective_count', 'compression_recovery_deadline', 'compression_overload_streak', 'profile_name', 'transport_profile', 'rewind_count', 'archived', 'auto_archived', 'pinned', 'hidden', 'last_read_at', 'tool_names', 'transcript_revision']
+    messages   PRESENT
+      rows=12  columns=['id', 'session_id', 'role', 'content', 'tool_call_id', 'tool_calls', 'tool_name', 'effect_disposition', 'timestamp', 'token_count', 'finish_reason', 'reasoning', 'reasoning_content', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'platform_message_id', 'observed', '_compressed_summary', 'active', 'compacted', 'api_content', 'display_kind', 'display_metadata', 'display_identity', 'display_order', 'message_uid', 'absorbed_message_uids', 'tool_call_uids', 'tool_call_uid']
+  full table list:
+    async_delegations                   compression_locks                   conversation_generations            delivery_obligations
+    gateway_heartbeats                  gateway_hygiene_state               gateway_routing                     hosted_room_events
+    hosted_room_links                   hosted_room_peer_reservations       hosted_room_policy_cursors          hosted_room_policy_events
+    hosted_room_policy_publications     hosted_room_policy_threads          hosted_room_policy_transcript       hosted_room_policy_transcript_state
+    hosted_room_policy_watermarks       hosted_room_remote_runs             hosted_room_retired_ids             hosted_room_revoked_grants
+    hosted_rooms                        messages                            messages_fts                        messages_fts_config
+    messages_fts_data                   messages_fts_docsize                messages_fts_idx                    messages_fts_trigram
+    messages_fts_trigram_config         messages_fts_trigram_data           messages_fts_trigram_docsize        messages_fts_trigram_idx
+    runtime_epoch                       schema_version                      session_admissions                  session_model_usage
+    session_turn_leases                 sessions                            sqlite_sequence                     state_meta
+    system_prompts                      worker_executions                   worker_receipts

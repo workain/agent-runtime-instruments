@@ -240,7 +240,7 @@ Twice in this work the unstable spread *was* the defect, while the median looked
 
 Across this work the same full-harness boot arm has read p50 1.15 s, 2.38 s, 4.35 s and
 `ready p50=1.88s` on one box within a few hours, purely as its load changed. Within a single
-three-rep run, the full-turn arm spanned `min=1.96s  max=3.65s` — an 87% swing with nothing
+three-rep run, the full-turn arm spanned `min=1.96s  max=3.65s` — an 86% swing with nothing
 changed but the moment it ran. Our time-to-usable-MCP-tool readings came out
 `min=5.22s  max=6.97s  spread=1.75s` on n=2, where the difference between the two reps was that a
 third MCP server happened to appear in one of them. A p50 drawn from any of those pairs would be a

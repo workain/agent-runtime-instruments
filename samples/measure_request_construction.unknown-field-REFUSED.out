@@ -1,0 +1,12 @@
+CONFOUNDS -- printed every run, because each of these makes this number true about the RUN and false about the ENGINE:
+  * A capture needs the client pointed at a NON-FIRST-PARTY base URL, and for Claude Code that is not a neutral act: it DISABLES tool-search deferral, which the source study measured at +49.5% tokens. A proxied Claude Code arm is a different configuration from a first-party one, not the same one observed.
+  * Some clients embed LIVE GIT STATE in their own system prompt -- Hermes embeds cwd, branch, status and recent commit SUBJECTS. Such a capture is NOT reproducible across commits: committing changes the payload. Freeze one git state for a batch, or capture outside a repository, and say which you did.
+  * A field PRESENT in a payload is not necessarily billed as model input. Check the vendor's own documentation per field before counting it; see PROVIDER_METADATA in this file for the two that are documented at zero.
+  * The model never answers, so nothing that needs real model progress is measurable here: no compaction, no context growth across turns, no tool-use loop. This is the FIRST request, which is the fixed cost -- not a whole session.
+
+tokens:    NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
+UNKNOWN BODY FIELD(S): totally_new_vendor_field
+  A FINDING, not a crash. An unaccounted field means the decomposition UNDERSTATES the payload, which reports the client as
+  cheaper than it is. Add it to KNOWN_FIELDS only after deciding whether it is provider metadata (see PROVIDER_METADATA).
+exit=4

@@ -1,0 +1,47 @@
+This file is NOT output of the current code. It records what
+scripts/test_request_construction_controls.sh printed on its FIRST run, while it
+was RED -- before the three unprotected fixes below had controls.
+
+It is kept for the same reason samples/gate-evidence/check_figures.RED.out is: a
+gate whose first run is green tells you nothing about whether it can fail. These
+three were real gaps, found by the gate on itself:
+
+  C1  framing defined as the remainder -- equivalent ALONE, and the enabler of a
+      tautological coverage check when combined with a narrowed field split. The
+      case was rewritten to revert BOTH, which is the implementation somebody
+      would really write, and a new control now requires the split to NAME every
+      top-level field.
+  C12 the mutation recorded an EMPTY header dict, so it leaked nothing and the
+      control was right not to fire. record() now takes the header MAPPING and
+      keeps names only, so the leaky revert is a one-word change and is caught.
+  C13 keep-alive SSE was neutralised by a later close_connection assignment, so
+      the stream still terminated. The case now reverts that line.
+
+--- verbatim first run ---
+REVERT-EACH-FIX GATE (request construction) -- 13 cases
+Each reverts one fix to the simpler code somebody would really write; a control must turn RED.
+
+baseline: the unmutated copies of both files PASS their self-tests, so a RED below is caused by the mutation
+
+C1-framing-definitional            GREEN -- COVERAGE GAP
+C2-coverage-three-columns          RED   -- FAIL  coverage invariant did not hold on a clean fixture
+C3-probe-counts-as-turn            RED   -- FAIL  probe-only capture -> exit 4, probes=0
+C4-unknown-field-ignored           RED   -- FAIL  unknown field -> exit 0, unknown=[]
+C5-metadata-billed-as-input        RED   -- FAIL  provider-metadata split wrong: meta=759 reported=759
+C6-openai-system-as-conversation   RED   -- FAIL  protocol normalisation failed: anth system=13 oai system=0, msgs 1/2
+C7-one-assumed-model               RED   -- FAIL  per-model grouping wrong: ['model-a']
+C8-corrupt-line-skipped            RED   -- FAIL  a corrupt capture was measured anyway: exit 0
+C9-claims-whitespace-exact         RED   -- FAIL  the gate fired on reflowed prose: PUBLISHED-CLAIM CHECK against /tmp/ari-mrc-selft
+C10-faithfulness-always-ok         RED   -- FAIL  faithfulness passed against a different capture
+C11-empty-reference-passes         RED   -- FAIL  a probe-only reference was treated as checkable
+C12-recorder-logs-header-values    GREEN -- COVERAGE GAP
+C13-recorder-keepalive-sse         GREEN -- COVERAGE GAP
+
+FAILED -- 3 of 13 fixes are unprotected:
+  C1-framing-definitional: reverting it changes nothing the self-test can see
+    what the revert costs: defining JSON framing as `whole - sum(fields)` instead of predicting it from the structure. It looks equivalent and makes the coverage invariant TAUTOLOGICAL: framing silently absorbs any field missing from the split, so the check can never fail and the instrument reports a payload smaller than the one that was sent.
+  C12-recorder-logs-header-values: reverting it changes nothing the self-test can see
+    what the revert costs: recording header VALUES as well as names. The Authorization / x-api-key value of a misconfigured run then lands in a capture file whose whole purpose is to be publishable.
+  C13-recorder-keepalive-sse: reverting it changes nothing the self-test can see
+    what the revert costs: answering an event stream under keep-alive. With no Content-Length the client cannot tell the body ended and blocks until its own timeout -- and a recorder that hangs the client reads as a client that never sent anything.
+exit=1

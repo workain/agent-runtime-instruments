@@ -254,6 +254,103 @@ Stated so the gaps are visible rather than implied absent.
   state change" is the signal the literature actually names, and this instrument cannot see it
   yet.
 
+### `measure_request_construction.py` and `capture_proxy.py`
+
+- **Only the wire figure is an observation.** Every other column is computed over a
+  re-serialisation of the parsed body with `json.dumps`' default separators, and a client that
+  serialises compactly sends fewer bytes than the split accounts for. On the Hermes capture the
+  instrument prints `NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%)`
+  for exactly that reason. A per-field share of the raw wire bytes is not well defined without
+  re-parsing, so the split is of the normalisation and says so.
+- **This is the FIRST request of a run, which is the fixed cost — not a session.** The stub never
+  answers with anything the client can work from, so nothing requiring real model progress is
+  measurable here: no compaction, no context growth, no tool-use loop.
+- **A capture needs the client pointed at a non-first-party base URL, and for Claude Code that is
+  not a neutral act.** It disables tool-search deferral, measured in the source study at +49.5%
+  tokens. A proxied arm is a different configuration, not the same one observed.
+- **Some clients embed live git state in their own system prompt.** Hermes embeds cwd, branch,
+  status and recent commit subjects, so a Hermes capture is not reproducible across commits:
+  committing changes the payload. Freeze one git state for a batch, or capture outside a
+  repository, and say which you did. The committed fixture was taken outside one.
+- **`--check-claims` checks for the PRESENCE of a clause, and presence is not meaning.** Two
+  reviews attacked this in sequence. The first kept every digit byte-identical and flipped the
+  verb in place; pinning whole clauses, for both arms, stops that. The second kept the clauses
+  byte-identical *and in the prose*, relabelled them as the draft "this branch has now
+  RETRACTED", and asserted the opposite around them — every gate green, and no new digit
+  anywhere. Quoting a wrong figure beside its correction is this repository's own idiom
+  (`check_figures.sh` has six exemptions for precisely that), which is what makes the reframing
+  read as ordinary. **Nothing in this repository reads meaning, and this gate cannot tell a
+  statement from a quotation of one.** Treat it as protecting the digits and their immediate
+  wording, and nothing beyond that.
+- **The token columns have no executed coverage in this repository.** `tiktoken` is deliberately
+  not a dependency and is not installed on the box this was written on, so no gate runs the
+  encoding path. A review replaced the encoder with `len(bytes)//4` and every check stayed green
+  while the label still read `tiktoken:cl100k_base`. What runs now is a load-time guard that
+  refuses an encoder whose bytes-per-token *ratio* barely varies across three deliberately
+  unlike probe strings. That rejects the whole fixed-divisor class rather than one spelling of
+  it — an earlier version checked for the literal `len(bytes)//4` and a review walked
+  `round(len/4)`, `(len+3)//4`, `len//4+1`, `len//5` and `int(len/3.8)` straight past it while
+  this file claimed it "rejects division". A real `cl100k_base` measures 3.26 on that spread and
+  every estimator tried measured at or below 1.12. The published bytes/token figures come from one externally
+  installed tiktoken, with the command recorded in the sample's own header.
+- **Whole-body bytes/token is not an engine property when the bodies differ in kind.** Three
+  quarters of the dsh body is provider metadata and none of the Hermes body is, so most of the
+  ~30% whole-body gap is the metadata's own density. On model input the two are within ~3%. Both
+  are printed, labelled; only the second is about cost.
+- **`capture_proxy.py` records header NAMES and never header values.** That is deliberate and it
+  is the one irreversible mistake available in that file, so it is pinned by a control. It does
+  mean a capture cannot tell you which credential a run used — by design.
+- **An overrun past the separator bound is refused, and the bound is tight.** A normalised split
+  can legitimately exceed the observed wire figure, because `json.dumps` writes `", "` where a
+  compact client writes `,` — but only by one byte per separator, which this instrument now
+  computes per body and prints in the note. Past it the split is not a re-serialisation of those
+  bytes at all and the capture is refused. Two causes produce that and this instrument **cannot
+  tell them apart**: a recorder that mis-decoded the body, or a client whose number spelling
+  differs from `json.dumps`' (`1E5` re-serialised as `100000.0`). The refusal names both. Headroom
+  on the real captures here is `693 B of headroom` on Hermes and `18 B of headroom` on dsh — tight enough that a
+  future float-heavy payload could trip it, which is the trade for catching a recorder mutation
+  that otherwise published a 2.9x overstatement at exit 0 under a note saying "Not an error".
+- **A chunked request body is de-chunked; one that cannot be framed is refused.** `Content-Length:
+  0` means nothing was sent and is recorded as a null body. A `Transfer-Encoding` this recorder
+  cannot decode, an unreadable `Content-Length`, or a chunked stream that ends mid-body are a
+  different fact — the body was never read, so its length is **unknown, not zero** — and are
+  recorded with a null length that the reader refuses by name. The distinction is load-bearing:
+  recording unknown as zero is what filed 40391 chunked bytes under `startup probes` at exit 0.
+- **A `raw_bytes` that is a float is refused, not rounded.** `8225.0` is a shape some JSON
+  producers emit, and this instrument stops on it. Deliberate: the field is the one direct
+  observation, and a recorder that changed its type is worth a refusal rather than a silent
+  `int()`. It does mean a third-party capture may need its `raw_bytes` normalised before this will
+  read it.
+- **Two captures cannot share an arm label.** The table and the published claims are keyed by arm
+  and keep the first request per arm, so a second capture under the same label would be counted in
+  `measurable` and appear in no row and in no claim. Refused rather than auto-renamed: the arm is
+  the label the operator chose at capture time. Use `--reference` to compare a rerun against the
+  capture it is meant to reproduce.
+- **The backticked-span leg reads code spans as markdown defines them, and that leaves one
+  shape unchecked.** Two reviews attacked this from opposite sides. Joining a wrapped span's two
+  halves re-pairs backticks, so a figure typed on the continuation line can land between two
+  backticks that are no longer a delimiter pair and be missed; reading the file as written *as
+  well* then emits the prose between one span's closer and the next one's opener, so an ordinary
+  wrapped sentence failed the gate with `-- 6519 of 8680 B -- while hermes publishes` as its
+  "figure". Per-line backtick pairing is ambiguous and no arrangement of greps resolves it. The
+  span leg therefore reads the joined copy only, and the missed case is covered where nothing is
+  ambiguous: the unit patterns read the file **as written**, so a planted five-digit byte
+  figure is caught whatever its backticks are doing. (Not quoted, for the reason
+  `samples/raw-payloads/README.md` gives -- and the bare-`B` pattern is now the thing that
+  catches it, so an exemption for that value would re-open this hole and not merely describe it.) **Still uncovered:** a figure between two mis-paired
+  backticks carrying no unit these patterns know. It is not a published code span — it renders as
+  mangled prose — and no gate here reads it. **Both directions are now pinned by
+  `scripts/test_figure_gate.sh`**, which plants each attack and each ordinary-prose case on every
+  preflight, and deletes the catching pattern from the gate's own source to prove it is the thing
+  catching. Before that harness existed, three successive fixes to this one mechanism were each
+  invisible to every gate.
+- **The engine adapters match the shape each engine was OBSERVED to have, and nothing else.** A
+  `dsh` installed as a launcher on PATH is not matched by the dsh adapter, and neither is the
+  `hermes` launcher: both were tried as bare-name patterns and both fired on unrelated command
+  lines mentioning a directory of that name (`rm -rf /tmp/dsh`, `ls -la /srv/hermes`). The
+  unexercised alternatives were removed rather than kept and caveated, so the adapters under-match
+  rather than over-match. `measure_session_footprint.py --list-unmatched` is how you find out.
+
 ## Not evaluated at all
 
 No sandbox or microVM platform was measured. No hosted agent rail was called. Nothing here

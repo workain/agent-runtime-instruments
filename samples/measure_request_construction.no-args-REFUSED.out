@@ -1,0 +1,3 @@
+REFUSING: pass at least one capture file, or --self-test. Produce one with:
+  ARI_CAPTURE=/tmp/cap.jsonl ARI_ARM=myarm python3 instruments/capture_proxy.py 4199
+exit=2

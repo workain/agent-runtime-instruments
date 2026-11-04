@@ -1,0 +1,86 @@
+== 1. nothing to measure must NOT render as a plausible zero ==
+  PASS  a missing capture -> exit 2 and NO-MEASUREMENT
+  PASS  an EMPTY capture -> exit 2 and NO-MEASUREMENT
+== 2. a capture of nothing but startup probes is NO MEASUREMENT ==
+  PASS  2 probes, 0 turns -> exit 2, and the probe COUNT is reported (counting lines would have called this a measurement)
+== 3. the measurement discriminates: a known delta is reported as that delta ==
+  PASS  +500 content bytes measured as exactly +500 (220 -> 720)
+== 4. 100% field coverage, and it must BITE when a field is dropped ==
+  PASS  fields + predicted framing == whole body, exactly
+  PASS  the split NAMES every top-level field (5 of 5) -- a narrowed system/tools/messages decomposition fails here even if its own arithmetic closes
+  PASS  framing is a function of the KEYS alone (60 B either way) -- it cannot absorb a dropped field, which is what makes the invariant falsifiable
+  PASS  dropping `tools` from the split BREAKS the invariant (50 + 60 != 125)
+== 5. an UNKNOWN top-level field fails LOUDLY and names itself ==
+  PASS  unknown field -> exit 4 and the field is named
+== 6. provider metadata is EXCLUDED from model input, and the split bites ==
+  PASS  model input == body - provider metadata, and the metadata is non-zero (759 B) so the fixture can tell the two apart
+  PASS  with no metadata present, model input == the whole body (no phantom deduction)
+== 7. both protocols normalise into the same columns ==
+  PASS  an Anthropic top-level `system` and an OpenAI role=system message both land in the system column, and neither is counted as conversation
+  PASS  a `role: developer` message lands in the SAME column as `role: system` (49 B vs 46 B, the 3-byte difference being the role NAME) and the conversation column is identical -- the spelling OpenAI documents today
+== 8. the model is read per request, not assumed for the capture ==
+  PASS  three requests naming two models and no model -> three groups, including <ABSENT> rather than a default
+== 9. faithfulness: reproducing passes, substituting another arm FAILS ==
+  PASS  a capture checked against ITSELF reproduces every field
+  PASS  checked against a DIFFERENT arm's capture it fails and names the field (so the check can fail, which is the only reason to trust it passing)
+  PASS  a reference with no measurable request is CANNOT CHECK, not a pass
+== 10. claim drift, and it must NOT fire on reflowed prose ==
+  PASS  every claim found even though one WRAPPED across a line break -- the gate is whitespace-insensitive, which is why it does not cry wolf at reflow
+  PASS  a changed digit IS caught -- so the whitespace tolerance did not cost the gate its teeth
+  PASS  a missing prose file is CANNOT CHECK, not a pass
+== 11. a capture line this reader cannot READ is refused, not measured around ==
+  PASS  one unreadable line refuses the whole capture (a partial read would silently shrink every total)
+  PASS  a record that is a list -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  a record that is a string -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  a `body` that is a list -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  a `body` that is a string -> exit 2, naming the file and the LINE (it used to raise AttributeError and exit 1)
+  PASS  `body: null` is still a PROBE, not a structural fault -- the check refuses the wrong shape without refusing a legitimate record
+  PASS  a REPEATED top-level key is named and refused (json.loads keeps the last value, so a 10 KB system prompt silently became 3 bytes with coverage green)
+== 11b. the four columns the README publishes, against hand arithmetic ==
+  PASS  hand-computed columns all match: system 12 + tools 15 = fixed 27 B, 1 tool, 1 message, and wire 12345 B read from the RECORD (not re-derived from the body, which is 113 B here -- so the two are now distinguishable)
+  PASS  no overrun note when model input is below the wire figure
+  PASS  when the normalised split EXCEEDS the wire figure, the report says so (unflagged, `fixed B` larger than `wire B` reads as a broken instrument)
+== 11c. the claims pin EVERY arm, and the percentage names its denominator ==
+  PASS  a two-arm capture yields claims for BOTH arms (10 claims over arm-one, arm-two) -- it used to pin only rows[0], leaving one whole engine unpinned
+  PASS  the metadata share is computed over the BODY (96.5%), and this fixture's wire figure would give 3041.4% -- so the denominator is pinned, not assumed
+== 11d. a request with tools but no messages is a TURN, not a probe ==
+  PASS  a tools-only request is measured, not filed as a startup probe
+== 11e. a refused capture is fatal even beside a good one ==
+  PASS  a corrupt line beside a GOOD capture still exits 2 and prints no table -- a refused capture is a hole in the total whether or not another one was fine
+== 11f. the fields whose LENGTH is published must be the right container ==
+  PASS  a `tools` that is a dict is refused by name, not counted (len() of the wrong container counts the wrong thing and prints it as a schema count)
+  PASS  a `messages` that is a string is refused by name, not counted (len() of the wrong container counts the wrong thing and prints it as a schema count)
+== 11g. raw_bytes -- the only direct observation -- is validated ==
+  PASS  raw_bytes absent -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes null -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes a string -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes negative -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes 0 beside a body that parsed -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+== 11h. instruction roles are read in BOTH protocol branches ==
+  PASS  a top-level `system` AND a role:system AND a role:developer message all land in the system column (18 + 183 = 201 B, +15 B of tools = 216 B fixed), leaving 1 conversation message of 35 B -- the Anthropic branch reads roles too, which it did not, and it reads ALL of them, which a six-character mutation showed nothing was checking
+== 11i. an overrun BEYOND what separators explain is refused, not noted ==
+  PASS  wire 101 B against a 113 B body (overrun 12, separators explain 11) -> refused by name
+  PASS  wire 102 B against a 113 B body (overrun 11, separators explain 11) -> measured, with the note
+== 11j. two captures under ONE arm label are refused, not merged ==
+  PASS  two captures sharing one arm label -> exit 2, naming both files (they used to collapse into one row, with the second capture pinned by nothing)
+  PASS  two captures sharing an arm but hitting DIFFERENT endpoints are refused too -- the key is the arm alone, and keying it on (arm, endpoint) silently merged them again
+  PASS  two requests in ONE capture are still measured (2 rows) -- the refusal is about two FILES claiming one label, not about a capture with history
+== 11k. what the RECORDER could not read or encode is refused BY NAME ==
+  PASS  a body the recorder could not read -> exit 2, refused on 'never READ' (not on a true-but-useless reason, and not with a traceback)
+  PASS  a body that cannot be encoded as UTF-8 -> exit 2, refused on 'cannot be encoded as UTF-8' (not on a true-but-useless reason, and not with a traceback)
+== 12. an unavailable tokeniser is a reported state, never a crash ==
+  PASS  a malformed --tokeniser spec is refused with a reason
+  PASS  an unsupported tokeniser module is refused with a reason
+  PASS  an encoder that is really len(bytes)//4 is REFUSED by the LOAD PATH rather than labelled tiktoken:cl100k_base -- the guard and its call site, not just the predicate
+  PASS  all 6 fixed-divisor spellings are refused, not just the one literal expression (len//4, round(len/4), ceil(len/4), len//4 + 1, len//5, int(len/3.8)) -- the guard tests the CLASS, which is what docs/limits.md claims
+  PASS  a count whose bytes-per-token ratio DOES vary across the probes passes
+== 13. an UNPARSEABLE recorded body is refused, never filed as a probe ==
+  PASS  3 unparseable records refuse the capture and their 144000 raw bytes are NAMED (they used to be reported as startup probes, with exit 0)
+  PASS  is_probe() says an unparseable body is NOT a probe, which is the one-line distinction the whole refusal rests on
+== 14. the coverage invariant's own COMPARISON, pinned ==
+  PASS  coverage_holds is exact equality: a 10-byte DEFICIT fails and a 10-byte SURPLUS fails (`<=` would pass the deficit, which is the dropped-field case)
+== 15. framing is right for keys that are not plain ASCII words ==
+  PASS  multibyte and escape-needing keys: coverage still exact, and framing 84 B differs from the len(key)+2 shortcut's 69 B -- so the shortcut is a DETECTABLE revert
+
+self-test: 58 pass, 0 fail
+exit=0

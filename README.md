@@ -72,9 +72,14 @@ with the reproduction for each.
 | `measure_token_breakdown.py` | where a session's tokens went, by tool / subagent / subsession, plus mechanical loop flags | free, reads transcripts |
 | `flags.py` | the same detectors as **named, callable flag functions** over a *recent window* of one transcript, for a caller polling a live session | free, reads part of one transcript |
 | `bench_window_read.py` | what that windowed read actually costs vs parsing the whole file | free, reads transcripts |
+| `measure_request_construction.py` | what a client **puts in every request** — the fixed per-turn part, and which of it is billed | free, reads a capture |
 
 `instruments/echo_mcp_server.py` is a 60-line stdio MCP server with one tool, so
 `bench_mcp_connect.py` runs out of the box without access to anyone's private servers.
+`instruments/capture_proxy.py` is the same idea for `measure_request_construction.py`: a
+loopback endpoint that records what a client sends and never calls a provider, so a capture
+costs $0.00 by construction. `instruments/drive_dsh.py` drives one DeepSeek Harness turn
+headlessly, which nothing else can do — see the engine table below for why.
 `instruments/engines.py` is the engine adapter table — see below.
 
 All take `--help` and `--help-blind`; most take `--anonymise`, which hashes session identifiers
@@ -222,15 +227,231 @@ Extending the buffer rather than re-reading has since flattened that curve, so t
 and markedly more expensive in syscalls; 1 MB is kept for the property that is stable. It is a per-call parameter, because
 the optimum is a property of how many bytes a turn takes in your own corpus.
 
+### `measure_request_construction.py` — what the client *constructs*, not what the transcript says
+
+Everything above reads a session after the fact. This reads the other end: the request bodies a
+client actually puts on the wire, captured by `instruments/capture_proxy.py` before any provider
+sees them. No upstream call is ever made, so a capture costs nothing — and nothing that needs the
+model to make progress (compaction, context growth) is measurable this way. What *is* measurable
+is the **fixed part of every turn**: the system prompt plus the tool schemas.
+
+Two real captures are committed as fixtures, one per newly-verified engine, measured at a
+non-repository working directory on one box:
+
+| | DeepSeek Harness (`sdk-minimal`) | Hermes (custom OpenAI provider) |
+|---|---|---|
+| wire bytes, first request — *observed* | `8225 bytes on the wire` | `48820 bytes on the wire` |
+| normalised body — *re-serialised* | `normalised body 8680 B` | `normalised body 49655 B` |
+| fixed per-turn part (system + tools) | `fixed 1665 bytes, paid again on every later turn` | `fixed 49426 bytes, paid again on every later turn` |
+| tool schemas exposed | `3 tool schema(s) exposed` | `20 tool schema(s) exposed` |
+| model-input bytes | `MODEL INPUT 2161 B` | `MODEL INPUT 49655 B` |
+| provider metadata | `provider metadata 6519 B (75.1% of the body)` | `provider metadata 0 B` |
+
+Every cell above is a clause the instrument itself pins, for **both** arms. **What that does
+and does not buy:** the digits can no longer be kept while the verb is flipped in place, which is
+a real narrowing. It is not protection from an inversion — a review kept all four clauses
+byte-identical and still in this file, relabelled them as a retracted draft, and asserted the
+opposite around them, with every gate green. A clause is checked for PRESENCE, and presence cannot
+distinguish a statement from a quotation of one; nothing in this repository reads meaning. See
+`docs/limits.md`. It used to pin the
+left column only — `headline_claims` read `rows[0]` — so a review could rewrite the entire
+right-hand column, or swap the two, with every gate green. Bare table cells were worse than
+unpinned: a one-digit figure like `9` occurs in all but a handful of this repository's
+artefacts, so no exclusion list can protect it, and the fix is to publish a clause instead of a
+number. (That claim deliberately carries no count. An earlier draft said "62 artefacts", measured
+over a corpus that was not the one the gate searches -- the same commit excluded
+`samples/raw-payloads/` from the search -- and no pattern reads it, so nothing would have caught
+the drift.)
+
+**Only the first row is an observation.** Every other row is computed over a re-serialisation of
+the parsed body with `json.dumps`' default separators, and a client that writes `{"a":1}` where
+`json.dumps` writes `{"a": 1}` sends fewer bytes than the split accounts for. On the Hermes
+capture that difference is large enough to invert the comparison a reader would expect:
+`NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%)`. The instrument prints
+that line itself rather than leaving a reader to find a `fixed` figure larger than the request and
+distrust the whole table. Quote the wire row for what the network paid.
+
+Each claim carries the *direction* of its figure and not only the digits. For dsh:
+`model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from`, and
+`6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO
+model-input tokens`. For Hermes, whose payload is all model input:
+`model input 49655 bytes of a 49655-byte body, which is what a per-token bill is computed from`,
+and `no provider metadata at all, so its model input and its whole body are the same 49655 bytes`.
+
+Each of those claims used to be a bare figure, and the first published version of the sentence
+joining them was **wrong**: it named `8225 bytes on the wire` and then divided by it, while the
+`75.1%` had been computed over the 8680-byte body. 6519/8225 is 79.3%, so the sentence named one
+denominator and quoted the other's answer, and the gate passed because it only ever asked whether
+each figure *string* occurred in the prose. A review did the division. Both halves are fixed: the
+claim now says *of the body*, and `scripts/check_figures.sh` learned to read percentages at all.
+
+**The right-hand column of that table is why the instrument exists.** `dsh` sends two top-level
+fields that are not part of the Anthropic API — `dsh_session_log` and `dsh_plugin_packages` — and
+on this capture they are **75.1% of the body**. The vendor's own installed documentation says both
+cost *"Zero model-input tokens"* and *"only increase HTTP request bytes"*; those quotations are in
+`instruments/measure_request_construction.py` beside the set that encodes them. Counting them as
+model input is not a rounding error: in the study this was ported from it inverted the published
+headline's sign, from *cheaper* to *more expensive*, on identical bytes.
+
+So a decomposition that knows only `system`/`tools`/`messages` would have reported a quarter of
+that payload as the whole request, printing a complete-looking table with no symptom. The
+instrument therefore checks its own split against the JSON structure: per-field bytes **plus
+framing predicted from the keys** must equal the whole body exactly, and an unknown top-level field
+exits 4 naming itself rather than vanishing into a `.get()`.
+
+Seven things it refuses to do, each with a committed artefact:
+
+| Sample | What it shows |
+|---|---|
+| `samples/measure_request_construction.probes-only-NO-MEASUREMENT.out` | a **real** capture of a run in which the agent never constructed a turn — only Hermes's two startup probes. Counting capture *lines* would have called that a measurement; it says `NONE is measurable` and exits 2. |
+| `samples/measure_request_construction.unknown-field-REFUSED.out` | `UNKNOWN BODY FIELD(S): totally_new_vendor_field` — named, not dropped, exit 4 |
+| `samples/measure_request_construction.faithfulness-FAILED.out` | `--reference` against the wrong arm's capture: `REPRODUCTION FAILED`, with the field that differs named, exit 5 |
+| `samples/measure_request_construction.claims-drift-FAILED.out` | `DRIFT: a figure above is not in the prose`, exit 6 |
+| `samples/measure_request_construction.corrupt-REFUSED.out` | one unreadable line refuses the whole capture — a partial read shrinks every total, which is the one failure that looks like good news |
+| `samples/measure_request_construction.not-an-object-REFUSED.out` | a line that is valid JSON but the wrong shape: `is JSON but not an object (it is a list)`, naming the file and the line. It used to raise `AttributeError: 'list' object has no attribute 'get'` from `is_probe` and exit 1, which is not in this instrument's documented set of exit codes |
+| `samples/measure_request_construction.duplicate-key-REFUSED.out` | `repeats the JSON key(s) system` — `json.loads` keeps the last value, so a long system prompt silently became three bytes while the coverage invariant still held, because the *parsed* body really is self-consistent |
+| `samples/measure_request_construction.unparseable-REFUSED.out` | three requests the recorder could not parse, with their `144000 raw bytes between them` named. They carry no `tools` and no `messages`, so they were being filed as startup probes: real traffic not omitted but **mislabelled**, under a 100%-coverage banner, at exit 0 |
+
+**Both captures were taken twice, from separate processes, and `--reference` compared the second
+run against the committed first.** Hermes reproduced byte for byte: the second capture file is
+identical to the committed one, and `samples/measure_request_construction.hermes-rerun-faithful.out`
+ends `every field reproduces to the digit` at exit 0.
+
+dsh **failed the check**, at exit 5, and the failure is the more useful half
+(`samples/measure_request_construction.dsh-rerun-REPRODUCTION-FAILED.out`). Exactly two of the
+eight compared fields differ, by the same four bytes:
+
+```
+  provider_metadata_bytes            6515         6519  -4  <-- DIFFERS
+  model_input_bytes                  2161         2161  MATCH
+```
+
+The cause is `dsh_session_log`, which embeds the session id, and the two runs chose ids four
+characters apart. Everything else — `system_bytes`, `tools_bytes`, `conversation_bytes`,
+`n_tools`, and the model-input figure above — reproduces exactly. So the quantity a bill is
+computed from is stable across runs while the payload carrying it is not, which is the same
+distinction the provider-metadata split exists to make. The check refuses anyway, rather than
+calling four bytes close enough, and that is the behaviour worth having.
+
+`--reference` is the ported discipline that nothing built on a capture is believable until a fresh
+capture reproduces a stored one to the digit (`samples/measure_request_construction.faithful.out`
+is the passing side). `--check-claims` is its prose counterpart — every headline figure measured
+must be quoted in a prose file — and it compares **whitespace-insensitively**, because the gate it
+came from once failed purely on a claim that had wrapped across a markdown line break.
+`samples/measure_request_construction.claims.out` checks this README and ends
+`every figure measured here is quoted in the prose`; the RED side's fixture gets one digit wrong
+*and* wraps a correct claim across a line break, so the only thing the gate can be firing on is the
+drift.
+
+Bytes, not tokens, are the measured unit: this repository has no dependencies and a bundled
+tokeniser would be both a dependency and a guess at the provider's own. Pass
+`--tokeniser tiktoken:cl100k_base` and tokens appear; without it the token column says
+`NOT MEASURED -- no tokeniser given` rather than a byte/4 estimate
+(`samples/measure_request_construction.tokeniser-unavailable.out`). **Bytes are a proxy for tokens
+and the proxy is not uniform** — a tool-schema array is dense in JSON punctuation — so a bytes
+ratio between two arms is not their token ratio.
+
+Measured on these two captures with an externally installed tokeniser
+(`samples/measure_request_construction.tokens.out`), that non-uniformity is worth being careful
+about in a specific way. Over the **whole body** the two engines run at
+`3.24 bytes/token over the whole body` and `4.23 bytes/token over the whole body` — but three
+quarters of the dsh body is provider metadata and none of the Hermes body is, so most of that gap
+is the metadata's own density and not the engines'. Over **model input**, the quantity a bill is
+actually computed from, they are `4.11 bytes/token over MODEL INPUT` and
+`4.23 bytes/token over MODEL INPUT`. The instrument prints both, labelled, because a review found
+the whole-body pair quoted in a paragraph that was arguing about cost — where the model-input pair
+is the one that answers the question.
+
+That path has a limit worth stating plainly: `tiktoken` is deliberately not a dependency and is
+not installed on the box this was written on, so **no gate here executes the token code**. A
+review replaced the encoder with `len(bytes)//4` and every check in the repository stayed green
+while the output still called itself `tiktoken:cl100k_base`. What now runs is the one check that
+can run without the dependency — at load time the encoder is asked to count three probe strings,
+and if it returns exactly `len(bytes)//4` for all of them it is refused rather than labelled as a
+tokeniser. The sample itself is listed unreproducible in `scripts/regen_samples.sh` for the same
+reason, with the command that produced it recorded in its header.
+
+The controls are pinned the same way `flags.py`'s are, by reverting each fix and requiring a
+control to turn RED:
+
+```
+REVERT-EACH-FIX GATE (request construction) -- 51 cases
+PASSED -- all 51 fixes are pinned: reverting any one of them turns this gate RED.
+```
+
+All but thirteen of them -- the gate's original set, below -- were added after four
+independent reviews of this branch returned **BLOCK**. Each reverts a fix to the implementation the review substituted and found the entire
+preflight green against — including `coverage_ok`'s `==` relaxed to `<=` (one character, and it
+passes every deficit, which is the only direction a dropped field can go), framing predicted as
+`len(key) + 2` (indistinguishable from the real thing for every short ASCII key, which is what
+every fixture used), and deriving the wire figure from the parsed body instead of reading what the
+recorder observed.
+
+That gate's **own first run was RED on 3 of its 13 cases**, and the run is kept at
+`samples/gate-evidence/test_request_construction_controls.RED.out`. One of the three is worth
+reading: defining JSON framing as `whole - sum(fields)` is *arithmetically identical* to predicting
+it from the keys whenever the split is complete, so reverting that alone changes nothing — it is
+only the enabler. The case now reverts it **together** with the narrowed split, which is the
+implementation somebody would really write, and a new control requires the split to NAME every
+top-level field.
+
 ### Which engines are actually supported
 
 `instruments/engines.py` holds one adapter per engine, and **every instrument prints which
 adapters are measured and which are guesses, on every run**:
 
-- **Verified** (run, with output kept in `samples/`): Claude Code, its ACP host, Codex.
+- **Verified** (run, with output kept in `samples/`): Claude Code, its ACP host, Codex,
+  **DeepSeek Harness (`dsh`)** and **Hermes**.
 - **Untested adapters** — patterns we believe from documentation, *not* measurements: goose,
   aider, opencode, cursor-agent. Each says in the file why it may be wrong (opencode is
   client/server, so its sessions are probably not separate processes at all).
+
+`dsh` and `hermes` were added by running them, on one box, against `capture_proxy.py` — no
+credential, no spend. The process evidence is `samples/measure_session_footprint.dsh-hermes.out`,
+a live snapshot in which both appear as matched trees; the request evidence is the two capture
+fixtures above. Four things that verification established, none of which the documentation says:
+
+- **`dsh` needs Node ≥ 24.9.0 and on an older node it produces zero output and exits 0** — no
+  error, nothing to grep. `drive_dsh.py` therefore refuses up front rather than launching it, and
+  an explicitly-named node that is wrong is refused instead of being silently replaced by whatever
+  is on `PATH` (`samples/drive_dsh.wrong-node-REFUSED.out`).
+- **`dsh`'s transcript lives at `$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v4.jsonl`**,
+  read off disk rather than from documentation. It is *not* the Claude Code transcript schema, so
+  this repo's transcript readers cannot parse it; the path is recorded because that is where the
+  data is, not because they can.
+- **Hermes has no transcript files at all**, so its adapter's `transcripts` is `None` rather than a
+  directory that is always empty: a session's history goes into `$HERMES_HOME/state.db` (SQLite,
+  tables `sessions`/`messages`), and `$HERMES_HOME/sessions` stayed empty across a verified run.
+  Every transcript-reading instrument here is therefore structurally inapplicable to Hermes.
+- **Hermes's launcher `exec`s into an inline Python bootstrap**, so `argv[0]` stops being `hermes`
+  while a session runs — matching the launcher name alone finds nothing. It also runs a *shared*
+  gateway process that the same pattern matches, so for Hermes a tree **count** is session
+  processes plus one gateway, not a session count. Both are said in the adapter's own note.
+
+The storage claims in those two notes are evidenced by
+`samples/engine_evidence.dsh-hermes-storage.out` — the on-disk tree, the two transcript schemas'
+record keys side by side, the empty Hermes sessions directory, and `state.db`'s table list with
+row counts — rather than asserted in a comment. A review found that the notes stated where each
+engine keeps its history while the only committed artefacts were about processes and request
+bytes, and that `check_figures.sh`'s adapter leg was satisfied by *any* tracked sample a note
+happened to name. The specific facts are now pinned to the file that shows them.
+
+**Both adapters match only the shape each engine was observed to have, and deliberately
+under-match.** Each originally carried a second, bare-name alternative — `dsh` or `hermes` as a
+word — to cover a launcher install that was never exercised here. As substrings those fired on
+ordinary command lines: `rm -rf /tmp/dsh`, `du -sh /mnt/data/dsh`, `ls -la /srv/hermes`,
+`tar -czf backup.tgz /var/lib/hermes`. Every one would have been reported as a live agent
+session, which is defect v3 in `docs/method.md` recreated in a new adapter, against that
+document's own rule to match structurally rather than by substring. The unexercised alternatives
+were removed rather than caveated: a launcher install is simply not matched, and
+`measure_session_footprint.py --list-unmatched` is how you find that out. Dropping them changed
+nothing about the committed run, whose `dsh` row was matched by the package's `bin.js` path.
+
+One thing that verification found about the *other* instruments, worth knowing before you trust a
+zero: `measure_session_footprint.py` folds a session into the tree of any matched engine that is
+its **ancestor**. A `dsh` launched from inside a Claude Code shell is counted under Claude Code and
+no `dsh` row appears at all — which looks exactly like an adapter that does not match. Launch it
+detached (`setsid`) when the per-engine row is what you want.
 
 For an untested engine, a zero means "this adapter found nothing", which is **not** evidence the
 engine was absent. If you run one and it works, flipping that flag and adding your output is the
@@ -300,6 +521,32 @@ Verify both symlinks resolve. A **dangling** hook symlink is silently skipped by
 that isn't in the repo installs nothing while being told they are covered. That happened
 here.
 
+Two more things about those two lines, both found by running them (ARI#28):
+
+- **In a linked worktree the `ln` fails outright**, because `.git` there is a *file*. Hooks
+  live in the main checkout's `.git/hooks`, which every worktree shares — so install the
+  symlink there and let `preflight.sh` work out which tree is being committed, which it now
+  does. Resolving by the script's own location would gate the **main checkout's** files
+  while you commit a worktree's.
+- **Run as a hook, these gates used to recurse infinitely.** git exports `GIT_DIR` into a
+  hook, and `GIT_DIR` overrides directory discovery for every later `git` call — including
+  the real commits `scripts/test_identity_allowlist.sh` plants inside its own throwaway
+  clones. With `GIT_DIR` still set those commits land in *this* repository, firing the
+  pre-commit hook, which runs the suite, which plants again. Observed at ~36 nested runs
+  before it was killed. `preflight.sh` now unsets the exported git variables first. The
+  same `${BASH_SOURCE[0]}` problem also meant a symlinked hook resolved its root to `.git`
+  and failed on the very first gate — so that hook could never have passed, which is the
+  less dangerous half of the same bug.
+
+- **Interrupting the suite can leave a mutating gate's subject replaced.**
+  `scripts/test_fixture_freshness.sh` swaps `scripts/regen_samples.sh` for a stub, checks that
+  the freshness gate notices, and restores it. Killed mid-run — a timeout, a `Ctrl-C` — it
+  restores nothing, and the *next* run of the suite fails with a confusing wall of "these
+  tracked samples are in neither list", because the table it reads is a seven-line stub. It
+  refuses to start if that file is already modified, which is the right guard and is also why
+  the recovery is easy: `git checkout -- scripts/regen_samples.sh`. Worth knowing before
+  debugging the wrong thing; it cost a detour here.
+
 Install both hooks, not just the first. A pre-commit run **cannot** see a new commit's
 author identity or its blobs in history, because neither exists yet when it runs — and a
 commit was pushed twice here carrying an identity the pre-commit run had no way to
@@ -338,6 +585,195 @@ a server which never connected, and `samples/gate-evidence/check_figures.RED.out
 gate observed failing before the figures were corrected, because a gate whose first run is green
 tells you nothing.
 
+`scripts/check_figures.sh` itself got three changes out of the same review, each because the gate
+was demonstrated unable to fail:
+
+- **`samples/fixtures/` is excluded from the artefact search**, alongside
+  `samples/gate-evidence/`. Fixtures are instrument *inputs* — captured JSON bodies, and a
+  markdown file whose entire purpose is to hold a wrong figure for a drift gate to catch — and an
+  input is not evidence of anything. With this branch's two capture fixtures in the
+  searched corpus, the
+  engine-comparison table could be rewritten to claim a `max_tokens` value from inside the dsh
+  fixture as its wire-byte figure, with this gate and the whole preflight still green. Near-miss
+  digit flips were caught, so the gate had teeth only against values adjacent to the truth.
+- **Every instrument's `--help-blind` answer is now read as prose.** `docs/method.md`'s first rule
+  rests on that answer, and nothing checked the figures in it. One instrument's blind answer
+  stated its central finding using the *source study's* numbers — three bytes from this
+  repository's own in both numerator and total, and present in no artefact here — and reasoned a
+  factor-of-five conclusion from them. Thirteen instruments' answers are scanned now; the figures
+  that are not measurements are listed with reasons, same as the prose exemptions.
+- **The extractor reads percentages, and the citation guard ignores line breaks.** No pattern
+  matched a bare `75.1%` before, which is how a sentence that named one denominator and quoted
+  another's answer survived. Adding the pattern immediately surfaced a second, unrelated published
+  error — an `87%` swing that is 86% — which is the gate working on its first run. The
+  whitespace tolerance is the other half: pinning whole *clauses* rather than bare figures (so an
+  inversion cannot keep the digits and flip the verb) means every long claim wraps in markdown,
+  and a gate that fires on reflow is one that gets switched off.
+
+A second review verified those fixes and found ten more things, four of them mutations that
+survived the whole preflight. Three are worth stating because of *where* they were:
+
+- **A second capture on the same command line downgraded every refusal to exit 0.** `measure()`
+  appended the refusal and carried on, and the only hard stop fired when *nothing* had measured —
+  so `measure_request_construction.py <any-bad-capture> <the-dsh-capture>` printed the refusal,
+  then a complete table, then exited 0. That is this instrument's own headline danger in the one
+  invocation shape a two-engine comparison uses. Every one of the then-22 `measure()` calls in the
+  self-test passed exactly one capture, which is why nothing looked there. Any refusal is fatal
+  now: a capture this instrument refused is a hole in the total, whatever the others did.
+- **The fixtures exclusion did not close the laundering hole, and the prose claiming it did was
+  itself wrong.** That same `max_tokens` value had moved into the dsh event log committed *in the
+  same round* as finding 15's fix — a verbatim payload trace, not a fixture — so the table could
+  still claim it.
+  Verbatim traces now live in `samples/raw-payloads/`, excluded for the same reason. The other
+  half has no exclusion-list answer at all: a one-digit figure like `9` occurs in all but a
+  handful of the artefacts here, so a bare table cell is unpinnable, and the fix is to publish a
+  *clause* instead.
+- **`capture_proxy.py` is where the observation is made, and it had no protection.** Its captures
+  are committed as inputs, so `check_fixtures_fresh.sh` never re-runs the recorder, and its own
+  self-test checked `raw_bytes` against `len(json.dumps(body).encode())` — which is exactly what a
+  mutant computing it from the parsed body produces, so the check could not tell them apart. Four
+  mutations survived the full preflight, including round 1's own fourth survivor: a recorder that
+  drops an unparseable body reproduces the mislabelled-as-probe finding word for word, and no
+  reader-side refusal can see a line that was never written. The self-test now sends *compact*
+  bytes and compares against the length it knows it sent, sends a body that cannot be parsed, and
+  sends nothing at all.
+
+A third review was asked to lead with the regressions round 2's fixes had introduced, because
+round 1's fixes had already introduced one. It found two, plus four more mutations that survived
+both self-tests and the whole preflight. Three are worth stating:
+
+- **The joiner that fixed wrapped spans could HIDE a figure the per-line extractor caught.**
+  Joining re-*pairs* backticks: a span left open on one line swallows the opening backtick of the
+  next line's span, and that line's figure ends up between two backticks that are no longer a
+  delimiter pair. The demonstration published a five-digit `fixed` figure in README — present in
+  no artefact — with this gate and the whole preflight green. (Not quoted here, for the reason
+  `samples/raw-payloads/README.md` gives: an exemption for a laundered figure re-opens the hole
+  the paragraph is describing.) The first fix was not a smarter joiner —
+  which would still have been one re-pairing away from the same thing — but reading the file as
+  written **in addition to** the joined copy, on the reasoning that no arrangement of line breaks
+  can subtract from a union. **That fix was itself reverted a round later**, because the union
+  *adds*: see the round-4 note below.
+- **The empty-POST fix turned a loud refusal into a silent startup probe.** `if not raw: body =
+  None` cannot tell *the client sent no body* from *this recorder never read the body it was
+  sent*, and `do_POST` framed every request by `int(Content-Length or 0)` — so a **chunked** POST
+  read zero bytes and was recorded as a request that carried none. A review put 40391 real bytes
+  through it and got `1 measurable, 1 startup probes` at exit 0. Before the fix the same request
+  was refused, so the round traded a false refusal for a silent misclassification, which this
+  repository's own notes call the worse of the two. Chunked bodies are now de-chunked and
+  measured; a body that genuinely cannot be framed is marked with a null length, because length
+  unknown is not length zero, and the reader refuses it by name.
+- **The overrun note had no ceiling, so it explained away a 2.9x lie.** One word of the recorder
+  (`utf-8` → `ascii`) survived both self-tests and the whole preflight, because every body the
+  self-test sent was ASCII — while `samples/fixtures/request_construction.hermes.jsonl` already is
+  not. On a CJK payload the replacement characters tripled the measured body, and the only visible
+  symptom was round 1's overrun note *telling the reader it was normal*. A normalised split can
+  legitimately exceed the wire figure, but only by one byte per separator; past that it is not a
+  re-serialisation of those bytes at all. That bound is now computed per body and printed, an
+  overrun beyond it is refused, and the self-test's two fixtures either side of the line differ by
+  **one byte** of wire.
+
+The other three: a six-character mutation (`parts.append(instr[:1])`) dropped every instruction
+message after the first from four published columns at exit 0, because no fixture carried two of
+them and the leg asserted `system_bytes > 5000` where the exact value was available; two captures
+sharing an arm label collapsed into one row, which is round 2's own "one engine pinned by nothing"
+reached by label collision instead of by `rows[0]`; and one of round 2's own gate cases was
+arbitrary damage rather than a revert — it neutered the first of four checks and left the rest, so
+the mutant refused everything with a body and went RED for a reason the case does not name. A
+control that goes red for the wrong reason reads exactly like one that works.
+
+A fourth review was given the same brief as the third, and found that round 3's own fix for the
+first of those regressions had introduced the next one. Both blocking findings were in that
+commit:
+
+- **Reading each prose file as written *as well as* joined fixed hiding and started inventing.**
+  On the continuation line of a legitimate wrapped span, the same mis-pairing that hides a figure
+  *emits the prose between one span's closer and the next one's opener* — so an ordinary sentence
+  in this branch's own style failed the gate with `-- 6519 of 8680 B -- while hermes publishes` as
+  its "figure". A contributor is told a figure drifted when no figure exists, and the only ways
+  out are reflowing a line or an exemption for a sentence fragment. Both directions have one root:
+  per-line backtick pairing is ambiguous and no arrangement of greps resolves it. The span leg
+  reads the joined copy only now — code spans as markdown defines them — and the hidden-span case
+  is covered where nothing is ambiguous, by a bare-`B` unit pattern over the file as written. That
+  pattern turned out to be reading **15** figures in the blind answers where 13 were read before,
+  and twelve published byte figures in README and `docs/limits.md` that only the span leg had
+  seen.
+- **There were suddenly two places that write header names, and the gate case anchored on one of
+  them.** The `__unread__` branch carried its own copy of `sorted(headers.keys())` — the line this
+  file's own docstring calls "the one line in this file whose mistake is irreversible". Mutating
+  the *new* copy to `.items()` wrote a real `Bearer` value into a capture with both self-tests,
+  the 50-case controls gate and the whole preflight green. Fixed by having one write site again
+  rather than by adding a second gate case: there is nothing left for a future branch to forget to
+  copy.
+
+It also found **nine of thirteen** one-point mutations surviving the full preflight, seven of them
+in code round 3 had just added. Three were real defects rather than gaps: dropping the EOF case
+from the chunked trailer loop makes the recorder **hang forever** and record nothing (a hang reads
+from outside as a client that never arrived); reading `Transfer-Encoding` as a single token instead
+of a list turns the legal `identity, chunked` into a fatal refusal; and `_write`'s docstring called
+`ensure_ascii=False` "load-bearing" while pointing at a note that says nothing about it — the flag
+changes no figure, and what it actually did was **lose a whole request**, because a lone surrogate
+(what a client emits when it truncates a string mid-character, and `JSON.stringify` of a sliced
+emoji really does) cannot be encoded as UTF-8 and took the handler down before anything was
+written. That request now records with the surrogate escaped, and the reader refuses it by name:
+recorded but unmeasurable is a finding, silently absent is not.
+
+The recorder has now been the weak file three rounds running, for a structural reason worth
+naming: its captures are committed as *inputs*, so `check_fixtures_fresh.sh` never re-runs it, and
+its own `--self-test` is the only thing standing behind every byte in the report. Four of the
+round-4 legs needed a hand-built HTTP request, because `urllib` cannot construct a chunked body, a
+negative `Content-Length`, a half-closed stream or a stray blank line between chunks — which is
+exactly why none of those behaviours had ever been exercised.
+
+A fifth pass -- this one over the round-4 diff alone -- found that the round-4 fixes had done it
+again, in both of the places round 4 had just touched. Two findings, and the second is the more
+embarrassing:
+
+- **"One write site" was one *expression*.** The round-4 fix de-duplicated
+  `sorted(headers.keys())` and left **two complete record literals**, each with its own
+  `"header_names"`. `C12` had been re-anchored onto the assignment, so the assignment was pinned
+  and *neither* consumption site was — and mutating the `__unread__` branch's copy wrote a live
+  `Bearer` value into a capture with every self-test check and the whole preflight green. The same
+  finding as the round before, one line over, published under a docstring asserting it could not
+  happen. There is one record literal now: the branches decide only `raw_bytes` and `body`. And the
+  credential leg had never covered that path at all — every credentialed request went through
+  `post_bytes` and landed on the other literal, so the one request that reaches `__unread__` now
+  carries an Authorization header on purpose.
+- **The gate case written to pin the other round-4 fix mutated the file into a `SyntaxError`.** It
+  left a dangling `except`, so its RED came from a mutant that could not be imported — which is
+  *precisely* the defect an earlier round found in an earlier round's cases, and whose lesson this
+  README quotes two sections up. It also falsified three published statements, including the pinned
+  "all N fixes are pinned". The case is a compiling revert now. The leg behind it asserted only the
+  record's *length*, which a lossy `.encode("utf-8", "replace")` fallback preserves — that mutation
+  survived every gate, and its consequence is worse than the crash it replaces: the body becomes
+  encodable, so the reader's refusal never fires and a **mangled** body is measured and published
+  at exit 0. The leg asserts the round trip now, and `C51` pins it.
+
+**The structural answer, which should have come three rounds earlier.** Every other gate here has a
+harness proving it can fail — `test_scrub_check.sh`, `test_fixture_freshness.sh`,
+`test_identity_allowlist.sh`, `test_flags_controls.sh`. The *figure* gate had none, and it is the one
+with three consecutive regressions in its span extraction. That is why each fix was invisible:
+deleting the union leg, or deleting the bare-`B` pattern that replaced it, left the whole preflight
+green, and the only evidence either had ever worked was a hand-written artefact that nothing re-ran.
+
+`scripts/test_figure_gate.sh` now runs on every preflight. It plants four defects and requires each
+to go RED — the hidden-span attack, a figure wrapped across a line break, a one-digit drift in a
+pinned clause, and the attack again with the bare-`B` pattern **deleted from the gate's own source**,
+which is what proves that pattern is the thing catching it. It also requires three ordinary-prose
+cases to stay GREEN, including the exact wrapped-clause sentence that the reverted union leg
+false-alarmed on, and requires the unmodified tree to pass so that every RED is caused by its own
+planted defect.
+
+`scripts/preflight.sh` runs `--self-test` for every instrument that offers the flag, picking them
+up with no list to maintain — which means an instrument *without* the flag is silently not
+covered. `drive_dsh.py` was the only one in that position and now has nine checks, over the
+discovery logic where its real traps are: an explicitly-chosen node that is missing, one below the
+floor, one exactly *at* the floor, an unparseable version, and a launcher shim whose own node
+choice would make the version gate decide nothing. What it cannot cover — the handshake, the
+notification reader, the no-turn exit — needs a real Node ≥ 24.9.0 and the real package, so the
+evidence for those is the live run plus its verbatim event log
+(`samples/raw-payloads/drive_dsh.live-events-redacted.out`), which makes that run's `"notifications": 16`
+countable rather than a verdict the file asserts about itself.
+
 ### Merging a reviewed branch into `main`
 
 Squash it **locally, under the bot identity, then push** — not with `gh pr merge`. GitHub's
@@ -362,6 +798,24 @@ exists and the fix has become a history rewrite.
 bash scripts/merge_to_main.sh <branch> <pr-number> "<commit subject>"
 bash scripts/merge_to_main.sh --dry-run <branch> <pr-number> "<subject>"   # stops before the push
 ```
+
+**Who runs it is not the author.** A session never merges a PR it wrote, whatever tool executes
+it — this script included. Merge authority sits with the manager, after either an independent
+ROAST that returned PASS or explicit operator approval. The rule is not this repository's own: it
+is fleet-level, stated in the operating instructions the managing session works under, and this
+line is a restatement — so if the two ever disagree, that one wins and this is the stale copy.
+A draft of this paragraph cited the governing file by name and `scripts/scrub_check.sh` refused
+it, correctly: the name is an internal one and this is a public tree. The citation is therefore
+*described* rather than named, which does cost a reader the ability to go and check it — the
+sentence has to be followable from here alone, and it is. "Independent" means independent of
+**interest** and not merely of context: an adversarial pass a session dispatches itself, in a
+fresh subagent context, against its own branch is real evidence of effort and finds real defects,
+and it is still the author grading the author. It does not discharge this gate. `--dry-run` is the author's half of
+the recipe, and it stops before the push for exactly that reason.
+
+Nothing inside this repository said so until now, which is how the question came up on #29: this
+section specified the recipe in detail and said nothing about who may run it, so a session could
+read the whole README, follow it exactly, and merge its own PR.
 
 It sets all four identity variables, **reads the resulting commit's identity back** rather than
 assuming the variables took effect, runs the full gate suite *on the merge commit while it is
