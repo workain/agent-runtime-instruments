@@ -799,6 +799,24 @@ bash scripts/merge_to_main.sh <branch> <pr-number> "<commit subject>"
 bash scripts/merge_to_main.sh --dry-run <branch> <pr-number> "<subject>"   # stops before the push
 ```
 
+**Who runs it is not the author.** A session never merges a PR it wrote, whatever tool executes
+it — this script included. Merge authority sits with the manager, after either an independent
+ROAST that returned PASS or explicit operator approval. The rule is not this repository's own: it
+is fleet-level, stated in the operating instructions the managing session works under, and this
+line is a restatement — so if the two ever disagree, that one wins and this is the stale copy.
+A draft of this paragraph cited the governing file by name and `scripts/scrub_check.sh` refused
+it, correctly: the name is an internal one and this is a public tree. The citation is therefore
+*described* rather than named, which does cost a reader the ability to go and check it — the
+sentence has to be followable from here alone, and it is. "Independent" means independent of
+**interest** and not merely of context: an adversarial pass a session dispatches itself, in a
+fresh subagent context, against its own branch is real evidence of effort and finds real defects,
+and it is still the author grading the author. It does not discharge this gate. `--dry-run` is the author's half of
+the recipe, and it stops before the push for exactly that reason.
+
+Nothing inside this repository said so until now, which is how the question came up on #29: this
+section specified the recipe in detail and said nothing about who may run it, so a session could
+read the whole README, follow it exactly, and merge its own PR.
+
 It sets all four identity variables, **reads the resulting commit's identity back** rather than
 assuming the variables took effect, runs the full gate suite *on the merge commit while it is
 still private*, and pushes only if all of that passed — refusing and cleaning up otherwise. It
