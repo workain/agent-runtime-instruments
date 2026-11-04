@@ -40,12 +40,30 @@
   PASS  hand-computed columns all match: system 12 + tools 15 = fixed 27 B, 1 tool, 1 message, and wire 12345 B read from the RECORD (not re-derived from the body, which is 113 B here -- so the two are now distinguishable)
   PASS  no overrun note when model input is below the wire figure
   PASS  when the normalised split EXCEEDS the wire figure, the report says so (unflagged, `fixed B` larger than `wire B` reads as a broken instrument)
+== 11f. the fields whose LENGTH is published must be the right container ==
+  PASS  a `tools` that is a dict is refused by name, not counted (len() of the wrong container counts the wrong thing and prints it as a schema count)
+  PASS  a `messages` that is a string is refused by name, not counted (len() of the wrong container counts the wrong thing and prints it as a schema count)
+== 11g. raw_bytes -- the only direct observation -- is validated ==
+  PASS  raw_bytes absent -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes null -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes a string -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes negative -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+  PASS  raw_bytes 0 beside a body that parsed -> exit 2, named (it used to reach a ZeroDivisionError or a `int += None` and exit 1)
+== 11h. instruction roles are read in BOTH protocol branches ==
+  PASS  a top-level `system` AND a role:system message both land in the system column (5053 B, 1 conversation message) -- the Anthropic branch reads roles too, which it did not
+== 11c. the claims pin EVERY arm, and the percentage names its denominator ==
+  PASS  a two-arm capture yields claims for BOTH arms (10 claims over arm-one, arm-two) -- it used to pin only rows[0], leaving one whole engine unpinned
+  PASS  the metadata share is computed over the BODY (96.5%), and this fixture's wire figure would give 3041.4% -- so the denominator is pinned, not assumed
+== 11d. a request with tools but no messages is a TURN, not a probe ==
+  PASS  a tools-only request is measured, not filed as a startup probe
+== 11e. a refused capture is fatal even beside a good one ==
+  PASS  a corrupt line beside a GOOD capture still exits 2 and prints no table -- a refused capture is a hole in the total whether or not another one was fine
 == 12. an unavailable tokeniser is a reported state, never a crash ==
   PASS  a malformed --tokeniser spec is refused with a reason
   PASS  an unsupported tokeniser module is refused with a reason
   PASS  an encoder that is really len(bytes)//4 is REFUSED by the LOAD PATH rather than labelled tiktoken:cl100k_base -- the guard and its call site, not just the predicate
-  PASS  ...and the predicate itself says so when called directly
-  PASS  a function that is NOT division passes the same guard (it rejects bytes/4, not every tokeniser it has not seen)
+  PASS  all 6 fixed-divisor spellings are refused, not just the one literal expression (len//4, round(len/4), ceil(len/4), len//4 + 1, len//5, int(len/3.8)) -- the guard tests the CLASS, which is what docs/limits.md claims
+  PASS  a count whose bytes-per-token ratio DOES vary across the probes passes
 == 13. an UNPARSEABLE recorded body is refused, never filed as a probe ==
   PASS  3 unparseable records refuse the capture and their 144000 raw bytes are NAMED (they used to be reported as startup probes, with exit 0)
   PASS  is_probe() says an unparseable body is NOT a probe, which is the one-line distinction the whole refusal rests on
@@ -54,5 +72,5 @@
 == 15. framing is right for keys that are not plain ASCII words ==
   PASS  multibyte and escape-needing keys: coverage still exact, and framing 84 B differs from the len(key)+2 shortcut's 69 B -- so the shortcut is a DETECTABLE revert
 
-self-test: 39 pass, 0 fail
+self-test: 51 pass, 0 fail
 exit=0

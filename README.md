@@ -240,12 +240,18 @@ non-repository working directory on one box:
 
 | | DeepSeek Harness (`sdk-minimal`) | Hermes (custom OpenAI provider) |
 |---|---|---|
-| wire bytes, first request — *observed* | `8225` | `48820` |
+| wire bytes, first request — *observed* | `8225 bytes on the wire` | `48820 bytes on the wire` |
 | normalised body — *re-serialised* | `normalised body 8680 B` | `normalised body 49655 B` |
-| fixed per-turn part (system + tools) | `fixed 1665 bytes` | `49426` |
+| fixed per-turn part (system + tools) | `fixed 1665 bytes, paid again on every later turn` | `fixed 49426 bytes, paid again on every later turn` |
 | tool schemas exposed | `3 tool schema(s) exposed` | `20 tool schema(s) exposed` |
 | model-input bytes | `MODEL INPUT 2161 B` | `MODEL INPUT 49655 B` |
 | provider metadata | `provider metadata 6519 B (75.1% of the body)` | `provider metadata 0 B` |
+
+Every cell above is a clause the instrument itself pins, for **both** arms. It used to pin the
+left column only — `headline_claims` read `rows[0]` — so a review could rewrite the entire
+right-hand column, or swap the two, with every gate green. Bare table cells were worse than
+unpinned: a one-digit figure like `9` occurs in 62 of this repository's artefacts, so no
+exclusion list can protect it, and the fix is to publish a clause instead of a number.
 
 **Only the first row is an observation.** Every other row is computed over a re-serialisation of
 the parsed body with `json.dumps`' default separators, and a client that writes `{"a":1}` where
@@ -255,12 +261,12 @@ capture that difference is large enough to invert the comparison a reader would 
 that line itself rather than leaving a reader to find a `fixed` figure larger than the request and
 distrust the whole table. Quote the wire row for what the network paid.
 
-In the four claims the instrument's own `--check-claims` pins — each one carrying the *direction*
-of its figure and not only the digits — the dsh arm's first request put `8225 bytes on the wire`;
-`fixed 1665 bytes, paid again on every later turn` is the system prompt plus three tool schemas;
-`model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from`; and
+Each claim carries the *direction* of its figure and not only the digits. For dsh:
+`model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from`, and
 `6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO
-model-input tokens`.
+model-input tokens`. For Hermes, whose payload is all model input:
+`model input 49655 bytes of a 49655-byte body, which is what a per-token bill is computed from`,
+and `no provider metadata at all, so its model input and its whole body are the same 49655 bytes`.
 
 Each of those claims used to be a bare figure, and the first published version of the sentence
 joining them was **wrong**: it named `8225 bytes on the wire` and then divided by it, while the
@@ -359,12 +365,12 @@ The controls are pinned the same way `flags.py`'s are, by reverting each fix and
 control to turn RED:
 
 ```
-REVERT-EACH-FIX GATE (request construction) -- 23 cases
-PASSED -- all 23 fixes are pinned: reverting any one of them turns a control RED.
+REVERT-EACH-FIX GATE (request construction) -- 35 cases
+PASSED -- all 35 fixes are pinned: reverting any one of them turns a control RED.
 ```
 
-Ten of those twenty-three were added after an independent review of this branch returned
-**BLOCK**. Each reverts a fix to the implementation the review substituted and found the entire
+Twenty-two of those thirty-five were added after two independent reviews of this branch
+returned **BLOCK**. Each reverts a fix to the implementation the review substituted and found the entire
 preflight green against — including `coverage_ok`'s `==` relaxed to `<=` (one character, and it
 passes every deficit, which is the only direction a dropped field can go), framing predicted as
 `len(key) + 2` (indistinguishable from the real thing for every short ASCII key, which is what
@@ -577,9 +583,9 @@ was demonstrated unable to fail:
   markdown file whose entire purpose is to hold a wrong figure for a drift gate to catch — and an
   input is not evidence of anything. With this branch's two capture fixtures in the
   searched corpus, the
-  engine-comparison table could be rewritten to claim `256000` wire bytes (a `max_tokens` value
-  inside the dsh fixture) with this gate and the whole preflight still green. Near-miss digit
-  flips were caught, so the gate had teeth only against values adjacent to the truth.
+  engine-comparison table could be rewritten to claim a `max_tokens` value from inside the dsh
+  fixture as its wire-byte figure, with this gate and the whole preflight still green. Near-miss
+  digit flips were caught, so the gate had teeth only against values adjacent to the truth.
 - **Every instrument's `--help-blind` answer is now read as prose.** `docs/method.md`'s first rule
   rests on that answer, and nothing checked the figures in it. One instrument's blind answer
   stated its central finding using the *source study's* numbers — three bytes from this
@@ -594,6 +600,33 @@ was demonstrated unable to fail:
   inversion cannot keep the digits and flip the verb) means every long claim wraps in markdown,
   and a gate that fires on reflow is one that gets switched off.
 
+A second review verified those fixes and found ten more things, four of them mutations that
+survived the whole preflight. Three are worth stating because of *where* they were:
+
+- **A second capture on the same command line downgraded every refusal to exit 0.** `measure()`
+  appended the refusal and carried on, and the only hard stop fired when *nothing* had measured —
+  so `measure_request_construction.py <any-bad-capture> <the-dsh-capture>` printed the refusal,
+  then a complete table, then exited 0. That is this instrument's own headline danger in the one
+  invocation shape a two-engine comparison uses. Every one of the then-22 `measure()` calls in the
+  self-test passed exactly one capture, which is why nothing looked there. Any refusal is fatal
+  now: a capture this instrument refused is a hole in the total, whatever the others did.
+- **The fixtures exclusion did not close the laundering hole, and the prose claiming it did was
+  itself wrong.** That same `max_tokens` value had moved into the dsh event log committed *in the
+  same round* as finding 15's fix — a verbatim payload trace, not a fixture — so the table could
+  still claim it.
+  Verbatim traces now live in `samples/raw-payloads/`, excluded for the same reason. The other
+  half has no exclusion-list answer at all: a one-digit figure like `9` occurs in 62 artefacts
+  here, so a bare table cell is unpinnable, and the fix is to publish a *clause* instead.
+- **`capture_proxy.py` is where the observation is made, and it had no protection.** Its captures
+  are committed as inputs, so `check_fixtures_fresh.sh` never re-runs the recorder, and its own
+  self-test checked `raw_bytes` against `len(json.dumps(body).encode())` — which is exactly what a
+  mutant computing it from the parsed body produces, so the check could not tell them apart. Four
+  mutations survived the full preflight, including round 1's own fourth survivor: a recorder that
+  drops an unparseable body reproduces the mislabelled-as-probe finding word for word, and no
+  reader-side refusal can see a line that was never written. The self-test now sends *compact*
+  bytes and compares against the length it knows it sent, sends a body that cannot be parsed, and
+  sends nothing at all.
+
 `scripts/preflight.sh` runs `--self-test` for every instrument that offers the flag, picking them
 up with no list to maintain — which means an instrument *without* the flag is silently not
 covered. `drive_dsh.py` was the only one in that position and now has nine checks, over the
@@ -602,7 +635,7 @@ floor, one exactly *at* the floor, an unparseable version, and a launcher shim w
 choice would make the version gate decide nothing. What it cannot cover — the handshake, the
 notification reader, the no-turn exit — needs a real Node ≥ 24.9.0 and the real package, so the
 evidence for those is the live run plus its verbatim event log
-(`samples/drive_dsh.live-events-redacted.out`), which makes that run's `"notifications": 16`
+(`samples/raw-payloads/drive_dsh.live-events-redacted.out`), which makes that run's `"notifications": 16`
 countable rather than a verdict the file asserts about itself.
 
 ### Merging a reviewed branch into `main`

@@ -71,13 +71,23 @@ def record(capture, arm, endpoint, headers, raw):
     publishable, and `.items()` here instead of `.keys()` would put the Authorization /
     x-api-key value of a misconfigured run into it.
     """
-    try:
-        body = json.loads(raw.decode("utf-8", "replace"))
-    except Exception:
-        # An unparseable body is recorded as such rather than dropped: a client sending
-        # something this does not understand is a finding, and a silently skipped
-        # request would show up as a smaller payload instead.
-        body = {"__unparseable__": raw.decode("utf-8", "replace")[:2000]}
+    if not raw:
+        # NOTHING SENT is not the same as COULD NOT PARSE, and conflating them cost a
+        # whole capture. A `Content-Length: 0` POST -- a health check, a probe -- used to
+        # be stored under the unparseable marker, which the measuring instrument refuses
+        # the entire capture over. The refusal's own evidence then read "0 raw bytes
+        # between them", i.e. it refused a good capture over nothing at all, and the only
+        # remedy was to capture again. A body of None reads as a request that carried no
+        # payload, which is what happened.
+        body = None
+    else:
+        try:
+            body = json.loads(raw.decode("utf-8", "replace"))
+        except Exception:
+            # An unparseable body is recorded as such rather than dropped: a client
+            # sending something this does not understand is a finding, and a silently
+            # skipped request would show up as a smaller payload instead.
+            body = {"__unparseable__": raw.decode("utf-8", "replace")[:2000]}
     rec = {
         "arm": arm,
         "endpoint": endpoint,
@@ -246,15 +256,18 @@ def self_test():
     else:
         no("capture file not created empty at startup")
 
-    def post(path, payload):
+    def post_bytes(path, data):
+        """Send EXACT bytes, so a leg can know the wire length independently."""
         req = urllib.request.Request(
-            "http://127.0.0.1:%d%s" % (port, path),
-            data=json.dumps(payload).encode(),
+            "http://127.0.0.1:%d%s" % (port, path), data=data,
             headers={"Content-Type": "application/json",
                      "Authorization": "Bearer not-a-credential"},
         )
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.read()
+
+    def post(path, payload):
+        return post_bytes(path, json.dumps(payload).encode())
 
     anthropic_body = {"model": "m", "system": "SYS", "tools": [{"name": "t"}],
                       "messages": [{"role": "user", "content": "hello"}], "stream": False}
@@ -285,7 +298,6 @@ def self_test():
     else:
         no("streaming reply did not terminate with message_stop")
 
-    srv.shutdown()
     recs = [json.loads(l) for l in open(cap, encoding="utf-8") if l.strip()]
 
     if len(recs) == 3:
@@ -303,6 +315,63 @@ def self_test():
         ok("raw_bytes equals the exact serialized length on the wire")
     else:
         no("raw_bytes is not the wire length")
+
+    # ...and that leg ALONE is circular, which a review proved: it compares raw_bytes
+    # against `len(json.dumps(body).encode())`, which is exactly what a mutant computing
+    # raw_bytes by RE-SERIALISING the parsed body also produces. The two only disagree
+    # when the client's own serialization differs from json.dumps' defaults -- which is
+    # the normal case for a real client, and the reason the measuring instrument prints a
+    # wire-vs-normalised ratio at all. So: send compact bytes, and compare against the
+    # length the TEST knows it sent.
+    compact = json.dumps(anthropic_body, separators=(",", ":")).encode()
+    normalised = json.dumps(anthropic_body).encode()
+    assert len(compact) != len(normalised)      # the fixture must distinguish the two
+    post_bytes("/v1/messages", compact)
+    # A body this recorder CANNOT parse must still be recorded, with the marker the
+    # measuring instrument refuses on and the real wire length. This is the leg a review
+    # showed was missing entirely: two one-line mutations here -- storing `{}` instead of
+    # the marker, or returning before writing at all -- survived the WHOLE preflight and
+    # reproduced the original finding word for word, 144 KB of real traffic reported as
+    # startup probes at exit 0. A refusal downstream cannot see a line that was never
+    # written, so the only place this can be checked is here.
+    garbage = b'{"model": "m", "messages": [ TRUNCATED'
+    post_bytes("/v1/messages", garbage)
+    # ...and NOTHING sent is a third case, distinct from both.
+    post_bytes("/v1/messages", b"")
+    srv.shutdown()
+    recs = [json.loads(l) for l in open(cap, encoding="utf-8") if l.strip()]
+    last = recs[-3]
+    if last["raw_bytes"] == len(compact) and last["raw_bytes"] != len(normalised):
+        ok("raw_bytes is the OBSERVED length (%d B of compact JSON), not a "
+           "re-serialisation of the parsed body (%d B) -- the two differ here on "
+           "purpose, because comparing them to each other cannot tell them apart"
+           % (len(compact), len(normalised)))
+    else:
+        no("raw_bytes %r is a re-serialisation, not the wire length (compact %d, "
+           "normalised %d)" % (last["raw_bytes"], len(compact), len(normalised)))
+
+    unp = recs[-2]
+    if (isinstance(unp.get("body"), dict) and "__unparseable__" in unp["body"]
+            and unp["raw_bytes"] == len(garbage)):
+        ok("an UNPARSEABLE body is still recorded, marked `__unparseable__`, with its "
+           "real wire length (%d B) -- dropping it or storing an empty body would make "
+           "the request vanish into the probe count downstream" % len(garbage))
+    else:
+        no("an unparseable body was not recorded with its marker and length: %r" % unp)
+    if len(recs) == 6:
+        ok("6 requests sent -> 6 recorded, including the two the recorder could not "
+           "parse (a recorder that writes only what it understood reports a cheaper "
+           "client than the real one)")
+    else:
+        no("6 requests sent -> %d recorded" % len(recs))
+
+    empty = recs[-1]
+    if empty.get("body") is None and empty["raw_bytes"] == 0:
+        ok("a request that carried NO payload is recorded with `body: null`, not under "
+           "the unparseable marker -- nothing sent is not the same as could not parse, "
+           "and conflating them made the instrument refuse a whole good capture")
+    else:
+        no("an empty POST was not recorded as a null body: %r" % empty)
 
     # The one leg that protects a publishable artefact rather than a figure.
     blob = open(cap, encoding="utf-8").read()

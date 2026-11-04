@@ -272,18 +272,26 @@ Stated so the gaps are visible rather than implied absent.
   status and recent commit subjects, so a Hermes capture is not reproducible across commits:
   committing changes the payload. Freeze one git state for a batch, or capture outside a
   repository, and say which you did. The committed fixture was taken outside one.
-- **`--check-claims` checks digits and the words around them, never meaning.** It asserts each
-  claim is PRESENT in the prose. Pinning whole clauses rather than bare figures raises the bar —
-  an inversion now has to delete the correct sentence to make room for itself, where before it
-  could keep every digit and flip the verb — but prose that keeps the correct sentence and adds a
-  contradicting gloss beside it still passes. A review demonstrated the bare-figure version of
-  this attack and it worked; nothing here reads meaning, and no gate in this repository does.
+- **`--check-claims` checks for the PRESENCE of a clause, and presence is not meaning.** Two
+  reviews attacked this in sequence. The first kept every digit byte-identical and flipped the
+  verb in place; pinning whole clauses, for both arms, stops that. The second kept the clauses
+  byte-identical *and in the prose*, relabelled them as the draft "this branch has now
+  RETRACTED", and asserted the opposite around them — every gate green, and no new digit
+  anywhere. Quoting a wrong figure beside its correction is this repository's own idiom
+  (`check_figures.sh` has six exemptions for precisely that), which is what makes the reframing
+  read as ordinary. **Nothing in this repository reads meaning, and this gate cannot tell a
+  statement from a quotation of one.** Treat it as protecting the digits and their immediate
+  wording, and nothing beyond that.
 - **The token columns have no executed coverage in this repository.** `tiktoken` is deliberately
   not a dependency and is not installed on the box this was written on, so no gate runs the
   encoding path. A review replaced the encoder with `len(bytes)//4` and every check stayed green
   while the label still read `tiktoken:cl100k_base`. What runs now is a load-time guard that
-  refuses an encoder returning exactly `len(bytes)//4` on three probe strings; that rejects
-  division, and nothing more. The published bytes/token figures come from one externally
+  refuses an encoder whose bytes-per-token *ratio* barely varies across three deliberately
+  unlike probe strings. That rejects the whole fixed-divisor class rather than one spelling of
+  it — an earlier version checked for the literal `len(bytes)//4` and a review walked
+  `round(len/4)`, `(len+3)//4`, `len//4+1`, `len//5` and `int(len/3.8)` straight past it while
+  this file claimed it "rejects division". A real `cl100k_base` measures 3.26 on that spread and
+  every estimator tried measured at or below 1.12. The published bytes/token figures come from one externally
   installed tiktoken, with the command recorded in the sample's own header.
 - **Whole-body bytes/token is not an engine property when the bodies differ in kind.** Three
   quarters of the dsh body is provider metadata and none of the Hermes body is, so most of the

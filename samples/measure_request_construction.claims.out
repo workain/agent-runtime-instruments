@@ -6,12 +6,13 @@ CONFOUNDS -- printed every run, because each of these makes this number true abo
 
 tokens:    NOT MEASURED -- no tokeniser given (bytes are exact and need none)
 
-requests: 1 captured, 1 measurable, 0 startup probes (a probe is not a turn)
-100% field coverage verified on all 1 measurable requests
+requests: 5 captured, 3 measurable, 2 startup probes (a probe is not a turn)
+100% field coverage verified on all 3 measurable requests
 
 arm / first request        wire B     body B   fixed B   convo B    meta B   tools   msgs
 -----------------------------------------------------------------------------------------
 dsh                          8225       8680      1665       278      6519       3      1
+hermes                      48820      49655     49426        84         0      20      1
   fixed B = system + tools, the part paid on EVERY turn; convo B = everything else in `messages`.
 
 FIRST REQUEST -- arm 'dsh', endpoint /v1/messages, model named 'deepseek-flash'
@@ -35,14 +36,40 @@ FIRST REQUEST -- arm 'dsh', endpoint /v1/messages, model named 'deepseek-flash'
     MODEL INPUT 2161 B -- the quantity a per-token bill is computed from
     tokens: NOT MEASURED -- no tokeniser given (bytes are exact and need none)
 
+FIRST REQUEST -- arm 'hermes', endpoint /v1/chat/completions, model named 'capture-proxy-stub'
+    tools                       37439 B
+    messages                    12071 B
+    stream_options                 23 B
+    model                          20 B
+    reasoning_effort                8 B
+    stream                          4 B
+    (json framing)                 90 B  (braces, quoted keys, separators)
+    TOTAL                       49655 B  = the whole body, with nothing unaccounted
+    20 tool schema(s) exposed, 1 message(s) in the conversation
+    wire 48820 B vs normalised body 49655 B (ratio 0.983). The split above is of the NORMALISED serialization:
+      a per-field share of the raw wire bytes is not well defined without re-parsing, and the two differ by the
+      client's own separator and escaping choices. Quote `wire B` for what the network paid.
+    NOTE: model input 49655 B and fixed 49426 B EXCEED wire 48820 B (101.7%). Not an error: this client serialises more
+      compactly than json.dumps' default separators, so the normalised split is larger than what was sent. `wire B` is the observation; the rest is a re-serialisation.
+    provider metadata 0 B: this client sends none, so model input and whole body are the SAME number here
+    MODEL INPUT 49655 B -- the quantity a per-token bill is computed from
+    tokens: NOT MEASURED -- no tokeniser given (bytes are exact and need none)
+
 PER MODEL NAMED IN THE REQUEST ITSELF -- never one assumed model for the whole capture:
+  capture-proxy-stub           2 request(s)  model input     51061 B  provider metadata        0 B
   deepseek-flash               1 request(s)  model input      2161 B  provider metadata     6519 B
 
 PUBLISHED-CLAIM CHECK against README.md
   (whitespace-insensitive: a claim that wrapped across a line break is
    still the same claim, and failing on reflow is how a gate loses trust)
-  first-request wire bytes           FOUND   8225 bytes on the wire
-  fixed part, paid every turn        FOUND   fixed 1665 bytes, paid again on every later turn
-  model input, and what it is        FOUND   model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from
-  provider metadata, and its direction FOUND   6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO model-input tokens
+  dsh: wire bytes                    FOUND   8225 bytes on the wire
+  dsh: fixed part                    FOUND   fixed 1665 bytes, paid again on every later turn
+  dsh: tool schemas                  FOUND   3 tool schema(s) exposed
+  dsh: model input                   FOUND   model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from
+  dsh: provider metadata             FOUND   6519 bytes (75.1% of the body) of provider metadata, which the vendor documents at ZERO model-input tokens
+  hermes: wire bytes                 FOUND   48820 bytes on the wire
+  hermes: fixed part                 FOUND   fixed 49426 bytes, paid again on every later turn
+  hermes: tool schemas               FOUND   20 tool schema(s) exposed
+  hermes: model input                FOUND   model input 49655 bytes of a 49655-byte body, which is what a per-token bill is computed from
+  hermes: provider metadata          FOUND   no provider metadata at all, so its model input and its whole body are the same 49655 bytes
   -> every figure measured here is quoted in the prose

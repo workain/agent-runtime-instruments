@@ -298,7 +298,7 @@ def self_test():
     the exit-3 no-turn path. Those need a node >= MIN_NODE and the real package, neither
     of which is a dependency of this repository. The live evidence for them is
     samples/drive_dsh.live-redacted.out and the event log beside it,
-    samples/drive_dsh.live-events-redacted.out -- an artefact a reader can count, which
+    samples/raw-payloads/drive_dsh.live-events-redacted.out -- an artefact a reader can count, which
     is the point: `"notifications": 16` in the summary is this file's own verdict about
     itself, and the event log is what makes it checkable.
     """
@@ -435,7 +435,7 @@ def self_test():
     print("NOT covered here, and deliberately: the handshake, the notification reader, "
           "and the exit-3 no-turn path, all of which need a real node >= %s and the real "
           "package. See this function's docstring and "
-          "samples/drive_dsh.live-events-redacted.out."
+          "samples/raw-payloads/drive_dsh.live-events-redacted.out."
           % ".".join(str(x) for x in MIN_NODE))
     if failed:
         print("SELF-TEST FAILED -- do NOT trust this file to refuse a bad node.")

@@ -5,9 +5,13 @@
   PASS  3 requests sent -> 3 captured (a recorder that drops one reports a cheaper client than the real one)
   PASS  the captured body is VERBATIM equal to what was sent
   PASS  raw_bytes equals the exact serialized length on the wire
+  PASS  raw_bytes is the OBSERVED length (113 B of compact JSON), not a re-serialisation of the parsed body (126 B) -- the two differ here on purpose, because comparing them to each other cannot tell them apart
+  PASS  an UNPARSEABLE body is still recorded, marked `__unparseable__`, with its real wire length (38 B) -- dropping it or storing an empty body would make the request vanish into the probe count downstream
+  PASS  6 requests sent -> 6 recorded, including the two the recorder could not parse (a recorder that writes only what it understood reports a cheaper client than the real one)
+  PASS  a request that carried NO payload is recorded with `body: null`, not under the unparseable marker -- nothing sent is not the same as could not parse, and conflating them made the instrument refuse a whole good capture
   PASS  header NAMES recorded, header VALUES not -- the Authorization value sent above is absent from the capture
   PASS  both protocols landed on one capture, each tagged with its endpoint
   PASS  the arm label is carried onto every record
 
-self-test: 10 pass, 0 fail
+self-test: 14 pass, 0 fail
 exit=0

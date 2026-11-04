@@ -275,46 +275,72 @@ def make_counter(enc_obj, label):
     Separate from load_tokeniser so the gate below is reachable with no tiktoken
     installed: the self-test hands this a fake encoder returning one token per four
     bytes -- the exact substitution a review made -- and must get the refusal. Calling
-    looks_like_bytes_over_4 from a test directly would check the predicate while leaving
+    looks_like_a_fixed_divisor from a test directly would check the predicate while leaving
     its only call site uncovered, which is the half worth protecting.
     """
     def count(obj):
         s = obj if isinstance(obj, str) else ser(obj)
         return len(enc_obj.encode(s, disallowed_special=()))
-    bad = looks_like_bytes_over_4(count)
+    bad = looks_like_a_fixed_divisor(count)
     if bad:
         return None, bad
     return count, label
 
 
-# The probe strings. Chosen so that a real BPE disagrees with bytes/4 on each: English
-# prose tokenises far coarser than 4 bytes per token, JSON punctuation far finer, and
-# CJK finer still per byte.
+# The probe strings. Chosen so a real BPE's bytes-per-token RATIO differs sharply
+# between them: English prose tokenises coarsely (measured 4.93 B/token on cl100k_base),
+# JSON punctuation finely (1.51), CJK finely per byte (1.88).
 _TOK_PROBES = ("the quick brown fox jumps over the lazy dog, repeatedly and at length",
                '{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9,"j":10}',
                "\u6771\u4eac\u90fd\u5343\u4ee3\u7530\u533a\u6c38\u7530\u753a")
 
 
-def looks_like_bytes_over_4(count):
-    """-> a refusal reason if `count` is really len(bytes)//4 wearing a tokeniser's name.
+# A real BPE's spread across the probes above, measured on cl100k_base: 3.26. Every
+# fixed-divisor estimator tried came in at or below 1.12 -- len//4 1.06, round(len/4)
+# 1.08, ceil 1.03, len//4+1 1.03, len//5 1.06, int(len/3.8) 1.12. The threshold sits in
+# the middle of that gap, nearer the estimators, so a tokeniser would have to be three
+# times less varied than cl100k_base before it tripped.
+_TOK_MIN_SPREAD = 1.5
+
+
+def looks_like_a_fixed_divisor(count):
+    """-> a refusal reason if `count` is an arithmetic byte estimate, not a tokeniser.
 
     Why this is a gate and not paranoia: the whole promise of the token column is that it
-    is NOT `bytes/4`, and a review demonstrated that replacing the encoder with exactly
+    is NOT bytes/N, and a review demonstrated that replacing the encoder with exactly
     that left every gate in this repository green -- the published bytes/token figures
     come from a path with no executed coverage here, because tiktoken is deliberately not
     a dependency and is not installed. This runs on the real encoder at load time, so the
-    one path that cannot be covered by a fixture is at least checked on the way past.
+    one path no fixture can cover is at least checked on the way past.
+
+    THIS TESTS THE CLASS, NOT ONE SPELLING, and it did not always. The first version
+    compared against the literal `len(bytes)//4`; a second review wrote `round(len/4)`,
+    `(len+3)//4`, `len//4+1`, `len//5` and `int(len/3.8)` and every one of them was
+    accepted and labelled `tiktoken:cl100k_base`, while docs/limits.md claimed the guard
+    "rejects division". What distinguishes any fixed divisor from a tokeniser is not its
+    constant: it is that the bytes-per-token RATIO comes out the same for every input,
+    whereas a BPE's ratio depends entirely on what the text is.
 
     Deliberately NOT a tolerance check against expected counts: those are tiktoken's to
     change between versions, and a gate that pins another project's numbers breaks on its
-    upgrades. All this asserts is that the thing disagrees with division.
+    upgrades. All this asserts is that the thing varies.
     """
-    agree = [p for p in _TOK_PROBES if count(p) == len(p.encode("utf-8")) // 4]
-    if len(agree) == len(_TOK_PROBES):
-        return ("the tokeniser returned exactly len(bytes)//4 on all %d probe strings, "
-                "which is division and not tokenisation. Refusing to label a byte "
-                "estimate `tiktoken:<enc>`: the token column exists precisely to not be "
-                "that number." % len(_TOK_PROBES))
+    ratios = []
+    for p in _TOK_PROBES:
+        n = count(p)
+        if n <= 0:
+            return ("the tokeniser returned %r tokens for a %d-byte probe string. A "
+                    "count of zero or less is not a count"
+                    % (n, len(p.encode("utf-8"))))
+        ratios.append(len(p.encode("utf-8")) / float(n))
+    spread = max(ratios) / min(ratios)
+    if spread < _TOK_MIN_SPREAD:
+        return ("the tokeniser's bytes-per-token ratio barely varies across %d very "
+                "different probe strings (spread %.3f, under %.1f): English prose, JSON "
+                "punctuation and CJK all came out alike, which is what arithmetic on the "
+                "byte count does and not what tokenisation does. Refusing to label a "
+                "byte estimate `tiktoken:<enc>`; a real cl100k_base measures 3.26 here."
+                % (len(_TOK_PROBES), spread, _TOK_MIN_SPREAD))
     return None
 
 
@@ -351,16 +377,33 @@ INSTRUCTION_ROLES = ("system", "developer")
 
 
 def normalise_scopes(body):
-    """-> (system_obj, tools_obj, conversation_list), one shape for both protocols."""
+    """-> (system_parts, tools_obj, conversation_list), one shape for both protocols.
+
+    `system_parts` is a LIST of objects whose byte counts are summed, not one object.
+    That is what lets the two protocols be handled by the same code without moving any
+    published figure: a plain Anthropic request yields `[body["system"]]` and a plain
+    OpenAI one yields `[[instruction messages]]`, each serialising to exactly what the
+    single-object version produced before.
+
+    Why it had to change at all: the Anthropic branch used to `return body["system"],
+    tools, list(msgs)` and never look at the message roles. A review sent a body with
+    BOTH a top-level `system` and a `role: system` message of 5000 bytes, and got
+    `fixed B = 33` with 5070 bytes filed as conversation -- the same defect as the
+    `developer` role, reached through the other branch. Nothing else could have caught
+    it: the coverage invariant is over top-level fields and cannot see inside `messages`.
+    """
     tools = body.get("tools") or []
     msgs = body.get("messages") or []
-    if body.get("system"):                      # Anthropic Messages
-        return body["system"], tools, list(msgs)
-    sysm, convo = [], []                        # OpenAI chat completions
+    instr, convo = [], []
     for m in msgs:
         is_instr = isinstance(m, dict) and m.get("role") in INSTRUCTION_ROLES
-        (sysm if is_instr else convo).append(m)
-    return (sysm or None), tools, convo
+        (instr if is_instr else convo).append(m)
+    parts = []
+    if body.get("system"):                      # Anthropic Messages
+        parts.append(body["system"])
+    if instr:                                   # OpenAI chat completions, or both at once
+        parts.append(instr)
+    return parts, tools, convo
 
 
 def decompose(rec, tok=None):
@@ -371,7 +414,7 @@ def decompose(rec, tok=None):
     framing = predicted_framing(body)
     summed = sum(fields.values())
     meta = sum(v for k, v in fields.items() if k in PROVIDER_METADATA)
-    system, tools, convo = normalise_scopes(body)
+    system_parts, tools, convo = normalise_scopes(body)
     row = {
         "arm": rec.get("arm"),
         "endpoint": rec.get("endpoint"),
@@ -387,7 +430,7 @@ def decompose(rec, tok=None):
         "provider_metadata_bytes": meta,
         "model_input_bytes": whole - meta,
         "engine_specific_bytes": sum(v for k, v in fields.items() if k in ENGINE_SPECIFIC),
-        "system_bytes": nbytes(system) if system else 0,
+        "system_bytes": sum(nbytes(p) for p in system_parts),
         "tools_bytes": nbytes(tools) if tools else 0,
         "conversation_bytes": nbytes(convo) if convo else 0,
         "n_tools": len(tools),
@@ -401,7 +444,7 @@ def decompose(rec, tok=None):
         row["provider_metadata_tokens"] = sum(
             tok(v) for k, v in body.items() if k in PROVIDER_METADATA)
         row["model_input_tokens"] = row["body_tokens"] - row["provider_metadata_tokens"]
-        row["system_tokens"] = tok(system) if system else 0
+        row["system_tokens"] = sum(tok(p) for p in system_parts)
         row["tools_tokens"] = tok(tools) if tools else 0
         row["conversation_tokens"] = tok(convo) if convo else 0
         row["fixed_tokens"] = row["system_tokens"] + row["tools_tokens"]
@@ -425,6 +468,43 @@ def structural_fault(rec):
         return ("has a `body` that is JSON but not an object (it is a %s). A body is "
                 "decomposed field by named field, which a %s has none of"
                 % (type(body).__name__, type(body).__name__))
+    # `raw_bytes` -- the field the report calls its ONLY direct observation. Checked here
+    # because the first version of this function validated `rec` and `body` and stopped
+    # exactly short of it, and a review found four record shapes that still reached a
+    # traceback: absent or 0 divided by zero inside the wire-overrun note added in the
+    # same round, and null or a string hit `int += None` in the per-model totals. All
+    # four exited 1, which is not in this instrument's documented set -- the precise
+    # class this door-check exists to end, reintroduced by a fix for something else.
+    raw = rec.get("raw_bytes")
+    if raw is None:
+        return ("has no `raw_bytes`. That field is the wire length as OBSERVED, and the "
+                "only figure in this report that is not computed; defaulting it to 0 "
+                "would publish a zero-byte request, and every ratio taken against it "
+                "divides by that zero")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return ("has a `raw_bytes` that is not an integer (it is %s). A byte count read "
+                "from a socket is an int; a string that looks like one is a recorder "
+                "that changed shape, which is worth stopping for"
+                % type(raw).__name__)
+    if raw < 0:
+        return "has a negative `raw_bytes` (%d), which no observation produces" % raw
+    if raw == 0 and body:
+        return ("has `raw_bytes: 0` but a body that parsed into %d field(s). Those two "
+                "cannot both be observations of the same request, and every ratio taken "
+                "against the wire figure divides by that zero" % len(body))
+    if body is not None:
+        # `tools` and `messages` are COUNTED and the counts are published. A review
+        # passed a dict for `tools` and got `2 tool schema(s) exposed` from its keys, and
+        # a string for `messages` and got `5 message(s)` from its characters -- both at
+        # exit 0, because len() obliges on anything. The coverage invariant is over
+        # TOP-LEVEL fields and cannot see inside one, so nothing else would catch it.
+        for k in ("tools", "messages"):
+            v = body.get(k)
+            if v is not None and not isinstance(v, list):
+                return ("has a `%s` that is %s rather than a list. Its length is "
+                        "published as a count, and len() of the wrong container counts "
+                        "the wrong thing (a dict's keys, a string's characters)"
+                        % (k, type(v).__name__))
     return None
 
 
@@ -540,7 +620,21 @@ def measure(paths, tok=None):
                     "%s request %d: fields(%d) + framing(%d) != body(%d), residual %d"
                     % (p, len(rep["rows"]) - 1, row["summed_field_bytes"],
                        row["framing_bytes"], row["body_bytes"], row["coverage_residual"]))
-    if rep["errors"] and not rep["rows"]:
+    # ANY refusal is fatal, even when another capture on the same command line produced
+    # a perfectly good row. This used to read `if rep["errors"] and not rep["rows"]`,
+    # and a review broke every refusal in this file with one extra argument:
+    #
+    #   measure_request_construction.py fixtures/<any-bad>.jsonl fixtures/dsh.jsonl
+    #     -> the refusal printed, then a complete table, then exit 0
+    #
+    # which is the module docstring's own headline danger -- "a complete, plausible,
+    # internally consistent table that is simply too small" -- in the one invocation
+    # shape a two-engine comparison actually uses (samples/...both.out). The
+    # `requests: 5 captured, 1 measurable, 0 startup probes` line did not even add up,
+    # because the refused capture's records were counted and never classified, and
+    # nothing said so. A capture this instrument refused is a hole in the total; whether
+    # some OTHER capture was fine has no bearing on that.
+    if rep["errors"]:
         return rep, 2
     if not rep["measurable"]:
         rep["errors"].append(
@@ -645,23 +739,50 @@ def check_claims(prose_path, claims):
 def headline_claims(rep):
     """The figures a reader would quote. Kept small on purpose: a claim list nobody can
     read is a claim list nobody maintains."""
-    r = rep["rows"][0]
+    # One claim set per ARM, from that arm's FIRST measurable request. It used to read
+    # `rep["rows"][0]` and so pinned the dsh column only: a review pointed out that
+    # nothing anywhere pinned a single Hermes figure, so the whole right-hand column of
+    # README's table could be rewritten -- or the two columns swapped -- with every gate
+    # green. A bare table cell is also unpinnable in practice: a one-digit figure like
+    # `9` matches 62 of this repository's artefacts by plain substring, so no exclusion
+    # list can protect it. A per-arm CLAUSE can be, which is why these exist.
+    out = []
+    first_by_arm = {}
+    for row in rep["rows"]:
+        first_by_arm.setdefault(row["arm"], row)
+    for arm, r in first_by_arm.items():
+        out.extend(_claims_for_arm(arm, r))
+    return out
+
+
+def _claims_for_arm(arm, r):
     # Each claim carries the DIRECTION of its figure, not just the digits. A review kept
     # every number in this README byte-identical and inverted the sentence around them --
     # "`6519 bytes (75.1%) of provider metadata` is BILLED AS MODEL INPUT on every turn",
     # the exact error that flipped the source study's headline -- and every gate in this
     # repository stayed green, because a figure-substring check reads digits and not
     # meaning. Pinning the whole clause means the prose has to still contain the correct
-    # statement, so an inversion has to DELETE the claim to make room for itself.
+    # statement rather than only its digits.
     #
-    # The residual, stated because it is real and this is the gate's own blind spot: a
-    # claim can only be checked for PRESENCE. Prose that keeps the correct sentence and
-    # adds a contradicting gloss beside it still passes. Nothing here reads meaning; what
-    # changed is how much of the sentence has to survive.
-    out = [("first-request wire bytes", "%d bytes on the wire" % r["wire_bytes"]),
-           ("fixed part, paid every turn",
+    # THAT IS ALL IT DOES, and the first version of this comment overclaimed it. It said
+    # an inversion "has to DELETE the claim to make room for itself"; a second review
+    # showed it only has to REFRAME it. Every clause left byte-identical and still in the
+    # prose, relabelled as "the draft this branch has now RETRACTED", with the opposite
+    # asserted in words around it -- every gate green. Quoting a wrong figure beside its
+    # correction is this repository's own established idiom (scripts/check_figures.sh has
+    # six EXEMPT entries for exactly that), which is what makes the reframing read as
+    # normal.
+    #
+    # So: a claim is checked for PRESENCE, and presence cannot distinguish a statement
+    # from a quotation of it. Nothing in this repository reads meaning. What pinning
+    # whole clauses buys is that the digits can no longer be kept while the verb is
+    # flipped IN PLACE -- a real narrowing, and a much smaller one than it first claimed.
+    lbl = str(arm)
+    out = [("%s: wire bytes" % lbl, "%d bytes on the wire" % r["wire_bytes"]),
+           ("%s: fixed part" % lbl,
             "fixed %d bytes, paid again on every later turn" % r["fixed_bytes"]),
-           ("model input, and what it is",
+           ("%s: tool schemas" % lbl, "%d tool schema(s) exposed" % r["n_tools"]),
+           ("%s: model input" % lbl,
             "model input %d bytes of a %d-byte body, which is what a per-token bill is "
             "computed from" % (r["model_input_bytes"], r["body_bytes"]))]
     if r["provider_metadata_bytes"]:
@@ -671,10 +792,16 @@ def headline_claims(rep):
         # named one denominator and quoted the other's answer. Naming the denominator
         # inside the claim is what stops that being re-derivable.
         pct = 100.0 * r["provider_metadata_bytes"] / r["body_bytes"]
-        out.append(("provider metadata, and its direction",
+        out.append(("%s: provider metadata" % lbl,
                     "%d bytes (%.1f%% of the body) of provider metadata, which the "
                     "vendor documents at ZERO model-input tokens"
                     % (r["provider_metadata_bytes"], pct)))
+    else:
+        # An arm with NO provider metadata needs its own claim too, or "none at all" is a
+        # sentence no gate reads and the two arms are not comparably pinned.
+        out.append(("%s: provider metadata" % lbl,
+                    "no provider metadata at all, so its model input and its whole body "
+                    "are the same %d bytes" % r["body_bytes"]))
     return out
 
 
@@ -756,7 +883,7 @@ def report(rep, code, tokeniser_label, tokeniser_why, extra_lines):
                        "defined without re-parsing, and the two differ by the")
             out.append("      client's own separator and escaping choices. Quote `wire "
                        "B` for what the network paid.")
-            if r["model_input_bytes"] > r["wire_bytes"]:
+            if r["wire_bytes"] and r["model_input_bytes"] > r["wire_bytes"]:
                 # Not a defect, and printed because it LOOKS like one: a client that
                 # serialises compactly (no space after `:` or `,`) sends fewer bytes than
                 # `json.dumps` default separators produce, so a normalised column can
@@ -1186,6 +1313,148 @@ def self_test():
     else:
         no("a normalised split larger than the wire figure was printed unflagged")
 
+    print("== 11f. the fields whose LENGTH is published must be the right container ==")
+    # `n_tools` and `n_messages` are printed as counts, and len() obliges on anything: a
+    # review passed a dict for `tools` and got `2 tool schema(s) exposed` from its keys,
+    # and a string for `messages` and got `5 message(s)` from its characters, both at
+    # exit 0. The coverage invariant is over TOP-LEVEL fields and cannot see inside one,
+    # so this is the only place it can be caught.
+    for k, v, shape in (("tools", {"a": 1, "b": 2}, "a dict"),
+                        ("messages", "hello", "a string")):
+        bad = os.path.join(tmp, "container-%s.jsonl" % k)
+        body = {"model": "m", "tools": [{"name": "t"}],
+                "messages": [{"role": "user", "content": "hi"}]}
+        body[k] = v
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"arm": "fx", "endpoint": "/v1/messages", "ts": 0,
+                                 "raw_bytes": 100, "header_names": [],
+                                 "body": body}) + "\n")
+        rep, code = measure([bad])
+        if code == 2 and any("`%s` that is" % k in e for e in rep["errors"]):
+            ok("a `%s` that is %s is refused by name, not counted (len() of the wrong "
+               "container counts the wrong thing and prints it as a schema count)"
+               % (k, shape))
+        else:
+            no("`%s` as %s -> exit %d, errors=%r" % (k, shape, code, rep["errors"]))
+
+    print("== 11g. raw_bytes -- the only direct observation -- is validated ==")
+    # Four record shapes a review found reaching a traceback and exit 1, which is not in
+    # this instrument's documented exit set. Two of them arrived via the wire-overrun
+    # NOTE added in the same round as the door-check, which is the uncomfortable part:
+    # the door-check validated `rec` and `body` and stopped exactly short of the field
+    # the report calls its only observation.
+    shapes = [("absent", None, "has no `raw_bytes`"),
+              ("null", "NULL", "has no `raw_bytes`"),
+              ("a string", "8225", "not an integer"),
+              ("negative", -1, "negative `raw_bytes`"),
+              ("0 beside a body that parsed", 0, "`raw_bytes: 0` but a body")]
+    for label, val, want in shapes:
+        bad = os.path.join(tmp, "rawbytes-%s.jsonl" % label.split()[0])
+        rec = {"arm": "fx", "endpoint": "/v1/messages", "ts": 0, "header_names": [],
+               "body": {"model": "m", "tools": [{"name": "t"}],
+                        "messages": [{"role": "user", "content": "hi"}]}}
+        if val == "NULL":
+            rec["raw_bytes"] = None
+        elif val is not None:
+            rec["raw_bytes"] = val
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+        try:
+            rep, code = measure([bad])
+        except Exception as e:  # noqa: BLE001
+            no("raw_bytes %s raised %s instead of refusing" % (label, type(e).__name__))
+            continue
+        if code == 2 and any(want in e for e in rep["errors"]):
+            ok("raw_bytes %s -> exit 2, named (it used to reach a ZeroDivisionError or a "
+               "`int += None` and exit 1)" % label)
+        else:
+            no("raw_bytes %s -> exit %d, errors=%r" % (label, code, rep["errors"]))
+
+    print("== 11h. instruction roles are read in BOTH protocol branches ==")
+    # The Anthropic branch used to return the whole `messages` list as conversation
+    # without looking at any role. A review sent a body carrying BOTH a top-level
+    # `system` and a 5000-byte `role: system` message and got `fixed B = 33`, with 5070
+    # bytes filed as conversation -- the developer-role defect through the other branch,
+    # landing on the headline figure.
+    mixed_body = {"model": "m", "system": "TOP-LEVEL-SYSTEM",
+                  "tools": [{"name": "t"}],
+                  "messages": [{"role": "system", "content": "X" * 5000},
+                               {"role": "user", "content": "hi"}]}
+    mx = _fixture(tmp, "both-scope-shapes.jsonl", [mixed_body], raw_bytes=5154)
+    rx, cx = measure([mx])
+    rr = rx["rows"][0]
+    if cx == 0 and rr["system_bytes"] > 5000 and rr["n_messages"] == 1:
+        ok("a top-level `system` AND a role:system message both land in the system "
+           "column (%d B, 1 conversation message) -- the Anthropic branch reads roles "
+           "too, which it did not" % rr["system_bytes"])
+    else:
+        no("mixed scope shapes: exit %d, system=%d convo=%d msgs=%d"
+           % (cx, rr["system_bytes"], rr["conversation_bytes"], rr["n_messages"]))
+
+    print("== 11c. the claims pin EVERY arm, and the percentage names its denominator ==")
+    # Two review findings in one leg. headline_claims() read rep["rows"][0], so nothing
+    # anywhere pinned a single Hermes figure and the whole right-hand column of README's
+    # table -- or a swap of the two columns -- was publishable with every gate green. And
+    # the metadata percentage's denominator had no control: changing `/ body_bytes` to
+    # `/ wire_bytes` left the self-test at exit 0, which is exactly the error the
+    # published sentence had made in prose.
+    meta_body = {"model": "m", "tools": [{"name": "t"}],
+                 "messages": [{"role": "user", "content": "hi"}],
+                 "dsh_session_log": {"pad": "L" * 3000}}
+    mf = _fixture(tmp, "two-arms-a.jsonl", [meta_body], arm="arm-one", raw_bytes=99)
+    mf2 = _fixture(tmp, "two-arms-b.jsonl", [dict(plain)], arm="arm-two", raw_bytes=77)
+    rm2, _ = measure([mf, mf2])
+    claims = headline_claims(rm2)
+    labels = {lab.split(":")[0] for lab, _ in claims}
+    if labels == {"arm-one", "arm-two"}:
+        ok("a two-arm capture yields claims for BOTH arms (%d claims over %s) -- it used "
+           "to pin only rows[0], leaving one whole engine unpinned"
+           % (len(claims), ", ".join(sorted(labels))))
+    else:
+        no("claims cover only %r" % sorted(labels))
+    r0 = rm2["rows"][0]
+    want_pct = 100.0 * r0["provider_metadata_bytes"] / r0["body_bytes"]
+    wrong_pct = 100.0 * r0["provider_metadata_bytes"] / r0["wire_bytes"]
+    got = [c for lab, c in claims if lab == "arm-one: provider metadata"][0]
+    if ("(%.1f%% of the body)" % want_pct) in got and want_pct != wrong_pct:
+        ok("the metadata share is computed over the BODY (%.1f%%), and this fixture's "
+           "wire figure would give %.1f%% -- so the denominator is pinned, not assumed"
+           % (want_pct, wrong_pct))
+    else:
+        no("metadata share %r: body %.1f%% wire %.1f%%" % (got, want_pct, wrong_pct))
+
+    print("== 11d. a request with tools but no messages is a TURN, not a probe ==")
+    # A client may send a tools-only request; `is_probe` keyed on `messages` alone would
+    # file it as a startup probe and omit its bytes from every total. Nothing else here
+    # would notice, because an omitted request shrinks the totals silently.
+    toolsonly = _fixture(tmp, "tools-only.jsonl",
+                         [{"model": "m", "tools": [{"name": "t"}]}], raw_bytes=50)
+    rt, ct = measure([toolsonly])
+    if ct == 0 and rt["measurable"] == 1 and rt["probes"] == 0:
+        ok("a tools-only request is measured, not filed as a startup probe")
+    else:
+        no("tools-only request -> exit %d, measurable=%d probes=%d"
+           % (ct, rt["measurable"], rt["probes"]))
+
+    print("== 11e. a refused capture is fatal even beside a good one ==")
+    # The bypass a review used to defeat every refusal in this file at once: add a second,
+    # valid capture to the command line. measure() appended the error and carried on, and
+    # the only hard stop fired when there were NO rows at all -- so the refusal printed,
+    # and then a complete table, and then exit 0. Every other measure() call in this
+    # self-test passes a single capture, which is why nothing looked here.
+    good = _fixture(tmp, "good-beside-bad.jsonl", [dict(plain)], raw_bytes=120)
+    for label, bad_path in (("a corrupt line", corrupt),
+                            ("a probe-only capture", probes)):
+        rep2, code2 = measure([bad_path, good])
+        if label == "a probe-only capture":
+            continue            # probe-only is not an error on its own; checked above
+        if code2 == 2 and not rep2.get("by_model"):
+            ok("%s beside a GOOD capture still exits 2 and prints no table -- a refused "
+               "capture is a hole in the total whether or not another one was fine"
+               % label)
+        else:
+            no("%s beside a good capture -> exit %d" % (label, code2))
+
     print("== 12. an unavailable tokeniser is a reported state, never a crash ==")
     fn, why = load_tokeniser("nonsense")
     if fn is None and why and "wants" in why:
@@ -1209,21 +1478,37 @@ def self_test():
             return [0] * (len(s.encode("utf-8")) // 4)
 
     fn, why = make_counter(_BytesOver4(), "tiktoken:cl100k_base")
-    if fn is None and why and "division" in why:
+    if fn is None and why and "ratio barely varies" in why:
         ok("an encoder that is really len(bytes)//4 is REFUSED by the LOAD PATH rather "
            "than labelled tiktoken:cl100k_base -- the guard and its call site, not just "
            "the predicate")
     else:
         no("len(bytes)//4 passed as a tokeniser: fn=%r why=%r" % (fn, why))
-    if looks_like_bytes_over_4(lambda s: len(s.encode("utf-8")) // 4):
-        ok("...and the predicate itself says so when called directly")
+    # ...and the CLASS, not one spelling. The first version of this guard compared
+    # against the literal `len(bytes)//4`; a review wrote five other fixed divisors and
+    # every one was accepted and labelled tiktoken:cl100k_base.
+    variants = [("len//4", lambda s: len(s.encode("utf-8")) // 4),
+                ("round(len/4)", lambda s: round(len(s.encode("utf-8")) / 4)),
+                ("ceil(len/4)", lambda s: (len(s.encode("utf-8")) + 3) // 4),
+                ("len//4 + 1", lambda s: len(s.encode("utf-8")) // 4 + 1),
+                ("len//5", lambda s: len(s.encode("utf-8")) // 5),
+                ("int(len/3.8)", lambda s: int(len(s.encode("utf-8")) / 3.8))]
+    slipped = [n for n, f in variants if looks_like_a_fixed_divisor(f) is None]
+    if not slipped:
+        ok("all %d fixed-divisor spellings are refused, not just the one literal "
+           "expression (%s) -- the guard tests the CLASS, which is what "
+           "docs/limits.md claims" % (len(variants), ", ".join(n for n, _ in variants)))
     else:
-        no("the bytes/4 predicate returned no reason")
-    if looks_like_bytes_over_4(lambda s: max(1, len(s.split()) + s.count("{"))) is None:
-        ok("a function that is NOT division passes the same guard (it rejects bytes/4, "
-           "not every tokeniser it has not seen)")
+        no("these byte estimates passed as tokenisers: %s" % ", ".join(slipped))
+    # and the other direction: something that actually varies must pass, or the guard is
+    # a refusal of everything wearing a gate's name.
+    varied = looks_like_a_fixed_divisor(
+        lambda s: max(1, len(s.split()) + s.count("{") * 3
+                      + sum(ord(c) > 0x3000 for c in s)))
+    if varied is None:
+        ok("a count whose bytes-per-token ratio DOES vary across the probes passes")
     else:
-        no("the bytes/4 guard rejected a non-division token count")
+        no("the spread guard rejected a non-division token count: %s" % varied)
 
     print("== 13. an UNPARSEABLE recorded body is refused, never filed as a probe ==")
     # The recorder stores a body it could not parse under __unparseable__ rather than

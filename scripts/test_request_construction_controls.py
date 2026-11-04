@@ -85,12 +85,13 @@ CASES = [
      "leaving an OpenAI `role: system` message in the conversation column. The fixed "
      "per-turn overhead then reads as conversation for one protocol and as system for "
      "the other, and the two arms are no longer comparable.",
-     '''    sysm, convo = [], []                        # OpenAI chat completions
+     '''    instr, convo = [], []
     for m in msgs:
         is_instr = isinstance(m, dict) and m.get("role") in INSTRUCTION_ROLES
-        (sysm if is_instr else convo).append(m)
-    return (sysm or None), tools, convo''',
-     '''    return None, tools, list(msgs)'''),
+        (instr if is_instr else convo).append(m)''',
+     '''    instr, convo = [], []
+    for m in msgs:
+        convo.append(m)'''),
 
     ("C7-one-assumed-model", "measure_request_construction",
      "grouping the whole capture under one model instead of the model each request "
@@ -242,7 +243,7 @@ CASES = [
      "dependency here and is not installed, so the token path has no executed coverage "
      "at all: a review replaced the encoder with `len(bytes)//4` and every gate stayed "
      "green while the output still called itself `tiktoken:cl100k_base`.",
-     """    bad = looks_like_bytes_over_4(count)
+     """    bad = looks_like_a_fixed_divisor(count)
     if bad:
         return None, bad
     return count, label""",
@@ -256,6 +257,93 @@ CASES = [
      "substitution changed nothing any control could see.",
      """        "wire_bytes": rec.get("raw_bytes", 0),""",
      """        "wire_bytes": whole,"""),
+
+    # ---------------------------------------------------------------------------
+    # C24-C35 pin the fixes made after a SECOND review, which verified round 1's fixes
+    # and found ten more things. Four of its own mutations survived the whole preflight,
+    # and one of those was round 1's fourth survivor answered on the wrong side of the
+    # wire -- which is why four of these cases live in capture_proxy.py, where the
+    # observation is actually made rather than where it is read.
+    ("C24-refusal-not-fatal-beside-a-good-capture", "measure_request_construction",
+     "refusing only when NOTHING measured. Adding one valid capture to the command line then defeated every refusal in this file at once: the refusal printed, then a complete table, then exit 0 -- in samples/...both.out's own invocation shape, the one a two-engine comparison actually uses. The `requests: N captured, 1 measurable` line did not even add up, and nothing said so.",
+     '''    if rep["errors"]:
+        return rep, 2''',
+     '''    if rep["errors"] and not rep["rows"]:
+        return rep, 2'''),
+
+    ("C25-raw-bytes-unvalidated", "measure_request_construction",
+     'a door-check that validates the record and the body and stops short of raw_bytes -- the one field this report calls a direct observation. Absent or 0 divided by zero inside the wire-overrun note; null or a string hit `int += None` in the per-model totals. Four shapes, all exit 1 with a traceback naming no file and no line, which is the class this door-check exists to end.',
+     '''    raw = rec.get("raw_bytes")
+    if raw is None:''',
+     '''    raw = 0
+    if False:'''),
+
+    ("C26-counted-containers-unchecked", "measure_request_construction",
+     'trusting `tools` and `messages` to be lists. Their lengths are PUBLISHED counts and len() obliges on anything: a dict for tools reported `2 tool schema(s) exposed` from its keys, a string for messages reported `5 message(s)` from its characters, both at exit 0. The coverage invariant is over top-level fields and cannot see inside one.',
+     '        for k in ("tools", "messages"):',
+     '        for k in ():'),
+
+    ("C27-anthropic-branch-ignores-roles", "measure_request_construction",
+     'returning the whole `messages` list as conversation whenever a top-level `system` is present. A body carrying BOTH a top-level system and a 5000-byte role:system message then published `fixed B = 33` with 5070 bytes filed as conversation -- the developer-role defect reached through the other protocol branch, on the headline figure.',
+     '''    parts = []
+    if body.get("system"):                      # Anthropic Messages
+        parts.append(body["system"])''',
+     '''    if body.get("system"):
+        return [body["system"]], tools, list(msgs)
+    parts = []
+    if False:
+        parts.append(body["system"])'''),
+
+    ("C28-divisor-guard-pins-one-spelling", "measure_request_construction",
+     'checking for the literal len(bytes)//4 instead of for a constant ratio. A reviewer who wrote round(len/4), (len+3)//4, len//4+1, len//5 or int(len/3.8) was accepted and labelled tiktoken:cl100k_base -- five of six spellings through a guard whose documentation claimed it rejected division.',
+     '''    ratios = []
+    for p in _TOK_PROBES:''',
+     '''    if all(count(p) == len(p.encode("utf-8")) // 4 for p in _TOK_PROBES):
+        return "it is exactly len(bytes)//4"
+    return None
+    ratios = []
+    for p in _TOK_PROBES:'''),
+
+    ("C29-claims-pin-only-the-first-arm", "measure_request_construction",
+     'pinning rows[0] only. Nothing then pinned a single figure of the second engine, so the whole right-hand column of the published comparison -- or a swap of the two columns -- passed every gate. A per-arm clause is also the only pinnable form for a small integer: `9` occurs in 62 artefacts here by plain substring.',
+     '''    for arm, r in first_by_arm.items():
+        out.extend(_claims_for_arm(arm, r))
+    return out''',
+     '''    arm0 = rep["rows"][0]["arm"]
+    out.extend(_claims_for_arm(arm0, first_by_arm[arm0]))
+    return out'''),
+
+    ("C30-metadata-share-over-the-wire", "measure_request_construction",
+     'dividing the provider-metadata share by the WIRE figure instead of the body. 6519/8225 is 79.3% and 6519/8680 is 75.1%; publishing the first under a sentence naming the second is precisely the error a review found in the prose, and until now the code side of it had no control at all.',
+     '        pct = 100.0 * r["provider_metadata_bytes"] / r["body_bytes"]',
+     '        pct = 100.0 * r["provider_metadata_bytes"] / r["wire_bytes"]'),
+
+    ("C31-probe-test-ignores-tools", "measure_request_construction",
+     'keying the probe test on `messages` alone. A tools-only request is then filed as a startup probe and its bytes leave every total silently -- the omission that looks like good news.',
+     '    return not (body.get("tools") or body.get("messages"))',
+     '    return not body.get("messages")'),
+
+    ("C32-recorder-reserialises-wire-bytes", "capture_proxy",
+     "computing raw_bytes from the PARSED body instead of the bytes that arrived. The field is documented as the only direct observation in the chain, and README's table marks exactly one row as observed. C23 pins where that figure is READ; this pins where it is MADE. The old self-test compared raw_bytes against len(json.dumps(body).encode()) -- which is what this mutant computes, so the check could not tell them apart.",
+     '        "raw_bytes": len(raw),',
+     '        "raw_bytes": len(json.dumps(body).encode()) if body else 0,'),
+
+    ("C33-recorder-blanks-unparseable", "capture_proxy",
+     "storing an empty body for a request this could not parse. Downstream it carries no tools and no messages, so it counts as a startup probe: a review got `3 startup probes` for 144 KB of real traffic, with a 100% coverage banner at exit 0. Round 1's finding 3, reproduced from the recorder side where no reader-side refusal can see it.",
+     '            body = {"__unparseable__": raw.decode("utf-8", "replace")[:2000]}',
+     '            body = {}'),
+
+    ("C34-recorder-drops-unparseable", "capture_proxy",
+     "returning before writing when the body did not parse -- the softer form of C33, and the first review's own fourth preflight survivor. A refusal downstream cannot see a line that was never written, which is why this case has to live here.",
+     '    with open(capture, "a", encoding="utf-8") as fh:',
+     '''    if isinstance(body, dict) and "__unparseable__" in body:
+        return rec
+    with open(capture, "a", encoding="utf-8") as fh:'''),
+
+    ("C35-empty-post-marked-unparseable", "capture_proxy",
+     'treating a zero-length payload as a body that FAILED to parse. A Content-Length: 0 health check then made the measuring instrument refuse the ENTIRE capture, with a refusal whose own evidence said `0 raw bytes` were affected -- a good capture thrown away over nothing, recoverable only by capturing again.',
+     '    if not raw:',
+     '    if False:'),
 
     ("C13-recorder-keepalive-sse", "capture_proxy",
      "answering an event stream under keep-alive. With no Content-Length the client "

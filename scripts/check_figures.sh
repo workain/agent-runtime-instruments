@@ -28,8 +28,8 @@ PAIRS=(
   # ARI#28, measure_request_construction.py. Its own revert-each-fix gate, pinned the same
   # way -- and its FIRST run was RED on 3 of 13, which is the only evidence a gate of this
   # kind can offer that it is able to fail at all.
-  'REVERT-EACH-FIX GATE (request construction) -- 23 cases|samples/test_request_construction_controls.out'
-  'PASSED -- all 23 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
+  'REVERT-EACH-FIX GATE (request construction) -- 35 cases|samples/test_request_construction_controls.out'
+  'PASSED -- all 35 fixes are pinned: reverting any one of them turns a control RED.|samples/test_request_construction_controls.out'
   # Every state this instrument can END in needs an artefact a reader can tell from the
   # others, for the same reason the loop flags do: the dangerous output is not a zero, it
   # is a complete-looking decomposition that is simply too small.
@@ -39,7 +39,10 @@ PAIRS=(
   # sentence around them -- metadata declared BILLED rather than unbilled, which is the
   # error that flipped the source study's sign -- and every gate stayed green, because a
   # figure-substring check reads digits and not meaning. Pinning the clause means an
-  # inversion has to DELETE the correct statement to make room for itself.
+  # inversion cannot keep the digits and flip the verb in place. It can still REFRAME
+  # the clause -- quote it as a retracted draft and assert the opposite around it -- which
+  # a second review demonstrated with every gate green. Presence is not meaning, and no
+  # gate here reads meaning; see docs/limits.md.
   '8225 bytes on the wire|samples/measure_request_construction.claims.out'
   'fixed 1665 bytes, paid again on every later turn|samples/measure_request_construction.claims.out'
   'model input 2161 bytes of a 8680-byte body, which is what a per-token bill is computed from|samples/measure_request_construction.claims.out'
@@ -182,11 +185,24 @@ if [ "${#PAIRS[@]}" -lt "$MIN_PAIRS" ]; then
   exit 2
 fi
 
-# One flattened copy of every prose file, for the citation guard below. Built once: the
-# alternative is re-flattening four files per pinned figure.
+# A flattened copy of every prose file for the citation guard below -- ONE LINE PER FILE,
+# which matters twice.
+#
+#   * `grep -F` matches within a line, so a pinned clause cannot be satisfied by a splice
+#     across two files. A review removed a clause from README, planted its two halves at
+#     the end of one prose file and the start of the next, and a single flattened `cat`
+#     of all four passed it -- the clause existing in no file at all.
+#   * A leading blockquote `> ` is stripped before flattening. Flattening alone left that
+#     marker mid-clause, so a correct claim quoted inside a blockquote FAILED -- the
+#     cry-wolf behaviour this guard was made whitespace-insensitive to avoid.
 prose_flat="$(mktemp)"
 trap 'rm -f "$prose_flat"' EXIT
-cat "${PROSE[@]}" 2>/dev/null | tr '\n' ' ' | tr -s ' ' > "$prose_flat"
+: > "$prose_flat"
+for pf in "${PROSE[@]}"; do
+  sed 's/^[[:space:]]*>[[:space:]]*//' "$pf" 2>/dev/null \
+    | tr '\n' ' ' | tr -s ' ' >> "$prose_flat"
+  echo >> "$prose_flat"
+done
 
 fail=0; verified=0
 for entry in "${PAIRS[@]}"; do
@@ -259,15 +275,22 @@ done
 # Measured: with it included, both `spread=0.85s` and `activity in 7d: 35` passed this
 # leg on the strength of a file whose purpose is to record them as WRONG.
 #
+# samples/raw-payloads/ is the same hazard arriving from the other side: verbatim protocol
+# traces, kept as evidence of a COUNT. One was committed in this very branch -- a dsh event
+# log, so that its `"notifications": 16` summary would be countable rather than asserted --
+# and a review used it the same afternoon to launder a max_tokens value the client had sent
+# into README's engine table as a wire-byte figure, with the whole preflight green. See that
+# directory's own README -- including why neither it nor this comment may quote the value.
+#
 # samples/fixtures/ is the other direction: it holds instrument INPUTS -- captured JSON
 # request bodies, and a markdown file whose entire purpose is to contain a WRONG figure
 # for a drift gate to catch. An artefact is a thing an instrument PRINTED; an input is
 # not evidence of anything. A review demonstrated the cost of not excluding it: with
-# 66 KB of JSON in the searched corpus, the README's engine-comparison table -- this
-# branch's headline deliverable -- could be rewritten to say `256000` wire bytes (a
-# `max_tokens` value occurring inside the dsh fixture), `9` fixed bytes and `1` tool,
-# and both this gate and the whole preflight stayed green. Near-miss digit flips were
-# still caught, so the gate had teeth only against values adjacent to the truth.
+# this branch's capture fixtures in the searched corpus, the README's engine-comparison
+# table -- its headline deliverable -- could be rewritten to carry a max_tokens value
+# from inside the dsh fixture as its wire-byte figure, `9` fixed bytes and `1` tool, and
+# both this gate and the whole preflight stayed green. Near-miss digit flips were still
+# caught, so the gate had teeth only against values adjacent to the truth.
 EXEMPT=(
   # --- not measurements: versions, env vars, parameters, mount options ---
   '2.1.197' '2.1.221' '0.147.0' 'SELF_TEST=0' 'SKIP_PAID=1' 'min_age=1' 'hidepid=2'
@@ -291,8 +314,9 @@ EXEMPT=(
   '0.65 s'              # gloss of the pinned `ready p50=0.65s`
   # --- the A/B/C cache table re-spaced for readability; the pinned identity line
   # --- `B_read(26264) == C_read(14848) + A_creation(11416)` is what guards these ---
-  'read=14848  creation=11416' 'read=14848  creation=14307' 'read=26264  creation=2875'
-  'read=14848   creation=11416' 'read=14848   creation=14307' 'read=26264   creation=2875'
+  # (one space: the extractor squeezes runs, because a span reunited across a line break
+  #  carries its second half's indentation as interior whitespace)
+  'read=14848 creation=11416' 'read=14848 creation=14307' 'read=26264 creation=2875'
   # --- extractor artefacts: prose fragments that merely contain a digit ---
   'on n=2,' 'on n=2.' 'The caching result is n=1' 'timings too: 24'
   # --- counts belonging to the SOURCE STUDY's corpus, not to this repo's samples.
@@ -349,7 +373,10 @@ EXEMPT=(
   '{"a":1}' '{"a": 1}'
   # --- a CODE EXPRESSION, quoted as the shortcut a mutation reverts framing to. Not a
   # --- reading; it could not appear in an artefact.
-  'len(key) + 2'
+  'len(key) + 2' 'rows[0]'
+  # --- CODE EXPRESSIONS: the fixed-divisor spellings docs/limits.md names as the ones a
+  # --- review walked past the first version of the tokeniser guard. Not readings.
+  '(len+3)//4' 'len//4+1' 'len//5' 'int(len/3.8)' 'round(len/4)' 'len(bytes)//4'
   # --- the WRONG figure, quoted beside its correction ((3.65-1.96)/1.96 = 86.2%, not 87%).
   # --- Must NOT match an artefact: naming it is how the correction gets written down.
   '87%'
@@ -375,7 +402,36 @@ is_exempt() {
 # and the copy that drifted would be the one guarding the newer surface.
 extract_figures() {
   local pf="$1"
-  { grep -ohE '`[^`]*[0-9][^`]*`' "$pf" | sed 's/^`//; s/`$//'
+  # The backticked-span pattern reads a copy in which a line still INSIDE an inline code
+  # span has been joined to the next; every other pattern reads the file as written.
+  #
+  # Why only that one, and why joined rather than wholly flattened: a backticked span is
+  # delimited, so reuniting the two halves of one cannot run two separate spans together,
+  # and spans are the only pattern that needs it -- this branch's move to long pinned
+  # clauses makes a wrapped span the normal case, and per-line grep never sees one. A
+  # review planted `fixed 99999 bytes` on a single line (caught) and the same figure
+  # wrapped across a line break (NOT caught), then pointed out that this instrument's own
+  # --help-blind answer carries `fixed 1665 bytes` wrapped exactly that way -- a
+  # currently published figure that no gate was reading. Flattening the whole file was
+  # the first attempt and was worse: it merges fenced code blocks and unmatched
+  # backticks, which re-pairs every span in the file and produced 400-character "figures"
+  # of ordinary prose.
+  local joined
+  joined="$(mktemp)"
+  awk '
+    /^[[:space:]]*```/ { if (p) { print b; b = ""; p = 0; o = 0 } f = !f; print; next }
+    { if (f) { print; next }
+      # A blockquote marker is stripped before the span is reunited. Without this the
+      # `> ` of a continuation line lands INSIDE the span, and a correct clause quoted
+      # across two blockquoted lines is extracted as a figure that exists nowhere --
+      # a false alarm, which is how a gate loses its reader.
+      sub(/^[[:space:]]*>[[:space:]]*/, "")
+      l = $0; c = gsub(/`/, "`", l)
+      b = p ? b " " $0 : $0
+      o = (o + c) % 2
+      if (o == 0) { print b; b = ""; p = 0 } else p = 1 }
+    END { if (p) print b }' "$pf" > "$joined"
+  { grep -ohE '`[^`]*[0-9][^`]*`' "$joined" | sed 's/^`//; s/`$//'
     grep -ohE '[A-Za-z][A-Za-z0-9_ ()<=-]{2,34}[:=] ?[0-9][0-9.,/]*' "$pf"
     grep -ohE '\b[0-9][0-9.,]* ?(MB|MiB|GB|KB|ms|bytes)\b' "$pf"
     grep -ohE '\b[0-9]+[0-9.,]* ?s\b' "$pf"
@@ -392,8 +448,21 @@ extract_figures() {
     # of that shape rots into a dumping ground. Naming the quantities keeps every entry
     # meaningful. This is the shape that let `103 transcripts` survive four commits.
     grep -ohE '\b[0-9][0-9.,]* (transcripts|sessions|session trees|trees|cgroups|processes|procs|lines|tools|requests)\b' "$pf"
-  } 2>/dev/null | sed 's/^ *//; s/ *$//' | sort -u
+  } 2>/dev/null | tr -s ' ' | sed 's/^ *//; s/ *$//' | sort -u
+  rm -f "$joined"
 }
+
+# The searched corpus, space-squeezed once, for the same reason the figures above are:
+# a span reunited across a line break carries the leading indentation of its second half
+# as interior whitespace, and `grep -F` is exact. Both sides squeezed, so a figure whose
+# own spacing is load-bearing still matches its artefact's.
+samples_flat="$(mktemp)"
+trap 'rm -f "$prose_flat" "$samples_flat"' EXIT
+find samples -type f -name '*.out' \
+     -not -path 'samples/gate-evidence/*' \
+     -not -path 'samples/fixtures/*' \
+     -not -path 'samples/raw-payloads/*' -print0 \
+  | xargs -0 cat 2>/dev/null | tr -s ' ' > "$samples_flat"
 
 for pf in "${PROSE[@]}"; do
   while IFS= read -r fig; do
@@ -403,8 +472,7 @@ for pf in "${PROSE[@]}"; do
     # each one exists and is tracked. Exempting them by name here would need an edit
     # every time a sample is added, which is how an exemption list rots.
     case "$fig" in *.out) continue;; esac
-    if ! grep -rqF --exclude-dir=gate-evidence --exclude-dir=fixtures \
-         -- "$fig" samples/ 2>/dev/null; then
+    if ! grep -qF -- "$fig" "$samples_flat" 2>/dev/null; then
       echo "FAIL: $pf states '$fig' which appears in NO artefact under samples/."
       echo "      Either it drifted, or it is not a measurement and belongs in EXEMPT"
       echo "      in this script WITH A REASON."
@@ -480,7 +548,7 @@ PY
     skip=0
     for n in "${BLIND_EXEMPT[@]}"; do [ "$fig" = "$n" ] && skip=1 && break; done
     [ "$skip" -eq 1 ] && continue
-    if ! grep -rqF --exclude-dir=gate-evidence --exclude-dir=fixtures \
+    if ! grep -rqF --exclude-dir=gate-evidence --exclude-dir=fixtures --exclude-dir=raw-payloads \
          -- "$fig" samples/ 2>/dev/null; then
       echo "FAIL: $inst --help-blind states '$fig' which appears in NO artefact under"
       echo "      samples/. A blind answer is published prose: either it drifted, or it"

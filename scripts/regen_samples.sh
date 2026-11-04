@@ -86,7 +86,7 @@ measure_request_construction.hermes.out	instruments/measure_request_construction
 measure_request_construction.both.out	instruments/measure_request_construction.py	run	samples/fixtures/request_construction.dsh.jsonl samples/fixtures/request_construction.hermes.jsonl
 measure_request_construction.json.out	instruments/measure_request_construction.py	run	--json samples/fixtures/request_construction.dsh.jsonl
 measure_request_construction.faithful.out	instruments/measure_request_construction.py	run	--reference samples/fixtures/request_construction.dsh.jsonl samples/fixtures/request_construction.dsh.jsonl
-measure_request_construction.claims.out	instruments/measure_request_construction.py	run	--check-claims README.md samples/fixtures/request_construction.dsh.jsonl
+measure_request_construction.claims.out	instruments/measure_request_construction.py	run	--check-claims README.md samples/fixtures/request_construction.dsh.jsonl samples/fixtures/request_construction.hermes.jsonl
 measure_request_construction.tokeniser-unavailable.out	instruments/measure_request_construction.py	run	--tokeniser tiktoken:cl100k_base samples/fixtures/request_construction.dsh.jsonl
 measure_request_construction.selftest.out	instruments/measure_request_construction.py	refu	--self-test
 measure_request_construction.no-args-REFUSED.out	instruments/measure_request_construction.py	refu	
@@ -130,7 +130,7 @@ bench_window_read.first-chunk-sweep.out	same live corpus as bench_window_read.ou
 gate-evidence/check_figures.RED.out	not output of the current code at all: it records what check_figures.sh PRINTED while RED, stale figures included. See that directory's own header -- an artefact of a FAILURE is not an artefact of a MEASUREMENT
 measure_session_footprint.dsh-hermes.out	live RSS/PSS and pids of real dsh and hermes process trees, read from /proc while they ran
 drive_dsh.live-redacted.out	a live dsh run: embeds this box's absolute node/package paths, so it is committed with those paths replaced post-hoc (see its own header). Its elapsed time is a live timing too
-drive_dsh.live-events-redacted.out	the verbatim server-notification log of that same live run, so its `"notifications": 16` summary is countable rather than asserted. Same run, same reasons it cannot be recreated by a script here
+raw-payloads/drive_dsh.live-events-redacted.out	the verbatim server-notification log of that same live run, so its `"notifications": 16` summary is countable rather than asserted. Same run, same reasons it cannot be recreated by a script here
 engine_evidence.dsh-hermes-storage.out	evidence for two engine ADAPTERS, not a measurement: the on-disk shape of a dsh session log and the absence of any hermes transcript file. Both runtime homes were throwaway directories for the capture runs ($HERMES_HOME alone is ~700 MB of installed venv), so neither can be recreated by a script here. See its own header
 measure_request_construction.tokens.out	needs a tiktoken install, which is deliberately NOT a dependency of this repository -- the reproducible counterpart is measure_request_construction.tokeniser-unavailable.out
 gate-evidence/test_request_construction_controls.RED.out	not output of the current code at all: it records what the controls gate printed on its FIRST run, while 3 of 13 fixes were still unprotected. See that directory's own header
