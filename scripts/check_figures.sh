@@ -28,8 +28,8 @@ PAIRS=(
   # ARI#28, measure_request_construction.py. Its own revert-each-fix gate, pinned the same
   # way -- and its FIRST run was RED on 3 of 13, which is the only evidence a gate of this
   # kind can offer that it is able to fail at all.
-  'REVERT-EACH-FIX GATE (request construction) -- 50 cases|samples/test_request_construction_controls.out'
-  'PASSED -- all 50 fixes are pinned: reverting any one of them turns this gate RED.|samples/test_request_construction_controls.out'
+  'REVERT-EACH-FIX GATE (request construction) -- 51 cases|samples/test_request_construction_controls.out'
+  'PASSED -- all 51 fixes are pinned: reverting any one of them turns this gate RED.|samples/test_request_construction_controls.out'
   # Every state this instrument can END in needs an artefact a reader can tell from the
   # others, for the same reason the loop flags do: the dangerous output is not a zero, it
   # is a complete-looking decomposition that is simply too small.
@@ -354,10 +354,17 @@ EXEMPT=(
   # --- the output the DEFECTIVE recorder produced for 40391 real bytes, quoted as the
   # --- finding. It must not match an artefact: the artefacts now show it de-chunked. ---
   '1 measurable, 1 startup probes'
+  # --- ARI#28 round 5. A gate-case LABEL and the lossy fallback one of them mutates to.
+  # --- Neither is a reading of anything: the label names a case in
+  # --- scripts/test_request_construction_controls.py (whose own output artefact lists it,
+  # --- but under its full name, not the bare label), and the other is code quoted as the
+  # --- wrong answer it was. ---
+  'C51' '.encode("utf-8", "replace")'
   # --- ARI#28 round 4. The "figure" the reverted union leg INVENTED out of an ordinary
-  # --- wrapped sentence, quoted in docs/limits.md as the false alarm it was. It is a
-  # --- fragment of prose, not a reading, and it must not match an artefact -- that is
-  # --- the point of quoting it. Same rule as '103 transcripts'. ---
+  # --- wrapped sentence, quoted in BOTH docs/limits.md and README as the false alarm it
+  # --- was -- so this entry is load-bearing for two files, not one, and removing it fails
+  # --- on both. It is a fragment of prose, not a reading, and it must not match an
+  # --- artefact: that is the point of quoting it. Same rule as '103 transcripts'. ---
   '-- 6519 of 8680 B -- while hermes publishes'
   # --- ARI#28 round 3. ILLUSTRATIONS in docs/limits.md, not readings: a float raw_bytes
   # --- some producers emit, and the number spelling whose re-serialisation is the second

@@ -345,8 +345,8 @@ CASES = [
 
     ("C32-recorder-reserialises-wire-bytes", "capture_proxy",
      "computing raw_bytes from the PARSED body instead of the bytes that arrived. The field is documented as the only direct observation in the chain, and README's table marks exactly one row as observed. C23 pins where that figure is READ; this pins where it is MADE. The old self-test compared raw_bytes against len(json.dumps(body).encode()) -- which is what this mutant computes, so the check could not tell them apart.",
-     '        "raw_bytes": len(raw),',
-     '        "raw_bytes": len(json.dumps(body).encode()) if body else 0,'),
+     '        observed = len(raw)',
+     '        observed = len(json.dumps(body).encode()) if body else 0'),
 
     ("C33-recorder-blanks-unparseable", "capture_proxy",
      "storing an empty body for a request this could not parse. Downstream it carries no tools and no messages, so it counts as a startup probe: a review got `3 startup probes` for 144 KB of real traffic, with a 100% coverage banner at exit 0. Round 1's finding 3, reproduced from the recorder side where no reader-side refusal can see it.",
@@ -362,8 +362,8 @@ CASES = [
 
     ("C35-empty-post-marked-unparseable", "capture_proxy",
      'treating a zero-length payload as a body that FAILED to parse. A Content-Length: 0 health check then made the measuring instrument refuse the ENTIRE capture, with a refusal whose own evidence said `0 raw bytes` were affected -- a good capture thrown away over nothing, recoverable only by capturing again.',
-     '    if not raw:',
-     '    if False:'),
+     '    elif not raw:',
+     '    elif False:'),
 
     # ---------------------------------------------------------------------------
     # C36-C41 pin the fixes made after a THIRD review, which was asked to look first for
@@ -402,7 +402,8 @@ CASES = [
      '            if False:'),
 
     # ---------------------------------------------------------------------------
-    # C42-C49 pin the fixes made after a FOURTH review, which found that round 3's own
+    # C42-C51 pin the fixes made after a FOURTH review and a fifth pass, which found
+    # that round 3's own
     # R1 fix (reading each prose file as written AS WELL AS joined) false-alarmed on
     # ordinary prose, and that round 3 had added a SECOND copy of the one line in
     # capture_proxy.py whose mistake is irreversible -- so C12 anchored on one of them
@@ -411,8 +412,19 @@ CASES = [
     # been the file where a defect cannot be seen from the reader side.
     ("C42-recorder-loses-an-unencodable-record", "capture_proxy",
      'letting a record that cannot be encoded as UTF-8 take the handler down. A lone surrogate -- what a client emits when it truncates a string mid-character, and JSON.stringify of a sliced emoji really does -- is valid JSON on the wire and raised inside fh.write(), so the request appeared in the capture NOT AT ALL: no record, no reply, nothing to notice. The omission that looks like good news, in the one file whose output is the evidence for everything else. json.dumps does not raise on it, which is why the encodability check has to be explicit.',
-     '    line = json.dumps(rec, ensure_ascii=False)\n    try:',
-     '    line = json.dumps(rec, ensure_ascii=False)\n    if True:\n        pass\n    elif False:'),
+     '''    line = json.dumps(rec, ensure_ascii=False)
+    try:
+        # json.dumps does NOT raise on a lone surrogate -- it returns a str carrying one,
+        # and the error surfaces two lines later inside fh.write(), where it is an
+        # exception from the FILE rather than from the record. Checked here so the
+        # fallback is reached: that distinction is exactly what made the original bug
+        # look like an I/O failure rather than an encodable-record question.
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        line = json.dumps(rec, ensure_ascii=True)
+''',
+     '''    line = json.dumps(rec, ensure_ascii=False)
+'''),
 
     ("C43-transfer-encoding-read-as-one-token", "capture_proxy",
      'comparing the whole Transfer-Encoding value to `chunked` instead of looking for the token in it. RFC 7230 s3.3.1 makes it a comma-separated LIST, and a proxy in the path really sends `identity, chunked` -- which then stops being de-chunked and becomes a FATAL refusal of the whole capture. A false refusal, from a fix for a missed measurement.',
@@ -450,9 +462,14 @@ CASES = [
      '            pass'),
 
     ("C50-stray-blank-chunk-line", "capture_proxy",
-     'deleting the empty-chunk-size tolerance from the de-chunker. A client that sends its terminator twice then raises ValueError on the blank line, and a perfectly de-chunkable body becomes a refusal of the whole capture. It survived every gate until a self-test leg sent a stream with a stray blank line in it -- the same shape of gap as C44: real behaviour nothing exercised.',
+     'deleting the empty-chunk-size tolerance from the de-chunker. A client that sends its terminator twice then raises ValueError on the blank line, and a perfectly de-chunkable body becomes a refusal of the whole capture. It survived every gate until a self-test leg sent a stream with a stray blank line in it -- the same shape of gap as C44: real behaviour nothing exercised. NOTE: C43, C44 and C50 all go red on the SAME leg, because one request carries all three tolerances (a token LIST, a capitalised token, a stray blank line). The coverage is real, but the RED line names only the first of the three; this text is where each behaviour is named.',
      '            if not field:\n                continue',
      '            if False:\n                continue'),
+
+    ("C51-unencodable-record-silently-mangled", "capture_proxy",
+     're-encoding an unencodable record LOSSILY instead of escaping it. `.encode("utf-8", "replace")` is the fallback somebody writes first, and it is worse than the crash it replaces: the surrogate becomes `?`, so the body is now encodable, the reader\'s refusal never fires, and a MANGLED body is measured and published at exit 0 where the correct recorder\'s capture is refused at exit 2. The leg behind this asserted only the record\'s LENGTH, which a lossy re-encode preserves.',
+     '        line = json.dumps(rec, ensure_ascii=True)',
+     '        line = line.encode("utf-8", "replace").decode("utf-8")'),
 
     ("C13-recorder-keepalive-sse", "capture_proxy",
      "answering an event stream under keep-alive. With no Content-Length the client "
@@ -474,8 +491,14 @@ def run_selftest(base, module):
                            capture_output=True, text=True, cwd=base, env=env,
                            timeout=600)
     except subprocess.TimeoutExpired:
-        # A mutant that HANGS is red, not a crashed gate. One of these cases removes the
-        # EOF guard from a read loop, and the honest outcome of that is no outcome.
+        # A mutant that HANGS is red, not a crashed gate.
+        #
+        # Nothing reaches this today, and that is worth saying rather than leaving it to
+        # look load-bearing: C46 removes the EOF guard from a read loop, but the
+        # self-test's own client gives up after 10 s and the missing record fails a leg
+        # long before this 600 s ceiling. It stays because the next read loop added here
+        # may not have a client with a timeout in front of it, and a gate that hangs
+        # reports nothing at all.
         return 124, ["FAIL  the mutant's own self-test did not finish in 600 s"]
     fails = [l.strip() for l in (p.stdout + p.stderr).splitlines()
              if l.strip().startswith("FAIL")]
@@ -556,11 +579,17 @@ def main():
         return 1
     if errors:
         return 1
-    # "turns this gate RED" rather than "turns a control RED": two cases kill the
+    # "turns this gate RED" rather than "turns a control RED": one case (C34) kills the
     # recorder so thoroughly that its self-test cannot reach the leg that would name the
-    # defect, and go red on a non-zero exit instead. Each such case says so on its own
-    # line. A review pointed out that the summary was claiming a named control for all
-    # of them, which is a small overclaim about the one thing this gate exists to say.
+    # defect, and goes red on a non-zero exit instead. It says so on its own line. A
+    # review pointed out that the summary was claiming a named control for every case,
+    # which is a small overclaim about the one thing this gate exists to say.
+    #
+    # An earlier version of this comment said TWO such cases, counting C42 -- which in
+    # fact went red because its mutation left a dangling `except` and the mutant would
+    # not COMPILE. That is not a control and not a recorder dying; it is this gate's own
+    # ANCHOR LOST failure wearing a RED. The case is a compiling revert now, and the
+    # count here is back to one.
     print("PASSED -- all %d fixes are pinned: reverting any one of them turns this gate "
           "RED." % len(cases))
     return 0

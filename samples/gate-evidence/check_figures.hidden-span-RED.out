@@ -1,26 +1,41 @@
-# check_figures.sh observed RED on the attack that round 3's regression finding R1 named.
+# check_figures.sh observed RED on the hidden-span attack.
 #
 # The attack is two lines of ONE paragraph, in README, with no figure wrapped across them:
 #
 #     The refusal ends `exit=2
 #     `fixed 99999 B` is the per-turn cost, and the clean run ends `exit=0
 #
-# The first line leaves an inline span open. The joiner this branch added in round 2 --
-# which exists so that a figure WRAPPED across a line break is still checked -- merges the
-# two, and merging RE-PAIRS the backticks: the span opened on line 1 now closes on line 2's
-# opening backtick, so `fixed 99999 B` sits between two backticks that are no longer a
-# delimiter pair and the span pattern never sees it. Nothing else in the gate reads a
-# five-digit figure inside backticks, and `exit=2` really does occur in this repo's
-# refusal-mode samples, so quoting it in prose is ordinary. Measured on b76e737: the whole
-# preflight green, with a figure published in README that exists in no artefact.
+# The first line leaves an inline span open. Joining the two halves of a wrapped span --
+# which the gate does so that a figure WRAPPED across a line break is still checked --
+# RE-PAIRS the backticks: the span opened on line 1 now closes on line 2's opening
+# backtick, so the planted figure sits between two backticks that are no longer a
+# delimiter pair. `exit=2` really does occur in this repo's refusal-mode samples, so
+# quoting it in prose is ordinary.
 #
-# The fix is NOT a better joiner. Any joiner is one re-pairing away from the same defect,
-# because joining is what changes which backticks pair. Each prose file is now read TWICE
-# -- as written, and joined -- and the figures are the UNION, which no arrangement of line
-# breaks can subtract from. This artefact is that fix failing to be unnecessary: it is the
-# gate RED on the attack, which is the only evidence that the union leg does anything.
+# WHAT CATCHES IT HAS CHANGED SINCE THIS FILE WAS WRITTEN, and the output below is from
+# the first mechanism rather than the current one. Read it as a record of the attack, not
+# of today's gate:
 #
-# Reproduce: apply the two lines above to README.md in a clone, run scripts/check_figures.sh.
+#   * when this was captured, each prose file was read TWICE -- as written and joined --
+#     and the figures were the UNION. The output below is that version's, and it names
+#     the figure as `fixed 99999 B`, extracted as a backticked span.
+#   * the next review broke the as-written leg: on the continuation line of a LEGITIMATE
+#     wrapped span the same mis-pairing EMITS the prose between one span's closer and the
+#     next one's opener, so ordinary prose failed the gate with a sentence fragment as its
+#     "figure". That leg was reverted.
+#   * today the span leg reads the joined copy only, and this attack is caught by the
+#     bare-`B` unit pattern over the file AS WRITTEN, which has no backticks to mis-pair.
+#     The current run reports the figure as `99999 B` rather than `fixed 99999 B`.
+#
+# So this artefact is kept as the ATTACK's record, and the gate's own ability to fail is
+# no longer evidenced by it: scripts/test_figure_gate.sh re-runs this attack and three
+# others on every preflight, requires each to go RED, requires three ordinary-prose cases
+# to stay GREEN, and deletes the bare-`B` pattern to prove that pattern is what catches
+# this one. A hand-made artefact nothing re-runs is a record, not a gate -- which is why
+# the union leg, and then its replacement, could each be deleted with every gate green.
+#
+# Reproduce: apply the two lines above to README.md in a clone, run
+# scripts/check_figures.sh. Expect `FAIL: README.md states '99999 B'` on the current code.
 # date: 2026-11-04T19:32:36Z   HEAD: b76e737 (fix applied on top)
 
 FAIL: README.md states 'fixed 99999 B' which appears in NO artefact under samples/.

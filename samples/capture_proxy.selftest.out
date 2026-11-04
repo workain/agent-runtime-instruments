@@ -9,7 +9,7 @@
   PASS  an UNPARSEABLE body is still recorded, marked `__unparseable__`, with its real wire length (38 B) -- dropping it or storing an empty body would make the request vanish into the probe count downstream
   PASS  6 requests sent -> 6 recorded, including the two the recorder could not parse (a recorder that writes only what it understood reports a cheaper client than the real one)
   PASS  a request that carried NO payload is recorded with `body: null`, not under the unparseable marker -- nothing sent is not the same as could not parse, and conflating them made the instrument refuse a whole good capture
-  PASS  header NAMES recorded, header VALUES not -- the Authorization value sent above is absent from the capture
+  PASS  header NAMES recorded, header VALUES not -- the Authorization value sent above is absent from the capture, including from the one request that reached the `__unread__` path, which no credentialed request used to take
   PASS  both protocols landed on one capture, each tagged with its endpoint
   PASS  the arm label is carried onto every record
   PASS  a CHUNKED POST is de-chunked and recorded with its real length (387 B in 2 chunks, no Content-Length header at all) -- it used to record `raw_bytes: 0, body: null` and be counted downstream as a startup probe
@@ -18,7 +18,7 @@
   PASS  `Transfer-Encoding: identity, Chunked` is de-chunked, stray blank line between its chunks and all -- a comma-separated LIST of case-insensitive tokens, which `te == "chunked"` would have refused outright (207 B recovered)
   PASS  a NEGATIVE Content-Length is refused as unread, not handed to rfile.read(-1), which would read to EOF and frame the body by nothing
   PASS  a chunked body whose final CRLF never arrives is still recorded in full (147 B) once the client closes -- without the EOF case in the trailer loop the recorder hangs here forever and records nothing
-  PASS  a body carrying a LONE SURROGATE is still recorded with its real length (70 B) -- it cannot be encoded as UTF-8, and it used to take the handler down and leave the request in the capture not at all
+  PASS  a body carrying a LONE SURROGATE is recorded with its real length (70 B) AND round-trips to the same string -- it cannot be encoded as UTF-8, and it used to take the handler down and leave the request in the capture not at all
 
 self-test: 21 pass, 0 fail
 exit=0

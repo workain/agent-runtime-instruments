@@ -46,6 +46,9 @@ echo "preflight: gating $root ($(git -C "$root" rev-parse --abbrev-ref HEAD 2>/d
 echo "preflight: figures"   && bash scripts/check_figures.sh    >/dev/null
 echo "preflight: scrub"     && bash scripts/scrub_check.sh --all >/dev/null
 echo "preflight: decoys"    && bash scripts/test_scrub_check.sh  >/dev/null
+# The figure gate is the one with three consecutive regressions in its span
+# extraction, and until now the only gate here with no harness proving it can fail.
+echo "preflight: figure-gate" && bash scripts/test_figure_gate.sh >/dev/null
 echo "preflight: identity"  && bash scripts/test_identity_allowlist.sh >/dev/null
 echo "preflight: fixtures"  && bash scripts/check_fixtures_fresh.sh >/dev/null
 echo "preflight: fixtures-gate" && bash scripts/test_fixture_freshness.sh >/dev/null

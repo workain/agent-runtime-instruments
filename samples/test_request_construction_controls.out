@@ -1,4 +1,4 @@
-REVERT-EACH-FIX GATE (request construction) -- 50 cases
+REVERT-EACH-FIX GATE (request construction) -- 51 cases
 Each reverts one fix to the simpler code somebody would really write; a control must turn RED.
 
 baseline: the unmutated copies of both files PASS their self-tests, so a RED below is caused by the mutation
@@ -43,7 +43,7 @@ C38-chunked-body-never-read        RED   -- FAIL  chunked POST recorded as raw_b
 C39-unframeable-body-posed-as-empty RED   -- FAIL  an unframeable body was not marked unread: {'arm': 'selftest-arm', 'endpoint': '/v
 C40-overrun-note-without-a-ceiling RED   -- FAIL  wire 101 B -> exit 0, errors=[]
 C41-two-captures-one-arm-label     RED   -- FAIL  arm collision -> exit 0, rows=2, errors=[]
-C42-recorder-loses-an-unencodable-record RED   -- exit 1 (no FAIL line; a raise or a hang, which still counts)
+C42-recorder-loses-an-unencodable-record RED   -- FAIL  7 requests sent after the six above -> 6 recorded
 C43-transfer-encoding-read-as-one-token RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
 C44-transfer-encoding-case-sensitive RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
 C45-negative-content-length        RED   -- FAIL  Content-Length: -1 recorded as {'arm': 'selftest-arm', 'endpoint': '/v1/messages',
@@ -52,7 +52,8 @@ C47-arm-collision-keyed-on-the-endpoint-too RED   -- FAIL  arm collision across 
 C48-unread-refusal-loses-its-reason RED   -- FAIL  a body the recorder could not read -> exit 2, errors=['capture line 1 of <tmp>/rec
 C49-unencodable-body-raises-in-the-reader RED   -- FAIL  a body that cannot be encoded as UTF-8 raised UnicodeEncodeError instead of refusi
 C50-stray-blank-chunk-line         RED   -- FAIL  combined/capitalised Transfer-Encoding: raw_bytes=None (sent 207 B)
+C51-unencodable-record-silently-mangled RED   -- FAIL  lone-surrogate body recorded as raw_bytes=70 (sent 70 B), content 'hi ?'
 C13-recorder-keepalive-sse         RED   -- FAIL  streaming reply did not terminate with message_stop
 
-PASSED -- all 50 fixes are pinned: reverting any one of them turns this gate RED.
+PASSED -- all 51 fixes are pinned: reverting any one of them turns this gate RED.
 exit=0

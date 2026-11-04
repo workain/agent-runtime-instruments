@@ -339,7 +339,11 @@ Stated so the gaps are visible rather than implied absent.
   `samples/raw-payloads/README.md` gives -- and the bare-`B` pattern is now the thing that
   catches it, so an exemption for that value would re-open this hole and not merely describe it.) **Still uncovered:** a figure between two mis-paired
   backticks carrying no unit these patterns know. It is not a published code span — it renders as
-  mangled prose — and no gate here reads it.
+  mangled prose — and no gate here reads it. **Both directions are now pinned by
+  `scripts/test_figure_gate.sh`**, which plants each attack and each ordinary-prose case on every
+  preflight, and deletes the catching pattern from the gate's own source to prove it is the thing
+  catching. Before that harness existed, three successive fixes to this one mechanism were each
+  invisible to every gate.
 - **The engine adapters match the shape each engine was OBSERVED to have, and nothing else.** A
   `dsh` installed as a launcher on PATH is not matched by the dsh adapter, and neither is the
   `hermes` launcher: both were tried as bare-name patterns and both fired on unrelated command

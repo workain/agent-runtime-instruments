@@ -74,23 +74,26 @@ def record(capture, arm, endpoint, headers, raw, unread=None):
     publishable, and `.items()` here instead of `.keys()` would put the Authorization /
     x-api-key value of a misconfigured run into it.
 
-    There is exactly ONE such line, and exactly one `_write` call, on purpose. A branch
-    added for the `__unread__` case once carried its own copy: C12 anchors on one of
-    them, so mutating the other to `.items()` leaked credentials into a capture with
-    both self-tests, the controls gate and the whole preflight green. The branches below
-    decide only what was OBSERVED; the record is built once, after them.
+    There is exactly ONE record literal and one `_write` call, and that is the whole
+    protection -- it took two attempts to get right. A branch added for the
+    `__unread__` case first carried its own copy of this line, and the fix for THAT
+    de-duplicated only the `sorted(...)` expression while leaving two record literals.
+    C12 anchors on one line; with two consumption sites it pinned neither, and mutating
+    the second to `.items()` wrote a real `Bearer` value into a capture with every
+    self-test check and the whole preflight green. Twice over: a second site is not a
+    thing to pin, it is a thing to not have.
+
+    So the branches below decide only what was OBSERVED -- `raw_bytes` and `body` --
+    and the record is built once, below them, from one literal.
     """
     header_names = sorted(headers.keys())       # KEYS only -- see above. One site.
     if unread is not None:
         # The body was never read, so its length is UNKNOWN -- not zero. `raw_bytes` is
         # null rather than 0 for exactly that reason: 0 is an observation, and this is
         # the absence of one. The measuring instrument refuses the capture by name.
-        return _write(capture, {
-            "arm": arm, "endpoint": endpoint, "ts": time.time(),
-            "raw_bytes": None, "header_names": header_names,
-            "body": {UNREAD: unread},
-        })
-    if not raw:
+        body = {UNREAD: unread}
+        observed = None
+    elif not raw:
         # NOTHING SENT is not the same as COULD NOT PARSE, and conflating them cost a
         # whole capture. A `Content-Length: 0` POST -- a health check, a probe -- used to
         # be stored under the unparseable marker, which the measuring instrument refuses
@@ -99,6 +102,7 @@ def record(capture, arm, endpoint, headers, raw, unread=None):
         # remedy was to capture again. A body of None reads as a request that carried no
         # payload, which is what happened.
         body = None
+        observed = 0
     else:
         try:
             body = json.loads(raw.decode("utf-8", "replace"))
@@ -107,11 +111,12 @@ def record(capture, arm, endpoint, headers, raw, unread=None):
             # sending something this does not understand is a finding, and a silently
             # skipped request would show up as a smaller payload instead.
             body = {"__unparseable__": raw.decode("utf-8", "replace")[:2000]}
+        observed = len(raw)
     return _write(capture, {
         "arm": arm,
         "endpoint": endpoint,
         "ts": time.time(),
-        "raw_bytes": len(raw),
+        "raw_bytes": observed,
         "header_names": header_names,
         "body": body,
     })
@@ -506,8 +511,13 @@ def self_test():
     # 8. A body that could not be FRAMED at all. `Content-Length: 0` means nothing was
     #    sent and is recorded as `body: null`; this is the other case, and conflating the
     #    two is what defect 7 was. Length UNKNOWN is not length ZERO.
+    # Carries an Authorization header ON PURPOSE: this is the only request in this
+    # self-test that reaches the `__unread__` path, so without a credential on it the
+    # header-values leg below cannot see that path at all. A review mutated exactly
+    # there and leaked a `Bearer` value past every gate.
     post_raw(b"POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\n"
              b"Content-Type: application/json\r\nTransfer-Encoding: gzip\r\n"
+             b"Authorization: Bearer not-a-credential\r\n"
              b"Connection: close\r\n\r\n")
     # 9. A NON-ASCII body. `raw.decode("utf-8", "replace")` -> `"ascii"` is one word, and
     #    it survived both self-tests and the whole preflight because every body above is
@@ -598,7 +608,8 @@ def self_test():
     blob = open(cap, encoding="utf-8").read()
     if "not-a-credential" not in blob and "Authorization" in blob:
         ok("header NAMES recorded, header VALUES not -- the Authorization value sent "
-           "above is absent from the capture")
+           "above is absent from the capture, including from the one request that "
+           "reached the `%s` path, which no credentialed request used to take" % UNREAD)
     else:
         no("an Authorization header VALUE reached the capture file")
 
@@ -672,13 +683,21 @@ def self_test():
     else:
         no("truncated-trailer chunked body recorded as raw_bytes=%r (sent %d B)"
            % (tr.get("raw_bytes"), len(trunc)))
-    if sg.get("raw_bytes") == len(surrogate):
-        ok("a body carrying a LONE SURROGATE is still recorded with its real length "
-           "(%d B) -- it cannot be encoded as UTF-8, and it used to take the handler "
-           "down and leave the request in the capture not at all" % len(surrogate))
+    sg_content = (((sg.get("body") or {}).get("messages") or [{}])[0]).get("content")
+    if sg.get("raw_bytes") == len(surrogate) and sg_content == "hi \ud83d":
+        ok("a body carrying a LONE SURROGATE is recorded with its real length (%d B) "
+           "AND round-trips to the same string -- it cannot be encoded as UTF-8, and it "
+           "used to take the handler down and leave the request in the capture not at "
+           "all" % len(surrogate))
     else:
-        no("lone-surrogate body recorded as %r (sent %d B)"
-           % (sg.get("raw_bytes"), len(surrogate)))
+        # Length ALONE was the original assertion, and a lossy re-encode preserves it:
+        # `.encode("utf-8", "replace")` turns the surrogate into `?`, which keeps
+        # raw_bytes intact, makes the body ENCODABLE, and so stops the reader refusing
+        # it -- a mangled body measured and published at exit 0, where the correct
+        # recorder's capture of the same request is refused at exit 2. Hence the round
+        # trip, which is the half a review walked straight through.
+        no("lone-surrogate body recorded as raw_bytes=%r (sent %d B), content %r"
+           % (sg.get("raw_bytes"), len(surrogate), sg_content))
 
 
 

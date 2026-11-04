@@ -375,8 +375,8 @@ The controls are pinned the same way `flags.py`'s are, by reverting each fix and
 control to turn RED:
 
 ```
-REVERT-EACH-FIX GATE (request construction) -- 50 cases
-PASSED -- all 50 fixes are pinned: reverting any one of them turns this gate RED.
+REVERT-EACH-FIX GATE (request construction) -- 51 cases
+PASSED -- all 51 fixes are pinned: reverting any one of them turns this gate RED.
 ```
 
 All but thirteen of them -- the gate's original set, below -- were added after four
@@ -648,9 +648,11 @@ both self-tests and the whole preflight. Three are worth stating:
   delimiter pair. The demonstration published a five-digit `fixed` figure in README — present in
   no artefact — with this gate and the whole preflight green. (Not quoted here, for the reason
   `samples/raw-payloads/README.md` gives: an exemption for a laundered figure re-opens the hole
-  the paragraph is describing.) The fix is not a smarter joiner, which would still
-  be one re-pairing away from the same thing: the joined copy is now read **in addition to** the
-  file as written, and no arrangement of line breaks can subtract from a union.
+  the paragraph is describing.) The first fix was not a smarter joiner —
+  which would still have been one re-pairing away from the same thing — but reading the file as
+  written **in addition to** the joined copy, on the reasoning that no arrangement of line breaks
+  can subtract from a union. **That fix was itself reverted a round later**, because the union
+  *adds*: see the round-4 note below.
 - **The empty-POST fix turned a loud refusal into a silent startup probe.** `if not raw: body =
   None` cannot tell *the client sent no body* from *this recorder never read the body it was
   sent*, and `do_POST` framed every request by `int(Content-Length or 0)` — so a **chunked** POST
@@ -721,6 +723,45 @@ its own `--self-test` is the only thing standing behind every byte in the report
 round-4 legs needed a hand-built HTTP request, because `urllib` cannot construct a chunked body, a
 negative `Content-Length`, a half-closed stream or a stray blank line between chunks — which is
 exactly why none of those behaviours had ever been exercised.
+
+A fifth pass -- this one over the round-4 diff alone -- found that the round-4 fixes had done it
+again, in both of the places round 4 had just touched. Two findings, and the second is the more
+embarrassing:
+
+- **"One write site" was one *expression*.** The round-4 fix de-duplicated
+  `sorted(headers.keys())` and left **two complete record literals**, each with its own
+  `"header_names"`. `C12` had been re-anchored onto the assignment, so the assignment was pinned
+  and *neither* consumption site was — and mutating the `__unread__` branch's copy wrote a live
+  `Bearer` value into a capture with every self-test check and the whole preflight green. The same
+  finding as the round before, one line over, published under a docstring asserting it could not
+  happen. There is one record literal now: the branches decide only `raw_bytes` and `body`. And the
+  credential leg had never covered that path at all — every credentialed request went through
+  `post_bytes` and landed on the other literal, so the one request that reaches `__unread__` now
+  carries an Authorization header on purpose.
+- **The gate case written to pin the other round-4 fix mutated the file into a `SyntaxError`.** It
+  left a dangling `except`, so its RED came from a mutant that could not be imported — which is
+  *precisely* the defect an earlier round found in an earlier round's cases, and whose lesson this
+  README quotes two sections up. It also falsified three published statements, including the pinned
+  "all N fixes are pinned". The case is a compiling revert now. The leg behind it asserted only the
+  record's *length*, which a lossy `.encode("utf-8", "replace")` fallback preserves — that mutation
+  survived every gate, and its consequence is worse than the crash it replaces: the body becomes
+  encodable, so the reader's refusal never fires and a **mangled** body is measured and published
+  at exit 0. The leg asserts the round trip now, and `C51` pins it.
+
+**The structural answer, which should have come three rounds earlier.** Every other gate here has a
+harness proving it can fail — `test_scrub_check.sh`, `test_fixture_freshness.sh`,
+`test_identity_allowlist.sh`, `test_flags_controls.sh`. The *figure* gate had none, and it is the one
+with three consecutive regressions in its span extraction. That is why each fix was invisible:
+deleting the union leg, or deleting the bare-`B` pattern that replaced it, left the whole preflight
+green, and the only evidence either had ever worked was a hand-written artefact that nothing re-ran.
+
+`scripts/test_figure_gate.sh` now runs on every preflight. It plants four defects and requires each
+to go RED — the hidden-span attack, a figure wrapped across a line break, a one-digit drift in a
+pinned clause, and the attack again with the bare-`B` pattern **deleted from the gate's own source**,
+which is what proves that pattern is the thing catching it. It also requires three ordinary-prose
+cases to stay GREEN, including the exact wrapped-clause sentence that the reverted union leg
+false-alarmed on, and requires the unmodified tree to pass so that every RED is caused by its own
+planted defect.
 
 `scripts/preflight.sh` runs `--self-test` for every instrument that offers the flag, picking them
 up with no list to maintain — which means an instrument *without* the flag is silently not
