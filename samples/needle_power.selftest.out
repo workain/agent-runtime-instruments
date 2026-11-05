@@ -1,0 +1,17 @@
+  ok   leg1 harness-only needle: got 'survives', want 'survives'
+  ok   leg2 needle also in a non-harness file: got 'INVALID', want 'INVALID'
+  ok   leg3 needle absent from the harness: got 'NOT-IN-HARNESS', want 'NOT-IN-HARNESS'
+  ok   leg4 same needle flips once its non-harness copy is gone: got 'survives', want 'survives'
+  ok   leg5 --auto candidate count: got 2, want 2
+  ok   leg5 --auto unique-line count: got 1, want 1
+  ok   leg5 --auto picked the right line: got 'a line that exists only in the harness surface of this fixture', want 'a line that exists only in the harness surface of this fixture'
+  ok   leg6 INVALID needle exits 1: got 1, want 1
+  ok   leg6 surviving needle exits 0: got 0, want 0
+  ok   leg7 absent --root is refused non-zero: got True, want True
+  ok   leg7 absent --root says REFUSING: got True, want True
+  ok   leg7 nothing-to-measure is refused non-zero: got True, want True
+
+SELF-TEST PASSED -- 13 checks.
+What it does NOT cover, so its silence is not read as a pass: the FALSE-NEGATIVE half.
+Whether a client records the injected text in a greppable form at all is a property
+of that client, invisible from any corpus scan, and no fixture here can establish it.
