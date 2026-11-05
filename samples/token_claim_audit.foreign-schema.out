@@ -1,0 +1,25 @@
+TOKEN-CLAIM AUDIT -- would a figure published from these captures survive its own
+request population?
+
+capture                                     reqs  non2xx  nocost  0cost shapes               find
+-------------------------------------------------------------------------------------------------
+flags.repeats.jsonl                           18      18      18      0 ['ABSENT']           3
+
+flags.repeats.jsonl  [arm: <no arm>]  18 requests
+  !! NON-2XX-IN-POPULATION (n=18)
+       18 of 18 requests are not 2xx ({'<absent>': 18}). A round count over this capture includes them unless it filters on status; alm#961 defect 6 built an 8x spread on exactly this.
+  !! COST-FIELD-ABSENT (n=18)
+       18 of 18 requests carry no 'usage.cost'. These contribute UNKNOWN, not 0, to any cost total.
+  !! USAGE-SHAPE-UNKNOWN (n=18)
+       18 requests have no recognised usage shape. Summing a protocol-specific key over these returns a confident 0 from a MISSING KEY -- alm#961 defect 2.
+
+FINDINGS: 3 across 1 arm(s) in 1 capture(s).
+A finding is a POPULATION FACT, not automatically a defect: a 429 in a capture is a
+fact about the provider. It becomes a defect when it sits inside a set someone called
+'rounds'. This instrument's guarantee is that the count was put in front of you first.
+
+NOT CHECKED HERE, stated so its absence is not read as a pass: cost is never
+re-derived from a price model. That check caught alm#961's largest error (a tier keyed
+on uncached tokens, wrong on 105 of 401 requests, 50x -> 10x) and needs a per-provider
+price table with a cliff, which is state that goes stale silently.
+exit=1

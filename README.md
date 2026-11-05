@@ -395,6 +395,108 @@ only the enabler. The case now reverts it **together** with the narrowed split, 
 implementation somebody would really write, and a new control requires the split to NAME every
 top-level field.
 
+
+### `needle_power.py` — is a marker-grep a valid oracle **in your corpus**?
+
+You want to know whether an agent actually loaded your rules file. The obvious check is to grep
+its transcript for a distinctive phrase from that file. **Measure this first, because that grep is
+usually not an oracle.**
+
+```bash
+python3 instruments/needle_power.py --root . --auto CLAUDE.md          # is ANY line unique?
+python3 instruments/needle_power.py --root . --needle "a phrase you were about to grep for"
+python3 instruments/needle_power.py --self-test
+python3 instruments/needle_power.py --help-blind
+```
+
+Per needle it reports the files containing it, split into the harness surface and everything else
+— the false-positive population — and one of three verdicts: `survives`, `INVALID` (also present
+in files the agent can see, so it cannot tell *loaded* from *read*), or `NOT-IN-HARNESS` (absent
+from your rules file, so it detects nothing). `--auto` asks the stronger question: is **any** line
+of the file unique to it within this corpus?
+
+**The reason to run it on your own repo rather than trust ours: the answer is wildly
+repo-dependent.** Two measurements, same instrument, same command shape:
+
+| corpus | candidate lines | unique to the rules file | verdict |
+|---|---|---|---|
+| the private repo this came from | 256 | **5** | essentially no grep oracle exists |
+| **this repository** (`--auto README.md`) | **656** | **642** | almost any line works |
+
+The second row is `samples/needle_power.other-repo-redacted.out`, reproducible with the command
+above. The first is from the private study and has no artefact here by construction.
+
+Same tool, opposite conclusions. In the first corpus the five phrases a human would reach for
+first each appeared in dozens of non-harness files, because that repo archives rounds that quote
+its own rules verbatim — so no amount of deleting the rules file makes the text unfindable. A grep
+oracle built there returned, on two separate occasions, a confident and wrong answer in *opposite*
+directions; one of those produced 188 findings of which every single one was a false positive.
+**Neither number tells you anything about your corpus. That is the point.**
+
+`survives` is **not** validity. It clears the false-positive half only; the false-negative half —
+whether your client records the injected text in a greppable form at all — is invisible from any
+corpus scan. One real client does not, so every arm reads "absent" with and without the file.
+`--help-blind` lists all five ways this instrument lies, including that **publishing its own
+output decays its answer**: committing the unique lines' text into the corpus makes them stop
+being unique, which has already happened once.
+
+Samples: `samples/needle_power.other-repo-redacted.out` (run against this repo),
+`samples/needle_power.mixed-verdicts-redacted.out` (all three verdicts at once),
+`samples/needle_power.absent-root-REFUSED.out`, `samples/needle_power.selftest.out`, and
+`samples/needle_power.selftest-FAILED.out` — the self-test observed failing under a mutation that
+deletes the instrument's core discrimination, because a control whose first run is green tells you
+nothing.
+
+### `token_claim_audit.py` — would your published figure survive its own request population?
+
+You measured tokens, rounds or cost from a capture of API requests. This asks whether the **set**
+of requests you measured over is the set you think it is — before publication, not after a
+reviewer finds it. (Not a credential scanner: "token" here means a billing token.)
+
+```bash
+python3 instruments/token_claim_audit.py 'captures/*.jsonl' --id-field requestId
+python3 instruments/token_claim_audit.py --self-test
+python3 instruments/token_claim_audit.py --help-blind
+```
+
+Field names are arguments (`--usage-field`, `--cost-field`, `--status-field`, `--arm-field`,
+`--id-field`), so it reads a capture it has never seen before. It detects four classes, each taken
+from a defect that actually shipped:
+
+- **a missing key read as a zero** — the Anthropic cache field does not exist in the OpenAI
+  protocol, so a sum over it returned a clean `0` and *"this client does no caching"* was briefly
+  reported **from an absent field**. Reported here as `UNKNOWN`, never as `0`.
+- **retries counted as work** — in one draw most of the logged requests were HTTP 429 rate-limit
+  retries rather than billed work; retries were excluded in one arm and kept in another, and a
+  round-count "spread" was built on the inflated figure.
+- **zero-cost capability probes counted as rounds** — a handful of "errors" were tiny not-found
+  responses from a capability probe, which inflate a round count and put an error in a latency
+  column.
+- **records mistaken for requests** — one capture carried 2.09–3.00 usage-bearing transcript
+  records per API request, and a transcript that *replays itself on compaction* once inflated a
+  count by **5.36×**. The API-call unit is a distinct request id; an agent-turn count is not it,
+  and a transcript-record count is further still.
+
+**A finding is a population fact, not automatically a defect.** A 429 in a capture is a fact about
+the provider; it becomes a defect when it sits inside a set someone called "rounds". The guarantee
+is that the count was put in front of you first.
+
+It does **not** re-derive cost from a price model. That check is real and caught the largest single
+error in the study this came from — a price tier keyed on uncached tokens only, wrong on 105 of 401
+requests, turning a published **50× into 10×** — but it needs a per-provider price table with a
+cliff in it, which is state that goes stale silently. Scoped out rather than half-built.
+
+Samples: `samples/token_claim_audit.foreign-schema.out` — pointed at this repo's own `flags`
+fixtures, a schema with no usage or status fields at all, where the whole point is that it reports
+what is **absent** instead of summing it to a confident zero;
+`samples/token_claim_audit.no-captures-REFUSED.out`; `samples/token_claim_audit.selftest.out`.
+
+**Provenance for both.** Extracted from a private study of with/without-harness measurement across
+three agent clients and nine tasks. Each instrument's own docstring cites that study's internal
+round identifiers for traceability; nothing here needs them resolved. Every figure quoted in this
+section is either in the sample output beside it or is explicitly attributed to that study, which
+by construction has no artefact in this repository.
+
 ### Which engines are actually supported
 
 `instruments/engines.py` holds one adapter per engine, and **every instrument prints which

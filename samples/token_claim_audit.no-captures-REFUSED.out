@@ -1,0 +1,2 @@
+REFUSING (exit 2): no capture files matched ['/tmp/no-such-capture-glob-*.jsonl']. An audit over zero captures is not a clean audit.
+exit=2
