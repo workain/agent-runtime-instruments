@@ -105,8 +105,8 @@ measure_request_construction.claims-drift-FAILED.out	instruments/measure_request
 capture_proxy.selftest.out	instruments/capture_proxy.py	refu	--self-test
 drive_dsh.wrong-node-REFUSED.out	instruments/drive_dsh.py	env	ARI_DSH_NODE=/nonexistent/node24/bin/node --prompt-file README.md --cwd . --patch README.md --events /dev/null --stderr /dev/null --dsh-home /tmp/ari-dsh-refused
 test_request_construction_controls.out	scripts/test_request_construction_controls.py	refu	
-needle_power.selftest.out	instruments/needle_power.py	run	--self-test
-token_claim_audit.selftest.out	instruments/token_claim_audit.py	run	--self-test
+needle_power.selftest.out	instruments/needle_power.py	refu	--self-test
+token_claim_audit.selftest.out	instruments/token_claim_audit.py	refu	--self-test
 token_claim_audit.foreign-schema.out	instruments/token_claim_audit.py	refu	samples/fixtures/flags.repeats.jsonl
 needle_power.absent-root-REFUSED.out	instruments/needle_power.py	refu	--root /no/such/directory --needle x
 token_claim_audit.no-captures-REFUSED.out	instruments/token_claim_audit.py	refu	/tmp/no-such-capture-glob-*.jsonl
@@ -143,7 +143,7 @@ gate-evidence/test_request_construction_controls.RED.out	not output of the curre
 gate-evidence/check_figures.hidden-span-RED.out	not output of the current code at all: it records check_figures.sh RED on the backtick re-pairing attack of round 3's finding R1, against a README this repository no longer contains. The attack is two lines long and is quoted in its own header, so it is reproducible by hand in a clone -- but not by a script that must leave the tree clean
 needle_power.other-repo-redacted.out	prints the ABSOLUTE corpus root, which differs on every machine, so it is redacted post-hoc; its two load-bearing figures (656 candidates, 642 unique) are reproducible with the command in its own header
 needle_power.mixed-verdicts-redacted.out	same absolute-root redaction, and its needles are quoted lines of README.md chosen for their hit distribution, so the argv is not stable across edits to that file
-needle_power.selftest-FAILED.out	the self-test observed FAILING, which requires mutating needle_power.py to delete its core discrimination; the mutation is deliberately not in the tree, so no argv reproduces this
+needle_power.selftest-FAILED.out	the self-test observed FAILING, which requires mutating needle_power.py to exit 0 on an INVALID needle -- severing the verdict from the exit code; the mutation is deliberately not in the tree, so no argv reproduces this
 EOF
 )
 

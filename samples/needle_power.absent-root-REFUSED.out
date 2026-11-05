@@ -1,2 +1,2 @@
-REFUSING: --root is not a directory: /no/such/directory
-exit=1
+REFUSING (exit 2): --root is not a directory: /no/such/directory
+exit=2

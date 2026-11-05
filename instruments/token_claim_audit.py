@@ -50,8 +50,9 @@ HOW IT LIES:
      no count here can tell you the capture itself is complete.
 
 EXIT CODES. 0 no findings; 1 one or more findings (read them -- they may be facts, not defects);
-non-zero with REFUSING when zero capture files matched, because an audit over zero captures is
-not a clean audit.
+2 with `REFUSING (exit 2)` when it cannot measure at all -- zero capture files matched, or a
+capture with no records. A refusal is NEVER 1, because "audit found nothing wrong" and "audit
+never ran" must not reach a caller as the same code.
 """
 import argparse
 import collections
@@ -67,6 +68,18 @@ SHAPES = {
     "anthropic": ("input_tokens", "output_tokens"),
     "openai": ("prompt_tokens", "completion_tokens"),
 }
+
+
+def refuse(msg):
+    """Cannot-measure exits 2, NEVER 1.
+
+    1 is this instrument's "it measured, and the answer is bad" code. A refusal that also exits 1
+    is indistinguishable from a real finding to any caller that only tests rc != 0 -- so the two
+    conditions this repository most wants kept apart would arrive as the same signal. Exit 2 is
+    the convention the other instruments here use, for the same reason.
+    """
+    print(f"REFUSING (exit 2): {msg}")
+    sys.exit(2)
 
 
 def shape_of(usage):
@@ -106,7 +119,7 @@ def audit_capture(path, arm_field, status_field, usage_field, cost_field, id_fie
                 # tokens are unaccounted for, which is exactly the thing being audited.
                 recs.append({"__unparseable__": ln})
     if not recs:
-        raise SystemExit(f"REFUSING: {path} has no records. An empty capture is not a clean one.")
+        refuse(f"{path} has no records. An empty capture is not a clean one.")
 
     byarm = collections.defaultdict(list)
     for r in recs:
@@ -273,9 +286,14 @@ def _selftest():
     import subprocess
     import tempfile
 
-    fails = []
+    fails, ran = [], []
 
     def check(label, got, want):
+        # `ran` is appended to here and counted at the end, so the banner's number is DERIVED
+        # from the checks that actually executed. It was a literal, and adding a leg left it
+        # reading "13 checks" while 14 had run -- a stated count that cannot disagree with the
+        # code is the only kind worth printing.
+        ran.append(label)
         ok = got == want
         print(f"  {'ok  ' if ok else 'FAIL'} {label}: got {got!r}, want {want!r}")
         if not ok:
@@ -358,7 +376,7 @@ def _selftest():
         # 7. CANNOT-MEASURE: zero captures must refuse, loudly and non-zero.
         r_none = subprocess.run([sys.executable, me, os.path.join(d, "nothing-*.jsonl")],
                                 capture_output=True, text=True)
-        check("leg7 zero matching captures is refused non-zero", r_none.returncode != 0, True)
+        check("leg7 zero matching captures is refused with exit 2", r_none.returncode, 2)
         check("leg7 zero matching captures says REFUSING",
               "REFUSING" in (r_none.stdout + r_none.stderr), True)
     finally:
@@ -368,7 +386,7 @@ def _selftest():
     if fails:
         print(f"SELF-TEST FAILED: {len(fails)} leg(s): {', '.join(fails)}")
         return 1
-    print("SELF-TEST PASSED -- 12 checks.")
+    print(f"SELF-TEST PASSED -- {len(ran)} checks.")
     print("What it does NOT cover: cost is never re-derived from a price model, so a figure that")
     print("is wrong because of a MISPRICED tier passes every leg here. That check needs a")
     print("per-provider price table with a cliff and is deliberately out of scope.")
@@ -403,15 +421,15 @@ def main():
     if a.self_test:
         return _selftest()
     if not a.captures:
-        raise SystemExit("REFUSING: no captures given (or use --self-test / --help-blind).")
+        refuse("no captures given (or use --self-test / --help-blind).")
 
     paths = []
     for c in a.captures:
         hits = sorted(glob.glob(c)) if any(ch in c for ch in "*?[") else [c]
         paths += [h for h in hits if os.path.isfile(h)]
     if not paths:
-        raise SystemExit(f"REFUSING: no capture files matched {a.captures}. An audit over zero "
-                         f"captures is not a clean audit.")
+        refuse(f"no capture files matched {a.captures}. An audit over zero "
+               f"captures is not a clean audit.")
 
     rows = []
     for p in paths:

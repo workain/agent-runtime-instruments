@@ -53,8 +53,9 @@ HOW THIS INSTRUMENT LIES, in its own words:
      is why the text is off by default, and it already happened once.
 
 EXIT CODES. 0 every needle survived the false-positive check; 1 at least one is unusable as a
-harness-loaded oracle; non-zero with REFUSING on stdout/stderr when it cannot measure at all
-(no such root, nothing asked for). It never reports a clean result it did not establish.
+harness-loaded oracle; 2 with `REFUSING (exit 2)` when it cannot measure at all (no such root,
+nothing asked for). A refusal is NEVER 1, so a caller cannot read "never ran" as "bad needle".
+It never reports a clean result it did not establish.
 """
 import argparse
 import hashlib
@@ -64,6 +65,18 @@ import sys
 
 DEFAULT_HARNESS = ["CLAUDE.md", "AGENTS.md", ".hermes.md", ".mcp.json",
                    ".claude/CLAUDE.md", ".claude/settings.json"]
+
+
+def refuse(msg):
+    """Cannot-measure exits 2, NEVER 1.
+
+    1 is this instrument's "it measured, and the answer is bad" code. A refusal that also exits 1
+    is indistinguishable from a real finding to any caller that only tests rc != 0 -- so the two
+    conditions this repository most wants kept apart would arrive as the same signal. Exit 2 is
+    the convention the other instruments here use, for the same reason.
+    """
+    print(f"REFUSING (exit 2): {msg}")
+    sys.exit(2)
 
 
 def grep_files(root, needle):
@@ -85,8 +98,8 @@ def grep_files(root, needle):
     p = subprocess.run(cmd, capture_output=True, text=True)
     # grep: 0 = found, 1 = not found, >=2 = real error. A real error must never read as "none".
     if p.returncode >= 2:
-        raise SystemExit(f"REFUSING: grep failed (rc={p.returncode}) on needle "
-                         f"{needle[:40]!r}: {p.stderr.strip()[:200]}")
+        refuse(f"grep failed (rc={p.returncode}) on needle "
+               f"{needle[:40]!r}: {p.stderr.strip()[:200]}")
     return sorted(f for f in p.stdout.splitlines() if f)
 
 
@@ -106,7 +119,7 @@ def unique_lines(root, harness_file, harness_names, minlen, limit):
     """
     path = os.path.join(root, harness_file)
     if not os.path.isfile(path):
-        raise SystemExit(f"REFUSING: --auto needs a readable harness file; {path} is not one.")
+        refuse(f"--auto needs a readable harness file; {path} is not one.")
     lines = []
     with open(path, encoding="utf-8", errors="replace") as fh:
         for n, raw in enumerate(fh, 1):
@@ -170,9 +183,14 @@ def _selftest():
     import subprocess
     import tempfile
 
-    fails = []
+    fails, ran = [], []
 
     def check(label, got, want):
+        # `ran` is appended to here and counted at the end, so the banner's number is DERIVED
+        # from the checks that actually executed. It was a literal, and adding a leg left it
+        # reading "13 checks" while 14 had run -- a stated count that cannot disagree with the
+        # code is the only kind worth printing.
+        ran.append(label)
         ok = got == want
         print(f"  {'ok  ' if ok else 'FAIL'} {label}: got {got!r}, want {want!r}")
         if not ok:
@@ -233,12 +251,15 @@ def _selftest():
         # 7. CANNOT-MEASURE must be non-zero and must not look like a clean result.
         r_noroot = subprocess.run([sys.executable, me, "--root", os.path.join(root, "nope"),
                                    "--needle", "x"], capture_output=True, text=True)
-        check("leg7 absent --root is refused non-zero", r_noroot.returncode != 0, True)
+        check("leg7 absent --root is refused with exit 2", r_noroot.returncode, 2)
         check("leg7 absent --root says REFUSING",
               "REFUSING" in (r_noroot.stderr + r_noroot.stdout), True)
         r_nothing = subprocess.run([sys.executable, me, "--root", root],
                                    capture_output=True, text=True)
-        check("leg7 nothing-to-measure is refused non-zero", r_nothing.returncode != 0, True)
+        check("leg7 nothing-to-measure is refused with exit 2", r_nothing.returncode, 2)
+        # A refusal must not collide with leg 6's "measured, needle unusable" code.
+        check("leg7 refusal code differs from the bad-needle code",
+              r_noroot.returncode != r_bad.returncode, True)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -246,7 +267,7 @@ def _selftest():
     if fails:
         print(f"SELF-TEST FAILED: {len(fails)} leg(s): {', '.join(fails)}")
         return 1
-    print("SELF-TEST PASSED -- 13 checks.")
+    print(f"SELF-TEST PASSED -- {len(ran)} checks.")
     print("What it does NOT cover, so its silence is not read as a pass: the FALSE-NEGATIVE half.")
     print("Whether a client records the injected text in a greppable form at all is a property")
     print("of that client, invisible from any corpus scan, and no fixture here can establish it.")
@@ -289,13 +310,13 @@ def main():
     if a.self_test:
         return _selftest()
     if not a.root:
-        raise SystemExit("REFUSING: --root is required (or use --self-test / --help-blind).")
+        refuse("--root is required (or use --self-test / --help-blind).")
 
     root = os.path.abspath(a.root)
     if not os.path.isdir(root):
-        raise SystemExit(f"REFUSING: --root is not a directory: {root}")
+        refuse(f"--root is not a directory: {root}")
     if not a.needle and not a.auto:
-        raise SystemExit("REFUSING: nothing to measure. Give --needle and/or --auto.")
+        refuse("nothing to measure. Give --needle and/or --auto.")
     harness_names = a.harness if a.harness else list(DEFAULT_HARNESS)
 
     print(f"NEEDLE POWER -- root: {root}")
