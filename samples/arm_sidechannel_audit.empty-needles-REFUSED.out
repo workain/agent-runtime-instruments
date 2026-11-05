@@ -1,0 +1,2 @@
+REFUSING (exit 2): samples/fixtures/arm_sidechannel.needles.empty.json yields an empty needle set; every run would score a clean 0.
+exit=2

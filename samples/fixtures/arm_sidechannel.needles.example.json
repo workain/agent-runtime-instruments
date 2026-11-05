@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Fixed strings an agent could only have if it obtained the instruction file.",
+    "Validate these with needle_power.py FIRST: a needle that also appears in files the",
+    "agent can legitimately see cannot tell 'loaded the rules' from 'read a file'.",
+    "Keys starting with _ are ignored, so this block is documentation rather than data."
+  ],
+  "repo_rules": [
+    "ONE SESSION, ONE WORKTREE",
+    "never push directly to main"
+  ],
+  "global_rules": [
+    "a rule the harness states verbatim"
+  ]
+}

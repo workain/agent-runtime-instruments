@@ -1,0 +1,48 @@
+  ok   leg1 in-tree ordinary read is CLEAN-ON-RECORD: got 'CLEAN-ON-RECORD', want 'CLEAN-ON-RECORD'
+  ok   leg2 failed off-clone read is REACHED-ASYMMETRIC-NO-RETURN: got 'REACHED-ASYMMETRIC-NO-RETURN', want 'REACHED-ASYMMETRIC-NO-RETURN'
+  ok   leg2 nothing was obtained: got 0, want 0
+  ok   leg2 one failed read counts once: got 1, want 1
+  ok   leg3 successful off-clone read is CONTAMINATED-OFFCLONE: got 'CONTAMINATED-OFFCLONE', want 'CONTAMINATED-OFFCLONE'
+  ok   leg3 the obtain is counted: got 1, want 1
+  ok   leg4 git show of a SCRIPT is not contamination: got 'CLEAN-ON-RECORD', want 'CLEAN-ON-RECORD'
+  ok   leg4 the git-history call is still counted: got 1, want 1
+  ok   leg4 but not as naming an instruction artefact: got 0, want 0
+  ok   leg4b git show of CLAUDE.md IS contamination: got 'CONTAMINATED-OFFCLONE', want 'CONTAMINATED-OFFCLONE'
+  ok   leg5 asymmetric obtain with ZERO needle hits is still contamination: got 'CONTAMINATED-OFFCLONE', want 'CONTAMINATED-OFFCLONE'
+  ok   leg5 and it is recorded as provenance-evidenced: got 'provenance', want 'provenance'
+  ok   leg6 clipped relative path is not an off-clone read: got 0, want 0
+  ok   leg6 it is counted as a clipped fragment: got 1, want 1
+  ok   leg6 and the run stays clean: got 'CLEAN-ON-RECORD', want 'CLEAN-ON-RECORD'
+  ok   leg6b a resolved path is not ALSO an unresolvable fragment: got 0, want 0
+  ok   leg6b and it is still counted once as a reach: got 1, want 1
+  ok   leg7 an alternation is a pattern_string, not a transcript_store: got 'pattern_string', want 'pattern_string'
+  ok   leg7 a real instruction file is still an instruction_file: got 'instruction_file', want 'instruction_file'
+  ok   leg7 a globbed instruction file is NOT downgraded: got 'instruction_file', want 'instruction_file'
+  ok   leg8 in-tree needle hit is symmetric: got 'OBTAINED-VIA-SYMMETRIC-ROUTE', want 'OBTAINED-VIA-SYMMETRIC-ROUTE'
+  ok   leg8 and is not counted as asymmetric: got 0, want 0
+  ok   leg9 no record is NOT-AUDITABLE: got 'NOT-AUDITABLE', want 'NOT-AUDITABLE'
+  ok   leg10 zero tool executions is its own verdict: got 'NO-TOOL-EXECUTION', want 'NO-TOOL-EXECUTION'
+  ok   leg11 a custom rules file is invisible by default: got 'OBTAINED-VIA-SYMMETRIC-ROUTE', want 'OBTAINED-VIA-SYMMETRIC-ROUTE'
+  ok   leg11 and IS contamination once --instr-files names it: got 'CONTAMINATED-OFFCLONE', want 'CONTAMINATED-OFFCLONE'
+  ok   leg12 cc reader pairs result to call: got 1, want 1
+  ok   leg12 cc reader carries the result text: got True, want True
+  ok   leg12 dsh reader pairs result to call: got 1, want 1
+  ok   leg12 dsh reader carries the result text: got True, want True
+  ok   leg13 a repeated tool_use counts once: got 1, want 1
+  ok   leg14 hermes reader splits a two-call row: got 2, want 2
+  ok   leg14 the benign call does NOT inherit the sibling's path: got False, want False
+  ok   leg14 an absent hermes session is NO RECORD, not no calls: got None, want None
+  ok   leg15 a _comment key is documentation, not a needle: got ['x'], want ['x']
+  ok   leg15 an empty needle set is refused with exit 2: got 2, want 2
+  ok   leg15 zero discovered runs is refused with exit 2: got 2, want 2
+  ok   leg15 a refusal says REFUSING: got True, want True
+  ok   leg15 an unreadable needle file is refused with exit 2: got 2, want 2
+  ok   leg15 a contaminated run exits 1, not 2: got 1, want 1
+  ok   leg15 and names the verdict: got True, want True
+
+SELF-TEST PASSED -- 41 checks.
+What it does NOT cover, so its silence is not read as a pass: AUTO-LOADED injection.
+No fixture here can establish whether a client that injects your rules into its
+system prompt leaves any trace in its tool record -- it does not, which is why that
+class is excluded from every verdict above rather than scored as clean.
+exit=0
