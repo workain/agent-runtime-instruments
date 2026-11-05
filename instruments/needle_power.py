@@ -36,7 +36,8 @@ valid instrument is a behavioural probe. On the repository this was built agains
 was five unique lines out of 256 candidates, and the five phrases a human would reach for first
 each appeared in dozens of non-harness files.
 
-HOW THIS INSTRUMENT LIES, in its own words:
+WHAT WOULD THIS PRINT IF IT WERE BLIND? -- which is the same question as HOW THIS
+INSTRUMENT LIES. Every way it can fail to see, and what it prints instead:
 
   1. "survives" is NOT validity. It clears the false-positive half only. The false-NEGATIVE
      half is a property of your client's record-keeping and is INVISIBLE from any corpus scan.

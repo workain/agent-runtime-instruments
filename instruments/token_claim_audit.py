@@ -33,7 +33,8 @@ FACT, not automatically a defect** -- a 429 in a capture is a fact about the pro
 becomes a defect only when it sits inside a set someone called "rounds". What this guarantees is
 that nobody publishes such a figure without the count having been put in front of them first.
 
-HOW IT LIES:
+WHAT WOULD THIS PRINT IF IT WERE BLIND? -- which is the same question as HOW IT LIES.
+Every way it can fail to see, and what it prints instead:
 
   1. It does NOT re-derive cost from a price model, so a figure that is wrong because of a
      mispriced TIER passes every check here. That is a real check and it caught the largest
