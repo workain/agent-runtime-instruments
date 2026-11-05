@@ -37,7 +37,8 @@ THE THREE CLASSES A VERDICT IS BUILT FROM. Collapsing them into one number is th
                         narrows what a with/without difference MEANS rather than biasing it.
                         Reported, never dismissed, never counted as blocking.
 
-HONEST LIMITS, because the gap is part of the finding:
+WHAT WOULD THIS PRINT IF IT WERE BLIND? -- i.e. the HONEST LIMITS, because the gap is
+part of the finding. Every way it can fail to see, and what it reports instead:
   * A clean result is EVIDENCE, NOT ENFORCEMENT. A run could obtain the text through a command
     whose arguments and output this does not recognise. If you need enforcement, you need
     isolation the agent cannot reach around, which is a property of the box and not of a script.
