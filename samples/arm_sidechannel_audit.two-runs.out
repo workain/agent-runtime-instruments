@@ -1,0 +1,39 @@
+PER-RUN SIDE-CHANNEL AUDIT -- did this run obtain instruction text it should not have?
+needles: 3 fixed strings from arm_sidechannel.needles.example.json
+instruction files: CLAUDE\.md|AGENTS\.md|\.hermes\.md|\.mcp\.json
+NOT reported here, deliberately: whether the harness was AUTO-LOADED. No tool log can
+answer that in either direction; a behavioural probe can.
+
+run                        set         calls  pair  rI  rT  oASY  oSYM  gh  ghI  clip  verdict
+----------------------------------------------------------------------------------------------
+bare_clean                 explicit        2     2   1   0     0     0   0    0     0  REACHED-ASYMMETRIC-NO-RETURN
+bare_contaminated          explicit        4     4   0   0     1     0   2    1     1  CONTAMINATED-OFFCLONE
+
+columns -- rI: off-clone reach naming an instruction FILE. rT: off-clone reach of a
+session transcript store. oASY: instruction text OBTAINED by an ASYMMETRIC route (git
+history of an instruction file, or an off-clone instruction file) -- the routes a strip
+is meant to close. oSYM: text obtained by a route the WITH run uses identically.
+gh: git-history calls; ghI: those naming an instruction artefact -- only these can
+contaminate. clip: path fragments whose absoluteness could not be resolved, counted
+and never blocking.
+
+VERDICTS
+     1  CONTAMINATED-OFFCLONE
+     1  REACHED-ASYMMETRIC-NO-RETURN
+     0  OBTAINED-VIA-SYMMETRIC-ROUTE
+     0  SYMMETRIC-REACH-NO-TEXT
+     0  CLEAN-ON-RECORD
+     0  NO-TOOL-EXECUTION
+     0  RECORD-NOT-FINAL
+     0  NOT-AUDITABLE
+
+EVIDENCE for every run that reached or crossed an asymmetric route:
+
+  !! bare_contaminated (explicit) -- CONTAMINATED-OFFCLONE
+       git-history call: git show HEAD~1:CLAUDE.md > /tmp/c.md && grep -n \"branch\" /tmp/c.md"}
+       OBTAINED instruction text (NO needle matched -- the route itself establishes it) via git_history_instruction (83 B, evidence: provenance)
+         <- {"command": "git show HEAD~1:CLAUDE.md > /tmp/c.md && grep -n \"branch\" /tmp/c.md"}
+
+  ~  bare_clean (explicit) -- REACHED-ASYMMETRIC-NO-RETURN
+       off-clone read  : [Bash] /w/other-worktree/CLAUDE.md
+exit=1

@@ -496,6 +496,91 @@ three agent clients and nine tasks. Each instrument's own docstring cites that s
 round identifiers for traceability; nothing here needs them resolved. Every figure quoted in this
 section is either in the sample output beside it or is explicitly attributed to that study, which
 by construction has no artefact in this repository.
+### `arm_sidechannel_audit.py` — did the bare run actually stay bare?
+
+You strip a repo's `CLAUDE.md` / `AGENTS.md` / `.claude/` to measure what an agent does without
+them. Deleting the files does not settle it. An agent with a shell can read the same text out of
+the clone's own git history, out of a sibling worktree, out of a transcript store, or out of any
+committed archive that quotes it — and every one of those leaves the measurement looking clean
+while the run was not bare at all. This reads the run's own tool record and reports which, if any,
+of those routes it used.
+
+```
+python3 instruments/arm_sidechannel_audit.py \
+  --needles samples/fixtures/arm_sidechannel.needles.example.json \
+  --arm bare_run capture path/to/capture.jsonl /path/to/its/tree bare
+```
+
+The output of exactly that, over two committed fixture runs, is
+`samples/arm_sidechannel_audit.two-runs.out`. It is worth reading as the explanation of why the
+instrument is shaped this way, because the interesting columns disagree with each other:
+
+```
+run                        set         calls  pair  rI  rT  oASY  oSYM  gh  ghI  clip  verdict
+----------------------------------------------------------------------------------------------
+bare_clean                 explicit        2     2   1   0     0     0   0    0     0  REACHED-ASYMMETRIC-NO-RETURN
+bare_contaminated          explicit        4     4   0   0     1     0   2    1     1  CONTAMINATED-OFFCLONE
+```
+
+Four separate things are happening there, and a simpler tool gets at least three of them wrong:
+
+- **`bare_clean` reached for an off-clone `CLAUDE.md` and got `No such file or directory`.** It
+  reached, and obtained nothing: the `rI` and `oASY` columns disagree, which is the whole
+  point of reading the result and not just the request. A scan of tool *arguments* — which is the
+  obvious way to build this — cannot tell those apart, so it reports a run as contaminated for a
+  command that failed. The verdict is its own class, neither clean nor contaminated.
+- **`bare_contaminated` made two git-history calls and only one of them matters.** `gh` counts both
+  and `ghI` counts the one that can contaminate: it read its own build script out of history, which recovers no instructions, *and* it read
+  `CLAUDE.md` out of history, which does. Treating any `git show HEAD:...` as contamination is a
+  false positive this instrument shipped and had to fix; five real runs were wrongly flagged.
+- **Its asymmetric obtain came with ZERO needle matches.** The run piped `git show HEAD~1:CLAUDE.md` into a
+  `grep` for its own terms, so what came back was text no needle list covered. A needle-gated rule
+  scored that known-contaminated run as clean. On an asymmetric route the **provenance** of the
+  text establishes the obtain, and no needle is required — the one place this audit deliberately
+  stops asking the needle list a question it cannot answer.
+- **The `clip` column is the opposite correction.** `cat knowledge/templates/.claude/settings.json` is a
+  *relative, in-tree* path; clipped at its first slash it looks absolute and off-clone. One real
+  run was reported contaminated on exactly that. An unresolvable fragment is now its own counted,
+  never-blocking class — and, since it is already resolved, a path reported in `rI` is no longer
+  double-counted here as well.
+
+**Three classes, never collapsed into one number.** `OFF-CLONE` is blocking: it is the route a
+strip is meant to close. `IN-CORPUS` is reported and never blocking: the text came from inside the
+tree the run was given, so the *with*-harness run reads the same file, and it narrows what a
+difference means rather than biasing it. `AUTO-LOADED` — whether the client injected the rules
+itself — is **not reported at all**, in either direction, because a client that puts them in its
+system prompt leaves nothing in its tool record. That is a gap a behavioural probe closes and a
+log reader cannot; printing a reassuring zero for it would be the single most misleading thing
+this instrument could do.
+
+**Run `needle_power.py` on your needles first.** A clean verdict here is only as good as the needle
+set behind it, and a needle that also appears in files the agent can legitimately see cannot
+distinguish "loaded the rules" from "read a file".
+
+**Portability.** Four readers are included — Claude Code transcripts, dsh ACP event logs, Hermes
+`state.db`, and this repo's own `capture_proxy.py` captures. `--instr-files` is a real parameter,
+not decoration: an agent whose rules live in a filename the default pattern does not name would
+otherwise read as clean everywhere, and the self-test asserts that overriding it *changes* a
+verdict. What is deliberately **not** portable is discovery. Mapping your runs to your records is
+the one part only you can do correctly, so the two generic modes are a directory of captures and
+explicit `--arm` specs; for anything else, write a discovery function and call `audit_arm`
+yourself.
+
+**Exit codes.** 0 nothing contaminated; 1 at least one run was; 2 `REFUSING (exit 2)` when it could
+not measure — no needles, an empty needle set, an unreadable needle file, an unknown client, zero
+runs discovered. A refusal is never 1, because "audited and found contamination" and "never ran"
+must not reach a caller as the same signal. Each of those refusals has its own sample:
+`samples/arm_sidechannel_audit.no-needles-REFUSED.out`,
+`samples/arm_sidechannel_audit.empty-needles-REFUSED.out`,
+`samples/arm_sidechannel_audit.bad-client-REFUSED.out`.
+
+`--self-test` runs 41 checks over fixtures it builds itself
+(`samples/arm_sidechannel_audit.selftest.out`). Three of its legs are regression tests for the
+three defects described above, each asserting the **count** as well as the verdict — two of them
+were originally found by a count being wrong while the verdict happened to be right. It is also
+recorded **failing**: `samples/arm_sidechannel_audit.selftest-FAILED.out` is the suite under a
+mutation that restores the needle-gating false negative, and all 41 legs still run and report under
+it, because a self-test that crashes where it should fail tells you less than one that fails.
 
 ### Which engines are actually supported
 

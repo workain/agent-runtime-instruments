@@ -110,6 +110,11 @@ token_claim_audit.selftest.out	instruments/token_claim_audit.py	refu	--self-test
 token_claim_audit.foreign-schema.out	instruments/token_claim_audit.py	refu	samples/fixtures/flags.repeats.jsonl
 needle_power.absent-root-REFUSED.out	instruments/needle_power.py	refu	--root /no/such/directory --needle x
 token_claim_audit.no-captures-REFUSED.out	instruments/token_claim_audit.py	refu	/tmp/no-such-capture-glob-*.jsonl
+arm_sidechannel_audit.selftest.out	instruments/arm_sidechannel_audit.py	refu	--self-test
+arm_sidechannel_audit.two-runs.out	instruments/arm_sidechannel_audit.py	refu	--needles samples/fixtures/arm_sidechannel.needles.example.json --arm bare_contaminated capture samples/fixtures/arm_sidechannel.bare-contaminated.jsonl /w/arm bare --arm bare_clean capture samples/fixtures/arm_sidechannel.bare-clean.jsonl /w/arm bare
+arm_sidechannel_audit.no-needles-REFUSED.out	instruments/arm_sidechannel_audit.py	refu	
+arm_sidechannel_audit.empty-needles-REFUSED.out	instruments/arm_sidechannel_audit.py	refu	--needles samples/fixtures/arm_sidechannel.needles.empty.json --arm a capture samples/fixtures/arm_sidechannel.bare-clean.jsonl /w/arm
+arm_sidechannel_audit.bad-client-REFUSED.out	instruments/arm_sidechannel_audit.py	refu	--needles samples/fixtures/arm_sidechannel.needles.example.json --arm a nosuchclient /dev/null /w/arm
 EOF
 )
 
@@ -118,6 +123,7 @@ EOF
 # able to disagree with a specific one. "Captures a live measurement" and "costs a paid
 # request" are real reasons; "nobody got round to it" would not be.
 UNREPRODUCIBLE=$(cat <<'EOF'
+arm_sidechannel_audit.selftest-FAILED.out	the self-test observed FAILING, which requires mutating audit_arm() to require a needle hit before crediting an obtain on an asymmetric route -- restoring the false negative the instrument was fixed for; the mutation is deliberately not in the tree, so no argv reproduces this
 bench_cache_residency.out	~6 paid API requests, and its token counts are one live run's
 bench_cache_residency.run1-redacted.out	a historical run whose own header states it was NOT produced by the published code (ids redacted post-hoc)
 bench_cache_residency.run2-redacted.out	a historical run, redacted post-hoc, same as run1

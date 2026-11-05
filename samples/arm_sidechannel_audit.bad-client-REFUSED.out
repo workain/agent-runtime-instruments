@@ -1,0 +1,2 @@
+REFUSING (exit 2): --arm a: unknown client 'nosuchclient'; expected one of capture, cc, dsh, hermes
+exit=2
