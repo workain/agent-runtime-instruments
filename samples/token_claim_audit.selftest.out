@@ -1,0 +1,17 @@
+  ok   leg1 non-2xx in population is detected: got True, want True
+  ok   leg2 an absent usage key is reported, not silently zeroed: got True, want True
+  ok   leg3 duplicate request ids are detected: got True, want True
+  ok   leg3b distinct ids do NOT raise a duplicate finding: got False, want False
+  ok   leg4 zero-cost 2xx requests are surfaced: got True, want True
+  ok   leg5 a clean capture yields no findings: got [], want []
+  ok   leg5 a clean capture exits 0: got 0, want 0
+  ok   leg5 a capture with findings exits 1: got 1, want 1
+  ok   leg6 cross-arm filter asymmetry is detected: got True, want True
+  ok   leg7 zero matching captures is refused with exit 2: got 2, want 2
+  ok   leg7 zero matching captures says REFUSING: got True, want True
+
+SELF-TEST PASSED -- 11 checks.
+What it does NOT cover: cost is never re-derived from a price model, so a figure that
+is wrong because of a MISPRICED tier passes every leg here. That check needs a
+per-provider price table with a cliff and is deliberately out of scope.
+exit=0

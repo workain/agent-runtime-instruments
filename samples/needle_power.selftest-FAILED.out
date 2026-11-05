@@ -1,0 +1,21 @@
+# THE SELF-TEST OBSERVED FAILING, which is the only evidence it can fail.
+# Produced by mutating needle_power.py to exit 0 when a needle is INVALID -- i.e. by
+# severing the verdict from the exit code, the instrument's core discrimination.
+# The mutation is NOT in the committed source; this file is the record of the attack.
+
+  ok   leg1 harness-only needle: got 'survives', want 'survives'
+  ok   leg2 needle also in a non-harness file: got 'INVALID', want 'INVALID'
+  ok   leg3 needle absent from the harness: got 'NOT-IN-HARNESS', want 'NOT-IN-HARNESS'
+  ok   leg4 same needle flips once its non-harness copy is gone: got 'survives', want 'survives'
+  ok   leg5 --auto candidate count: got 2, want 2
+  ok   leg5 --auto unique-line count: got 1, want 1
+  ok   leg5 --auto picked the right line: got 'a line that exists only in the harness surface of this fixture', want 'a line that exists only in the harness surface of this fixture'
+  FAIL leg6 INVALID needle exits 1: got 0, want 1
+  ok   leg6 surviving needle exits 0: got 0, want 0
+  ok   leg7 absent --root is refused with exit 2: got 2, want 2
+  ok   leg7 absent --root says REFUSING: got True, want True
+  ok   leg7 nothing-to-measure is refused with exit 2: got 2, want 2
+  ok   leg7 refusal code differs from the bad-needle code: got True, want True
+
+SELF-TEST FAILED: 1 leg(s): leg6 INVALID needle exits 1
+exit=1
